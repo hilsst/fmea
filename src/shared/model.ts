@@ -192,7 +192,7 @@ export const DEFAULT_SETTINGS: Settings = {
   kcRules: { safety: true, regulatory: true, customer: true, specialProcess: true, tolerance: true, capability: true, historical: true, detection: true },
   kcClasses: ['Normal', 'Significant', 'Critical', 'Key Characteristic', 'Safety Characteristic', 'Regulatory Characteristic'],
   workflow: WORKFLOW_STEPS.map((step) => ({ step, enabled: true, role: DEFAULT_STEP_ROLE[step] })),
-  reasonFields: ['s', 'o', 'd', 'kcClass', 'category', 'status', 'approval', 'specification', 'controlMethod', 'reactionPlan'],
+  reasonFields: ['s', 'o', 'd', 'kcs.status', 'kcs.category', 'kcs.kcClass', 'approval'],
 };
 
 // AIAG-VDA (2019) yapısına dayalı özet kriterler. Kurum/müşteri tablosu varsa "Puanlama" sekmesinden değiştirilir.

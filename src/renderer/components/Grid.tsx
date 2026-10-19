@@ -1,10 +1,12 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { cellText, COLUMNS, type Col } from '../../shared/columns';
 import { blankRow, nextId } from '../../shared/model';
 import { riskLevel } from '../../shared/scoring';
 import type { AnyRow, TableKey } from '../../shared/types';
 import { useStore } from '../store';
 import { badgeClass, MultiCell, RefCell, ScoreCell, SelectCell, TextCell } from './Cells';
+
+const PAGE = 150;
 
 interface GridProps {
   table: TableKey;
@@ -25,6 +27,9 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
   const selected = selProp ?? selLocal;
   const setSelected = onSelect ?? setSelLocal;
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  // Artımlı çizim: büyük tablolarda ilk PAGE satır çizilir, kaydırdıkça devamı eklenir (§63)
+  const [limit, setLimit] = useState(PAGE);
+  useEffect(() => setLimit(PAGE), [table, q, sort]);
 
   const cols = COLUMNS[table].filter((c) => all || !c.secondary);
   const rows = project[table] as AnyRow[];
@@ -80,6 +85,11 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
   };
 
   const isFmea = table === 'dfmea' || table === 'pfmea';
+  const shown = visible.length > limit ? visible.slice(0, limit) : visible;
+  const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (limit < visible.length && el.scrollTop + el.clientHeight > el.scrollHeight - 600) setLimit((l) => l + PAGE);
+  };
 
   return (
     <div className="grid-wrap">
@@ -95,6 +105,9 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
         </button>
         <span className="sep" />
         {toolbar}
+        <button className="btn" disabled={selected.length !== 1} onClick={() => window.dispatchEvent(new CustomEvent('why', { detail: selected[0] }))} title="Kaydın kaynağı, kanıtı, bağlantı zinciri ve değişiklik geçmişi">
+          Neden burada?
+        </button>
         <span className="grow" />
         <label className="check">
           <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Tüm kolonlar
@@ -104,7 +117,7 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
           {visible.length}/{rows.length}
         </span>
       </div>
-      <div className="grid-scroll">
+      <div className="grid-scroll" onScroll={onScroll}>
         <table className="grid">
           <thead>
             <tr>
@@ -132,7 +145,7 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
             </tr>
           </thead>
           <tbody>
-            {visible.map((r) => {
+            {shown.map((r) => {
               const risk = isFmea ? riskLevel(r as never, project.settings, project.scoring.apTable) : '';
               return (
                 <tr key={r.id} data-row={r.id} className={`${selected.includes(r.id) ? 'selected' : ''} ${risk ? 'risk-' + risk.toLowerCase() : ''} ${r.reassess ? 'reassess' : ''}`}>
@@ -153,6 +166,11 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
             })}
           </tbody>
         </table>
+        {shown.length < visible.length && (
+          <div className="more">
+            {shown.length}/{visible.length} satır gösteriliyor · <button className="link" onClick={() => setLimit(visible.length)}>Tümünü göster</button>
+          </div>
+        )}
         {rows.length === 0 && <div className="empty">{emptyHint ?? 'Henüz kayıt yok. “+ Satır ekle” ile başlayın.'}</div>}
       </div>
     </div>

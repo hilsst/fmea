@@ -34,7 +34,8 @@ export function withAudit(p: Project, entries: AuditEntry[]): Project {
   return entries.length ? { ...p, auditLog: [...p.auditLog, ...entries] } : p;
 }
 
-/** Değişiklikte neden sorulacak mı (§37 – Ayarlar › neden alanları). */
+/** Değişiklikte neden sorulacak mı (§37 – Ayarlar › neden alanları; "alan" veya "tablo.alan"). */
 export function needsReason(p: Project, effects: Effect[]): boolean {
-  return effects.some((e) => e.primary && e.kind === 'Modified' && !!e.field && p.settings.reasonFields.includes(e.field));
+  const f = p.settings.reasonFields;
+  return effects.some((e) => e.primary && e.kind === 'Modified' && !!e.field && (f.includes(e.field) || f.includes(`${e.table}.${e.field}`)));
 }

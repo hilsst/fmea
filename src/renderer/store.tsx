@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { auditEntries, needsReason, withAudit, type AuditMeta } from '../shared/audit';
+import { verifyBaseline } from '../shared/baseline';
 import { crossScreenEffects, planEdits, type Edit, type Effect, type Plan } from '../shared/engine';
-import { newProject, normalizeProject } from '../shared/model';
-import type { Project } from '../shared/types';
+import { newProject, normalizeProject, type MigrationReport } from '../shared/model';
+import type { AuditEntry, Project } from '../shared/types';
 import { api } from './api';
 
 export interface PendingChange {
@@ -9,6 +11,8 @@ export interface PendingChange {
   edits: Edit[];
   plan: Plan;
   effects: Effect[];
+  /** Ayarlar › neden alanlarından biri değişiyorsa neden zorunludur (§37). */
+  needReason: boolean;
   resolve: (applied: boolean) => void;
 }
 
@@ -19,10 +23,10 @@ interface Store {
   /** Düzenlemeleri uygular; başka ekranları etkiliyorsa önce onay penceresi gösterir. */
   edit: (edits: Edit | Edit[], title?: string) => Promise<boolean>;
   pending: PendingChange | null;
-  decide: (choice: 'apply' | 'only' | 'cancel') => void;
+  decide: (choice: 'apply' | 'only' | 'cancel', reason?: string, comment?: string) => void;
   replace: (p: Project, path?: string, markClean?: boolean) => void;
-  /** Revizyon özeti gibi yayılmayan doğrudan güncellemeler. */
-  mutate: (fn: (draft: Project) => void) => void;
+  /** Revizyon özeti gibi yayılmayan doğrudan güncellemeler; audit verilirse denetim izine yazılır. */
+  mutate: (fn: (draft: Project) => void, audit?: Omit<AuditEntry, 'at' | 'user' | 'revision'>) => void;
   setPath: (p?: string) => void;
   markSaved: () => void;
   undo: () => void;
@@ -59,7 +63,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'err' ? 8000 : 4000);
   }, []);
 
-  const commit = useCallback((next: Project) => {
+  const commit = useCallback((next: Project, effects?: Effect[], meta?: Omit<AuditMeta, 'user'>) => {
+    if (effects?.length) next = withAudit(next, auditEntries(next, effects, { ...meta, user: next.settings.userName }));
     undoStack.current.push(projectRef.current);
     if (undoStack.current.length > 100) undoStack.current.shift();
     redoStack.current = [];
@@ -72,23 +77,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const edits = Array.isArray(e) ? e : [e];
       const plan = planEdits(projectRef.current, edits, true);
       const effects = crossScreenEffects(plan, edits);
-      if (effects.length === 0) {
-        if (plan.effects.length) commit(plan.project);
+      const needReason = needsReason(projectRef.current, plan.effects);
+      if (effects.length === 0 && !needReason) {
+        if (plan.effects.length) commit(plan.project, plan.effects);
         return Promise.resolve(true);
       }
-      return new Promise<boolean>((resolve) => setPending({ title, edits, plan, effects, resolve }));
+      return new Promise<boolean>((resolve) => setPending({ title, edits, plan, effects, needReason, resolve }));
     },
     [commit],
   );
 
   const decide = useCallback(
-    (choice: 'apply' | 'only' | 'cancel') => {
+    (choice: 'apply' | 'only' | 'cancel', reason?: string, comment?: string) => {
       if (!pending) return;
-      if (choice === 'apply') commit(pending.plan.project);
-      else if (choice === 'only') commit(planEdits(projectRef.current, pending.edits, false).project);
+      if (choice === 'apply') commit(pending.plan.project, pending.plan.effects, { reason, comment });
+      else if (choice === 'only') {
+        const only = planEdits(projectRef.current, pending.edits, false);
+        commit(only.project, only.effects, { reason, comment });
+      }
       pending.resolve(choice !== 'cancel');
       setPending(null);
-      if (choice === 'apply') toast(`${pending.effects.length} bağlı kayıt güncellendi`);
+      if (choice === 'apply' && pending.effects.length) toast(`${pending.effects.length} bağlı kayıt güncellendi`);
       if (choice === 'cancel') toast('Değişiklik geri alındı', 'warn');
     },
     [pending, commit, toast],
@@ -97,15 +106,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const replace = useCallback((p: Project, path?: string, markClean = true) => {
     undoStack.current = [];
     redoStack.current = [];
-    setProject(normalizeProject(p));
+    const rep = {} as MigrationReport;
+    const n = normalizeProject(p, rep);
+    setProject(n);
     setPath(path);
-    setDirty(!markClean);
-  }, []);
+    setDirty(!markClean || rep.from < rep.to);
+    for (const note of rep.notes ?? []) toast(note, 'warn');
+    const broken = n.baselines.filter((b) => !verifyBaseline(b)).map((b) => b.id);
+    if (broken.length) toast(`UYARI: ${broken.join(', ')} baseline mührü bozuk – dosya dışarıdan değiştirilmiş olabilir.`, 'err');
+  }, [toast]);
 
   const mutate = useCallback(
-    (fn: (d: Project) => void) => {
+    (fn: (d: Project) => void, audit?: Omit<AuditEntry, 'at' | 'user' | 'revision'>) => {
       const d = structuredClone(projectRef.current);
       fn(d);
+      if (audit) d.auditLog.push({ ...audit, at: new Date().toISOString(), user: d.settings.userName || '(kullanıcı adı girilmemiş)', revision: d.meta.fmeaRevision });
       commit(d);
     },
     [commit],

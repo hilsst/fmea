@@ -438,12 +438,20 @@ export function cellText(col: Col, row: AnyRow, p: Project): string {
   return v == null ? '' : String(v);
 }
 
+const labelIndex = new WeakMap<Project, Map<string, AnyRow>>();
+function rowIndex(p: Project): Map<string, AnyRow> {
+  let m = labelIndex.get(p);
+  if (!m) {
+    m = new Map();
+    for (const t of ['documents', 'requirements', 'structure', 'dfmea', 'processSteps', 'pfmea', 'kcs', 'controlPlan', 'processParams', 'msa', 'capability', 'actions', 'evidence', 'changeRequests', 'lessons', 'issues'] as TableKey[])
+      for (const r of p[t] as AnyRow[]) m.set(r.id, r);
+    labelIndex.set(p, m);
+  }
+  return m;
+}
+
 export function rowLabel(p: Project, id: string): string {
-  const all: AnyRow[] = [
-    ...p.documents, ...p.requirements, ...p.structure, ...p.dfmea, ...p.processSteps, ...p.pfmea, ...p.kcs, ...p.controlPlan,
-    ...p.processParams, ...p.msa, ...p.capability, ...p.actions, ...p.evidence, ...p.changeRequests, ...p.lessons,
-  ];
-  const r = all.find((x) => x.id === id) as unknown as Record<string, string> | undefined;
+  const r = rowIndex(p).get(id) as unknown as Record<string, string> | undefined;
   if (!r) return id;
   const txt = r.text || r.function || r.failureMode || r.name || r.characteristic || r.productChar || r.processChar || r.element || r.parameter || r.description || r.title || r.quote || '';
   const prefix = r.opNo ? `${r.opNo} ` : '';
