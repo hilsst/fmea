@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { completenessScore, qualityChecks } from '../shared/checks';
 import { newProject } from '../shared/model';
 import { sampleProject } from '../shared/sample';
-import { actionPriority } from '../shared/scoring';
+import { apOf } from '../shared/scoring';
 import { TABS, type TabKey } from '../shared/tabs';
 import type { Project } from '../shared/types';
 import { api, isDesktop } from './api';
@@ -21,12 +21,12 @@ function tabBadge(p: Project, key: TabKey): { n: number | string; tone?: string 
     case 'requirements': return { n: p.requirements.length };
     case 'structure': return { n: p.structure.length };
     case 'dfmea': {
-      const h = p.dfmea.filter((r) => actionPriority(r.s, r.o, r.d) === 'H').length;
+      const h = p.dfmea.filter((r) => apOf(p, r.s, r.o, r.d) === 'H').length;
       return h ? { n: `${h} H`, tone: 'red' } : { n: p.dfmea.length };
     }
     case 'processSteps': return { n: p.processSteps.length };
     case 'pfmea': {
-      const h = p.pfmea.filter((r) => actionPriority(r.s, r.o, r.d) === 'H').length;
+      const h = p.pfmea.filter((r) => apOf(p, r.s, r.o, r.d) === 'H').length;
       return h ? { n: `${h} H`, tone: 'red' } : { n: p.pfmea.length };
     }
     case 'kcs': {

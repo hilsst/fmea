@@ -1,5 +1,5 @@
 import { completenessScore, qualityChecks } from '../../shared/checks';
-import { actionPriority } from '../../shared/scoring';
+import { apOf } from '../../shared/scoring';
 import type { ProjectMeta, Settings } from '../../shared/types';
 import { TextCell } from '../components/Cells';
 import { useStore } from '../store';
@@ -36,7 +36,7 @@ export function ProjectTab({ go }: { go: (t: TabKey) => void }) {
   const setSetting = (k: keyof Settings) => (v: unknown) => edit({ kind: 'settings', field: k, value: v }, 'Ayar değişikliği');
 
   const fm = [...p.dfmea, ...p.pfmea];
-  const apH = fm.filter((r) => actionPriority(r.s, r.o, r.d) === 'H').length;
+  const apH = fm.filter((r) => apOf(p, r.s, r.o, r.d) === 'H').length;
   const highS = fm.filter((r) => (r.s ?? 0) >= p.settings.highSeverityThreshold).length;
   const openAct = p.actions.filter((a) => a.status !== 'Completed' && a.status !== 'Cancelled').length;
   const overdue = p.actions.filter((a) => a.dueDate && a.status !== 'Completed' && a.status !== 'Cancelled' && a.dueDate < new Date().toISOString().slice(0, 10)).length;

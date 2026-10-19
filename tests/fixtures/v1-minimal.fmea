@@ -1,0 +1,1 @@
+{"meta":{"name":"Eski dosya"},"requirements":[{"id":"REQ-001","text":"Kalınlık 2 mm"}],"dfmea":[{"id":"DF-001","failureMode":"Kalınlık düşük","s":8,"o":3,"d":4,"reqIds":["REQ-001"]}]}

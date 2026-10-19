@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { COMPOSITE_CHECKLIST, blankRow, nextId } from '../../shared/model';
-import { actionPriority } from '../../shared/scoring';
+import { apOf } from '../../shared/scoring';
 import type { AnyRow, DfmeaRow, DocumentRow, PfmeaRow, Project, TableKey } from '../../shared/types';
 import { api, isDesktop } from '../api';
 import { useStore } from '../store';
@@ -14,7 +14,7 @@ export function projectContext(p: Project): string {
   if (p.documents.length) lines.push('\nDOKÜMANLAR:', ...p.documents.map((d) => `${d.id} | ${d.docNumber} | ${d.name} | Rev ${d.revision} | ${d.docType}`));
   if (p.requirements.length) lines.push('\nGEREKSİNİMLER:', ...p.requirements.map((r) => `${r.id} [${r.reqType}] ${r.text} | Kabul: ${r.acceptance || 'VERİ YOK'} | Kaynak: ${r.source}`));
   if (p.structure.length) lines.push('\nYAPI & FONKSİYON:', ...p.structure.map((s) => `${s.id} ${s.level} ${s.element} (üst: ${s.parentId || '-'}) → ${s.function} | REQ: ${s.reqIds.join(',')}`));
-  if (p.dfmea.length) lines.push('\nDFMEA:', ...p.dfmea.map((d) => `${d.id} fn:${d.functionId} req:${d.reqIds.join(',')} | FM: ${d.failureMode} | Etki: ${d.effect} | Neden: ${d.cause} | Önleme: ${d.prevention} | Tespit: ${d.detection} | S${d.s ?? '-'} O${d.o ?? '-'} D${d.d ?? '-'} AP:${actionPriority(d.s, d.o, d.d)}`));
+  if (p.dfmea.length) lines.push('\nDFMEA:', ...p.dfmea.map((d) => `${d.id} fn:${d.functionId} req:${d.reqIds.join(',')} | FM: ${d.failureMode} | Etki: ${d.effect} | Neden: ${d.cause} | Önleme: ${d.prevention} | Tespit: ${d.detection} | S${d.s ?? '-'} O${d.o ?? '-'} D${d.d ?? '-'} AP:${apOf(p, d.s, d.o, d.d)}`));
   if (p.processSteps.length) lines.push('\nPROSES AKIŞI:', ...p.processSteps.map((s) => `${s.id} Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} | ${s.description} | Makine: ${s.machine}`));
   if (p.pfmea.length) lines.push('\nPFMEA:', ...p.pfmea.map((r) => `${r.id} step:${r.stepId} df:${r.dfIds.join(',')} | FM: ${r.failureMode} | Neden: ${r.cause} | Önleme: ${r.prevention} | Tespit: ${r.detection} | S${r.s ?? '-'} O${r.o ?? '-'} D${r.d ?? '-'}`));
   if (p.kcs.length) lines.push('\nKC:', ...p.kcs.map((k) => `${k.id} kaynak:${k.sourceId} ${k.kcClass} ${k.characteristic} | ${k.status}`));

@@ -4,7 +4,7 @@ export type AP = 'H' | 'M' | 'L' | '';
 
 // AIAG & VDA FMEA Handbook (2019) Action Priority tablosu.
 // Anahtar: S bandı (1..5), O bandı (1..5) → [D=1, D=2–4, D=5–6, D=7–10]
-const AP_TABLE: Record<string, string> = {
+export const AIAG_VDA_AP: Record<string, string> = {
   '5,5': 'HHHH', '5,4': 'HHHH', '5,3': 'MHHH', '5,2': 'LLMH', '5,1': 'LLLL',
   '4,5': 'HHHH', '4,4': 'MHHH', '4,3': 'MMMH', '4,2': 'LLMM', '4,1': 'LLLL',
   '3,5': 'MMHH', '3,4': 'LMMM', '3,3': 'LLLM', '3,2': 'LLLL', '3,1': 'LLLL',
@@ -24,10 +24,24 @@ function dIndex(d: number) {
   return d >= 7 ? 3 : d >= 5 ? 2 : d >= 2 ? 1 : 0;
 }
 
-export function actionPriority(s: Score, o: Score, d: Score): AP {
+export const S_BANDS = ['1', '2–3', '4–6', '7–8', '9–10'];
+export const O_BANDS = ['1', '2–3', '4–5', '6–7', '8–10'];
+export const D_BANDS = ['1', '2–4', '5–6', '7–10'];
+
+/** Action Priority. `table` verilirse şirket AP tablosu, yoksa AIAG-VDA 2019 kullanılır. */
+export function actionPriority(s: Score, o: Score, d: Score, table?: Record<string, string> | null): AP {
   if (!valid(s) || !valid(o) || !valid(d)) return '';
-  return AP_TABLE[`${sBand(s)},${oBand(o)}`][dIndex(d)] as AP;
+  const key = `${sBand(s)},${oBand(o)}`;
+  const row = (table && /^[HML]{4}$/.test(table[key] ?? '') ? table[key] : AIAG_VDA_AP[key]) as string;
+  return row[dIndex(d)] as AP;
 }
+
+/** Projenin AP tablosuyla AP (kısa yol). */
+export const apOf = (p: { scoring: { apTable?: Record<string, string> | null } }, s: Score, o: Score, d: Score) =>
+  actionPriority(s, o, d, p.scoring.apTable);
+
+/** RPN tek başına karar kriteri değildir (§26). Ekranda ve raporda bu uyarı gösterilir. */
+export const RPN_WARNING = 'RPN tek başına risk karar mekanizması değildir.';
 
 export function rpn(s: Score, o: Score, d: Score): number | null {
   if (!valid(s) || !valid(o) || !valid(d)) return null;
@@ -42,9 +56,10 @@ export type RiskLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | '';
 export function riskLevel(
   row: { s: Score; o: Score; d: Score; specialChar?: string },
   settings: Settings,
+  apTable?: Record<string, string> | null,
 ): RiskLevel {
   if (!valid(row.s)) return '';
-  const ap = actionPriority(row.s, row.o, row.d);
+  const ap = actionPriority(row.s, row.o, row.d, apTable);
   const r = rpn(row.s, row.o, row.d);
   if (row.specialChar === 'Safety' || row.specialChar === 'Regulatory' || row.s >= settings.kcSeverityThreshold) return 'CRITICAL';
   if (ap === 'H' || (settings.rpnThreshold != null && r != null && r >= settings.rpnThreshold)) return 'HIGH';
@@ -52,6 +67,9 @@ export function riskLevel(
   return ap ? 'LOW' : '';
 }
 
+/**
+ * KC adayı mı? Aday yalnızca öneridir (AI Proposed); KC kararı mühendisindir (§27, §77).
+ */
 export function isKcCandidate(row: { s: Score; specialChar?: string }, settings: Settings): boolean {
   if (row.specialChar && ['Safety', 'Regulatory', 'Critical', 'Significant'].includes(row.specialChar)) return true;
   return valid(row.s) && row.s >= settings.kcSeverityThreshold;

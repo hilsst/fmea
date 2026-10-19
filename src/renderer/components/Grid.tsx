@@ -133,7 +133,7 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
           </thead>
           <tbody>
             {visible.map((r) => {
-              const risk = isFmea ? riskLevel(r as never, project.settings) : '';
+              const risk = isFmea ? riskLevel(r as never, project.settings, project.scoring.apTable) : '';
               return (
                 <tr key={r.id} data-row={r.id} className={`${selected.includes(r.id) ? 'selected' : ''} ${risk ? 'risk-' + risk.toLowerCase() : ''} ${r.reassess ? 'reassess' : ''}`}>
                   <td className="sticky-col sel">

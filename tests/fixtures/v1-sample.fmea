@@ -1,0 +1,590 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "name": "Sandviç Kompozit Panel – Eğitim",
+    "partNumber": "FMEA-CP-001",
+    "partName": "Sandviç kompozit panel (test parçası)",
+    "customer": "VERİ YOK – doğrulanmalı",
+    "program": "Eğitim / test",
+    "drawingRevision": "Rev A",
+    "fmeaNumber": "FMEA-CP-001",
+    "fmeaRevision": "Rev A",
+    "preparedBy": "",
+    "team": "",
+    "startDate": "2026-10-19",
+    "revisionDate": "2026-10-19",
+    "scope": "Panel tasarımı (DFMEA) ve üretimi (PFMEA): kesim, lay-up, vakum torbalama, kür, CNC delme, insert bonding, final muayene.",
+    "supplier": "",
+    "location": "",
+    "confidentiality": ""
+  },
+  "settings": {
+    "kcSeverityThreshold": 9,
+    "highSeverityThreshold": 8,
+    "rpnThreshold": null,
+    "targetCpk": null,
+    "minSamples": null,
+    "autoControlPlan": true,
+    "autoKcCandidates": true
+  },
+  "scoring": {
+    "severity": [
+      {
+        "rank": 10,
+        "df": "Ürünün/sistemin güvenli çalışmasını etkiler; kullanıcı, çevre veya üçüncü kişiler için emniyet riski",
+        "pf": "Operatör emniyetini veya son kullanıcının güvenliğini etkileyebilir"
+      },
+      {
+        "rank": 9,
+        "df": "Yasal / regülasyon gereksinimlerine uygunsuzluk",
+        "pf": "Tesis veya ürün için regülasyon / yasal uygunsuzluk"
+      },
+      {
+        "rank": 8,
+        "df": "Birincil (ana) fonksiyon kaybı",
+        "pf": "Üretimin %100'ü hurda olabilir / birincil fonksiyon kaybı"
+      },
+      {
+        "rank": 7,
+        "df": "Birincil fonksiyonda bozulma / performans düşüşü",
+        "pf": "Üretimin bir kısmı hurda; hat dışı yeniden işleme / birincil fonksiyonda bozulma"
+      },
+      {
+        "rank": 6,
+        "df": "İkincil fonksiyon kaybı",
+        "pf": "%100 hat dışı yeniden işleme / ikincil fonksiyon kaybı"
+      },
+      {
+        "rank": 5,
+        "df": "İkincil fonksiyonda bozulma",
+        "pf": "Bir kısmı hat dışı yeniden işleme / ikincil fonksiyonda bozulma"
+      },
+      {
+        "rank": 4,
+        "df": "Çok rahatsız edici görünüm, ses, titreşim, his vb.",
+        "pf": "%100 istasyonda yeniden işleme / çok rahatsız edici görünüm"
+      },
+      {
+        "rank": 3,
+        "df": "Orta derecede rahatsız edici görünüm, ses, titreşim, his",
+        "pf": "Bir kısmı istasyonda yeniden işleme / orta derecede rahatsız edici görünüm"
+      },
+      {
+        "rank": 2,
+        "df": "Hafif rahatsız edici görünüm, ses, titreşim, his",
+        "pf": "Proseste hafif aksama / hafif rahatsız edici görünüm"
+      },
+      {
+        "rank": 1,
+        "df": "Fark edilebilir etki yok",
+        "pf": "Fark edilebilir etki yok"
+      }
+    ],
+    "occurrence": [
+      {
+        "rank": 10,
+        "df": "Aşırı yüksek – Yeni teknoloji, deneyim yok; önleyici kontrol yok veya performansı öngörülemez",
+        "pf": "Aşırı yüksek – Önleyici kontrol yok"
+      },
+      {
+        "rank": 9,
+        "df": "Çok yüksek – Yeni tasarımın ilk kullanımı; önleyici kontroller performansı öngörmeye yetmiyor",
+        "pf": "Çok yüksek – Önleyici kontrollerin etkisi çok az"
+      },
+      {
+        "rank": 8,
+        "df": "Çok yüksek – Yeni malzeme/teknoloji, sınırlı deneyim; standart veya best practice yok",
+        "pf": "Çok yüksek – Önleyici kontrollerin etkisi çok az"
+      },
+      {
+        "rank": 7,
+        "df": "Yüksek – Benzer teknolojinin yeni uygulaması; önleyici kontroller kısmen etkili",
+        "pf": "Yüksek – Önleyici kontroller kısmen etkili"
+      },
+      {
+        "rank": 6,
+        "df": "Yüksek – Önceki tasarımlara benzer, sorun geçmişi var; kontroller sınırlı etkili",
+        "pf": "Yüksek – Önleyici kontroller kısmen etkili"
+      },
+      {
+        "rank": 5,
+        "df": "Orta – Kanıtlanmış teknolojide detay değişikliği; bazı sorun geçmişi",
+        "pf": "Orta – Önleyici kontroller etkili"
+      },
+      {
+        "rank": 4,
+        "df": "Orta – Kısa saha deneyimli neredeyse aynı tasarım; kontroller etkili",
+        "pf": "Orta – Önleyici kontroller etkili"
+      },
+      {
+        "rank": 3,
+        "df": "Düşük – Bilinen tasarımda küçük değişiklik; best practice ve doğrulanmış kontroller",
+        "pf": "Düşük – Önleyici kontroller yüksek derecede etkili (teknik / otomatik)"
+      },
+      {
+        "rank": 2,
+        "df": "Çok düşük – Olgun tasarım, uzun saha geçmişi; kontroller kanıtlanmış etkin",
+        "pf": "Düşük – Önleyici kontroller yüksek derecede etkili (teknik / otomatik)"
+      },
+      {
+        "rank": 1,
+        "df": "Aşırı düşük – Hata nedeni önleyici kontrollerle ortadan kaldırılmış",
+        "pf": "Aşırı düşük – Neden tasarım/proses ile fiziksel olarak engellenmiş (poka-yoke)"
+      }
+    ],
+    "detection": [
+      {
+        "rank": 10,
+        "df": "Test prosedürü henüz geliştirilmedi",
+        "pf": "Tespit yöntemi yok; test veya muayene yapılmıyor"
+      },
+      {
+        "rank": 9,
+        "df": "Test yöntemi bu hata modunu tespit etmek için tasarlanmadı",
+        "pf": "Hata modu/nedeni kolay tespit edilemiyor (örn. rastgele denetim)"
+      },
+      {
+        "rank": 8,
+        "df": "Yeni, kanıtlanmamış test yöntemi",
+        "pf": "İnsan muayenesi (görsel/dokunsal/işitsel) veya manuel ölçüm; yöntem kanıtlanmamış"
+      },
+      {
+        "rank": 7,
+        "df": "Kanıtlanmış yöntem (pass/fail); üretim öncesi tasarım değişikliği için zaman yetersiz",
+        "pf": "Makine bazlı tespit veya muayene ekipmanı; yöntem kanıtlanmamış"
+      },
+      {
+        "rank": 6,
+        "df": "Kanıtlanmış yöntem (test-to-failure); zaman yetersiz",
+        "pf": "İnsan muayenesi veya manuel ölçüm; yöntem kanıtlanmış ve etkin"
+      },
+      {
+        "rank": 5,
+        "df": "Kanıtlanmış yöntem (degradation testi); zaman yetersiz",
+        "pf": "Makine bazlı tespit veya muayene ekipmanı; kanıtlanmış ve etkin"
+      },
+      {
+        "rank": 4,
+        "df": "Kanıtlanmış yöntem (pass/fail); üretim öncesi değişiklik için zaman yeterli",
+        "pf": "Otomatik tespit sonraki istasyonda; uygunsuz ürünü ayırır/durdurur"
+      },
+      {
+        "rank": 3,
+        "df": "Kanıtlanmış yöntem (test-to-failure); zaman yeterli",
+        "pf": "Otomatik tespit aynı istasyonda; uygunsuz ürünü durdurur"
+      },
+      {
+        "rank": 2,
+        "df": "Kanıtlanmış yöntem (degradation testi); zaman yeterli",
+        "pf": "Nedeni tespit edip uygunsuz ürünün üretilmesini engelleyen yöntem"
+      },
+      {
+        "rank": 1,
+        "df": "Hata modu fiziksel olarak oluşamaz veya tespit yöntemi her zaman tespit eder",
+        "pf": "Hata modu fiziksel olarak üretilemez veya tespit yöntemi her zaman tespit eder"
+      }
+    ]
+  },
+  "documents": [
+    {
+      "id": "DOC-001",
+      "name": "FMEA Test Teknik Şartname",
+      "docType": "Teknik şartname",
+      "docNumber": "TS-FMEA-CP-001",
+      "revision": "A",
+      "date": "2026-10-13",
+      "source": "",
+      "product": "",
+      "notes": "",
+      "filePath": ""
+    },
+    {
+      "id": "DOC-002",
+      "name": "FMEA Test Teknik Resim",
+      "docType": "Teknik resim",
+      "docNumber": "DRW-001",
+      "revision": "A",
+      "date": "",
+      "source": "",
+      "product": "",
+      "notes": "",
+      "filePath": ""
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "text": "Toplam panel kalınlığı 25.6–26.4 mm",
+      "reqType": "Dimensional",
+      "acceptance": "25.6–26.4 mm",
+      "verification": "Ölçüm",
+      "source": "TS-FMEA-CP-001 §5",
+      "dataStatus": "Dokümandan (kaynaklı)",
+      "approval": "AI Proposed",
+      "notes": ""
+    },
+    {
+      "id": "REQ-002",
+      "text": "4X Ø6.0 +0.10/0 delik",
+      "reqType": "Dimensional",
+      "acceptance": "Ø6.00–6.10 mm",
+      "verification": "Tapa mastar / CMM",
+      "source": "DRW-001 / Ölçü Ø6.0",
+      "dataStatus": "Dokümandan (kaynaklı)",
+      "approval": "AI Proposed",
+      "notes": ""
+    },
+    {
+      "id": "REQ-003",
+      "text": "Bondline kalınlığı 0.20–0.40 mm",
+      "reqType": "Manufacturing",
+      "acceptance": "0.20–0.40 mm",
+      "verification": "VERİ YOK – doğrulanmalı",
+      "source": "DRW-001 Not / TS §6",
+      "dataStatus": "Dokümandan (kaynaklı)",
+      "approval": "AI Proposed",
+      "notes": ""
+    },
+    {
+      "id": "REQ-004",
+      "text": "Kür: 120 °C / 2.0 bar g / ≥120 dk",
+      "reqType": "Manufacturing",
+      "acceptance": "120 °C, 2.0 bar g, ≥120 dk",
+      "verification": "Kür kaydı",
+      "source": "TS-FMEA-CP-001 §7",
+      "dataStatus": "Dokümandan (kaynaklı)",
+      "approval": "AI Proposed",
+      "notes": ""
+    },
+    {
+      "id": "REQ-005",
+      "text": "Çalışma sıcaklığı -40 / +80 °C",
+      "reqType": "Environmental",
+      "acceptance": "VERİ YOK – doğrulanmalı",
+      "verification": "VERİ YOK – doğrulanmalı",
+      "source": "TS-FMEA-CP-001 §4",
+      "dataStatus": "VERİ YOK – doğrulanmalı",
+      "approval": "AI Proposed",
+      "notes": ""
+    }
+  ],
+  "structure": [
+    {
+      "id": "FN-001",
+      "level": "Product",
+      "parentId": "",
+      "element": "Sandviç panel",
+      "function": "Yükü taşır ve montaj arayüzü sağlar",
+      "functionType": "Taşıma",
+      "reqIds": [
+        "REQ-001",
+        "REQ-005"
+      ],
+      "source": "",
+      "notes": ""
+    },
+    {
+      "id": "FN-002",
+      "level": "Feature",
+      "parentId": "FN-001",
+      "element": "Montaj delikleri (4X)",
+      "function": "Cıvata geçişi ve konumlandırma sağlar",
+      "functionType": "Bağlantı",
+      "reqIds": [
+        "REQ-002"
+      ],
+      "source": "",
+      "notes": ""
+    },
+    {
+      "id": "FN-003",
+      "level": "Feature",
+      "parentId": "FN-001",
+      "element": "Insert bonding yüzeyi",
+      "function": "Insert yükünü panele aktarır",
+      "functionType": "Yük aktarma",
+      "reqIds": [
+        "REQ-003"
+      ],
+      "source": "",
+      "notes": ""
+    }
+  ],
+  "dfmea": [
+    {
+      "id": "DF-001",
+      "failureMode": "Delik çapı küçük – cıvata geçmiyor",
+      "effect": "Montaj yapılamaz",
+      "cause": "Tolerans zinciri tanımlı değil",
+      "prevention": "Tolerans analizi",
+      "detection": "İlk parça CMM",
+      "s": 7,
+      "o": 4,
+      "d": 4,
+      "specialChar": "",
+      "recommendedAction": "",
+      "owner": "",
+      "dueDate": "",
+      "actionStatus": "",
+      "actionId": "",
+      "actionTaken": "",
+      "newS": null,
+      "newO": null,
+      "newD": null,
+      "source": "REQ-002",
+      "confidence": "Medium",
+      "approval": "AI Proposed",
+      "dataStatus": "AI VARSAYIMI – mühendislik doğrulaması gerekli",
+      "notes": "",
+      "functionId": "FN-002",
+      "function": "Cıvata geçişi ve konumlandırma sağlar",
+      "reqIds": [
+        "REQ-002"
+      ],
+      "requirement": "REQ-002: 4X Ø6.0 +0.10/0 delik",
+      "localEffect": "",
+      "higherEffect": "",
+      "verification": ""
+    },
+    {
+      "id": "DF-002",
+      "failureMode": "Insert bağlantısı yük altında ayrılıyor",
+      "effect": "Bağlantı kaybı – fonksiyon kaybı",
+      "cause": "Bondline kabul kriteri ve test yöntemi tanımlı değil",
+      "prevention": "",
+      "detection": "VERİ YOK – doğrulanmalı",
+      "s": 9,
+      "o": 5,
+      "d": 7,
+      "specialChar": "",
+      "recommendedAction": "",
+      "owner": "",
+      "dueDate": "",
+      "actionStatus": "",
+      "actionId": "",
+      "actionTaken": "",
+      "newS": null,
+      "newO": null,
+      "newD": null,
+      "source": "REQ-003, TS §9 eksik",
+      "confidence": "Low",
+      "approval": "AI Proposed",
+      "dataStatus": "AI VARSAYIMI – mühendislik doğrulaması gerekli",
+      "notes": "",
+      "functionId": "FN-003",
+      "function": "Insert yükünü panele aktarır",
+      "reqIds": [
+        "REQ-003"
+      ],
+      "requirement": "REQ-003: Bondline kalınlığı 0.20–0.40 mm",
+      "localEffect": "",
+      "higherEffect": "",
+      "verification": ""
+    }
+  ],
+  "processSteps": [
+    {
+      "id": "OP-001",
+      "opNo": "10",
+      "name": "Lay-up",
+      "description": "[0/90]s yüz kaplaması serimi",
+      "machine": "",
+      "tool": "",
+      "specialProcess": false,
+      "productChars": "",
+      "processChars": "",
+      "source": "",
+      "notes": ""
+    },
+    {
+      "id": "OP-002",
+      "opNo": "20",
+      "name": "Cure",
+      "description": "Otoklav kürü 120 °C / 2.0 bar g",
+      "machine": "Otoklav-1",
+      "tool": "",
+      "specialProcess": true,
+      "productChars": "",
+      "processChars": "",
+      "source": "",
+      "notes": ""
+    },
+    {
+      "id": "OP-003",
+      "opNo": "30",
+      "name": "Machining",
+      "description": "4X Ø6 delik CNC delme",
+      "machine": "CNC-1",
+      "tool": "",
+      "specialProcess": false,
+      "productChars": "",
+      "processChars": "",
+      "source": "",
+      "notes": ""
+    },
+    {
+      "id": "OP-004",
+      "opNo": "40",
+      "name": "Bonding",
+      "description": "M6 insert bonding (EA-9394)",
+      "machine": "",
+      "tool": "",
+      "specialProcess": true,
+      "productChars": "",
+      "processChars": "",
+      "source": "",
+      "notes": ""
+    }
+  ],
+  "pfmea": [
+    {
+      "id": "PF-001",
+      "failureMode": "Hole undersize",
+      "effect": "Montaj yapılamaz",
+      "cause": "Takım aşınması; takım ömrü tanımlı değil",
+      "prevention": "Takım ömrü sayacı (AI RECOMMENDATION)",
+      "detection": "Go/no-go tapa mastar",
+      "s": 7,
+      "o": 4,
+      "d": 4,
+      "specialChar": "",
+      "recommendedAction": "",
+      "owner": "",
+      "dueDate": "",
+      "actionStatus": "",
+      "actionId": "",
+      "actionTaken": "",
+      "newS": null,
+      "newO": null,
+      "newD": null,
+      "source": "DF-001",
+      "confidence": "",
+      "approval": "AI Proposed",
+      "dataStatus": "",
+      "notes": "",
+      "stepId": "OP-003",
+      "opNo": "30",
+      "stepName": "Machining",
+      "processFunction": "Delik delme",
+      "requirement": "Ø6.00–6.10",
+      "dfIds": [
+        "DF-001"
+      ],
+      "errorProofing": "",
+      "measurement": "Tapa mastar",
+      "reactionPlan": "Parça karantina + NCR, takım değişimi"
+    },
+    {
+      "id": "PF-002",
+      "failureMode": "Incorrect adhesive thickness",
+      "effect": "Insert ayrılması",
+      "cause": "Fikstür yok; operatör kalınlığı gözle ayarlıyor",
+      "prevention": "",
+      "detection": "Görsel kontrol",
+      "s": 9,
+      "o": 6,
+      "d": 7,
+      "specialChar": "",
+      "recommendedAction": "",
+      "owner": "",
+      "dueDate": "",
+      "actionStatus": "",
+      "actionId": "",
+      "actionTaken": "",
+      "newS": null,
+      "newO": null,
+      "newD": null,
+      "source": "DF-002",
+      "confidence": "",
+      "approval": "AI Proposed",
+      "dataStatus": "",
+      "notes": "",
+      "stepId": "OP-004",
+      "opNo": "40",
+      "stepName": "Bonding",
+      "processFunction": "Insert yapıştırma",
+      "requirement": "Bondline 0.20–0.40 mm",
+      "dfIds": [
+        "DF-002"
+      ],
+      "errorProofing": "Fixture",
+      "measurement": "",
+      "reactionPlan": ""
+    }
+  ],
+  "kcs": [
+    {
+      "id": "KC-001",
+      "sourceId": "DF-002",
+      "characteristic": "REQ-003: Bondline kalınlığı 0.20–0.40 mm",
+      "kcClass": "KC-1 Critical",
+      "specification": "REQ-003: 0.20–0.40 mm",
+      "severity": 9,
+      "rationale": "Severity 9 ≥ KC eşiği 9",
+      "status": "AI Proposed",
+      "autoCreated": true,
+      "notes": ""
+    },
+    {
+      "id": "KC-002",
+      "sourceId": "PF-002",
+      "characteristic": "Bondline 0.20–0.40 mm",
+      "kcClass": "KC-3 Process KC",
+      "specification": "REQ-003: 0.20–0.40 mm",
+      "severity": 9,
+      "rationale": "Severity 9 ≥ KC eşiği 9",
+      "status": "AI Proposed",
+      "autoCreated": true,
+      "notes": ""
+    }
+  ],
+  "controlPlan": [],
+  "msa": [],
+  "capability": [],
+  "actions": [],
+  "issues": [
+    {
+      "id": "OI-001",
+      "description": "Bondline kabul kriteri ve test yöntemi şartnamede yok (TS §9).",
+      "priority": "Critical",
+      "source": "TS-FMEA-CP-001 §9",
+      "risk": "",
+      "relatedReq": "REQ-003",
+      "relatedFmea": "DF-002",
+      "recommendedAction": "",
+      "responsible": "",
+      "dueDate": "",
+      "status": "Open",
+      "answer": ""
+    },
+    {
+      "id": "OI-002",
+      "description": "Yüz kaplaması toleransı “0.50 ±0.08 (tek taraflı ±)” çelişkili.",
+      "priority": "Important",
+      "source": "TS-FMEA-CP-001 §5",
+      "risk": "",
+      "relatedReq": "",
+      "relatedFmea": "",
+      "recommendedAction": "",
+      "responsible": "",
+      "dueDate": "",
+      "status": "Open",
+      "answer": ""
+    }
+  ],
+  "lessons": [],
+  "history": [
+    {
+      "id": "CH-001",
+      "revision": "Rev A",
+      "date": "2026-10-19",
+      "author": "",
+      "added": "",
+      "modified": "",
+      "deleted": "",
+      "description": "İlk sürüm",
+      "approvedBy": ""
+    }
+  ],
+  "changeLog": []
+}

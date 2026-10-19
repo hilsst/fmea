@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { completenessScore, qualityChecks, traceability } from '../../shared/checks';
 import { rowLabel } from '../../shared/columns';
-import { actionPriority, riskLevel } from '../../shared/scoring';
+import { actionPriority, apOf, riskLevel } from '../../shared/scoring';
 import type { TabKey } from '../../shared/tabs';
 import type { ScoringEntry } from '../../shared/types';
 import { api, isDesktop } from '../api';
@@ -84,7 +84,7 @@ export function TraceabilityTab() {
                   const cps = project.controlPlan.filter((c) => kcs.some((k) => k.id === c.kcId) || pfs.some((p) => p.id === c.pfId));
                   return (
                     <div key={d.id} className="row">
-                      <div className={`node df ${riskLevel(d, project.settings).toLowerCase()}`}>{d.id}<small>{d.failureMode.slice(0, 50)} · AP {actionPriority(d.s, d.o, d.d) || '–'}</small></div>
+                      <div className={`node df ${riskLevel(d, project.settings, project.scoring.apTable).toLowerCase()}`}>{d.id}<small>{d.failureMode.slice(0, 50)} · AP {apOf(project, d.s, d.o, d.d) || '–'}</small></div>
                       <span className="arr">→</span>
                       <div className="node pf">{pfs.length ? pfs.map((p) => p.id).join(', ') : <span className="gap-t">PFMEA yok</span>}</div>
                       <span className="arr">→</span>
@@ -139,7 +139,7 @@ export function QualityTab({ go }: { go: (t: TabKey) => void }) {
 
   const top = [...project.dfmea, ...project.pfmea]
     .filter((r) => r.failureMode)
-    .map((r) => ({ r, risk: riskLevel(r, project.settings), ap: actionPriority(r.s, r.o, r.d) }))
+    .map((r) => ({ r, risk: riskLevel(r, project.settings, project.scoring.apTable), ap: apOf(project, r.s, r.o, r.d) }))
     .filter((x) => x.risk)
     .sort((a, b) => {
       const ord = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, '': 4 };
@@ -270,7 +270,7 @@ export function ScoringTab() {
                     {oi === 0 && <td rowSpan={5} className="band">{sb}</td>}
                     <td className="band">{ob}</td>
                     {D_COLS.map(([l, d]) => {
-                      const ap = actionPriority(S_REP[si], O_REP[oi], d);
+                      const ap = actionPriority(S_REP[si], O_REP[oi], d, project.scoring.apTable);
                       return <td key={l} className={`ap ap-${ap}`}>{ap}</td>;
                     })}
                   </tr>
