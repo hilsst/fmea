@@ -1,0 +1,39 @@
+From: "Ayse Yilmaz" <ayse@supplier.example>
+To: Kemal <kemal@oem.example>, qa@oem.example
+Cc: Team <team@oem.example>
+Subject: Bracket spec update
+Date: Mon, 12 Oct 2026 09:30:00 +0300
+Message-ID: <abc123@supplier.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="XYZ"
+
+--XYZ
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hello Kemal,
+
+The bracket flange thickness shall be 3.00 ± 0.15 mm per rev C.
+
+Regards,
+Ayse
+
+On Fri, Oct 9, 2026 at 10:00 AM Kemal <kemal@oem.example> wrote:
+> Please confirm the thickness must be 2.50 mm.
+> Thanks
+
+--XYZ
+Content-Type: text/plain; name="spec.txt"
+Content-Disposition: attachment; filename="spec.txt"
+Content-Transfer-Encoding: base64
+
+VGhlIGNvYXRpbmcgdGhpY2tuZXNzIHNoYWxsIGJlIDI1IMKxIDUgwrVtLgo=
+
+--XYZ
+Content-Type: application/octet-stream; name="notes.xyz"
+Content-Disposition: attachment; filename="notes.xyz"
+Content-Transfer-Encoding: base64
+
+aGVsbG8=
+
+--XYZ--

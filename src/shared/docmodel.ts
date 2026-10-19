@@ -105,7 +105,7 @@ export interface ValueSpec {
 }
 
 const NUM = String.raw`[-+]?\d+(?:[.,]\d+)?`;
-const UNIT = String.raw`(mm|µm|um|μm|cm|m|in|inch|°C|°F|°|deg|N·m|Nm|N|kN|MPa|GPa|psi|bar|kPa|Pa|kg|g|%|min|h|s|Ra|mbar|inHg)`;
+const UNIT = String.raw`(?:(N·m|Nm|kN|MPa|GPa|kPa|mbar|inHg|psi|bar|Pa|mm|µm|um|μm|cm|inch|in|°C|°F|deg|°|kg|min|g|%|h|s|Ra|N|m)(?![A-Za-z]))`;
 const num = (s: string) => Number(s.replace(',', '.'));
 
 /** Metindeki ilk ölçü/tolerans ifadesini çözer. Bulamazsa null; tahmin yapmaz. */
