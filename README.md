@@ -6,7 +6,7 @@ DFMEA → PFMEA → Kritik Karakteristik (KC) → Kontrol Planı → MSA → Yet
 
 1. GitHub’da **Actions → Build** sayfasından son başarılı çalışmayı açın ve **FMEA-Studio-Windows** dosyasını indirin.
    `v1.0.0` gibi bir etiket (tag) atıldığında aynı dosyalar **Releases** sayfasına da eklenir.
-2. `FMEA-Studio-…-nsis.exe` kurulum sihirbazıdır, `…-portable.exe` kurulum gerektirmeden çalışır.
+2. `FMEA-Studio-Kurulum-….exe` kurulum sihirbazıdır, `FMEA-Studio-Tasinabilir-….exe` kurulum gerektirmeden çalışır.
 3. Uygulama kod imzalı olmadığı için Windows SmartScreen “Bilinmeyen yayımcı” uyarısı gösterebilir: **Ek bilgi → Yine de çalıştır**.
 
 ## Ekranlar (çalışma sırasına göre)

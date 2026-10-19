@@ -11,9 +11,9 @@
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "dist:win": "npm run build && electron-builder --win --x64",
-    "dist:linux": "npm run build && electron-builder --linux AppImage",
-    "dist:mac": "npm run build && electron-builder --mac"
+    "dist:win": "npm run build && electron-builder --win --x64 --publish never",
+    "dist:linux": "npm run build && electron-builder --linux AppImage --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never"
   },
   "repository": {
     "type": "git",
@@ -78,8 +78,7 @@
             "x64"
           ]
         }
-      ],
-      "artifactName": "FMEA-Studio-${version}-${os}-${arch}-${target}.${ext}"
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -87,7 +86,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "FMEA Studio",
-      "language": "1055"
+      "language": "1055",
+      "artifactName": "FMEA-Studio-Kurulum-${version}.${ext}"
     },
     "mac": {
       "target": [
@@ -105,6 +105,9 @@
           "StartupWMClass": "FMEA Studio"
         }
       }
+    },
+    "portable": {
+      "artifactName": "FMEA-Studio-Tasinabilir-${version}.${ext}"
     }
   }
 }
