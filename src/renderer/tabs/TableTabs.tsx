@@ -1,11 +1,15 @@
 import { useState } from 'react';
-import { summarizeChanges } from '../../shared/engine';
+import { findRequirementCandidates, locText, UNSUPPORTED_MSG } from '../../shared/docmodel';
+import { suggestMsaStudy, summarizeChanges } from '../../shared/engine';
+import { COMPOSITE_TEMPLATE, isComposite } from '../../shared/kb';
+import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
 import { COMPOSITE_CHECKLIST, blankRow, nextId } from '../../shared/model';
-import type { AnyRow, Project, TableKey } from '../../shared/types';
+import type { AnyRow, KcRow, Project, TableKey } from '../../shared/types';
 import { api, isDesktop } from '../api';
 import { PasteTextDialog, useAi } from '../components/AiDialogs';
 import { Grid } from '../components/Grid';
 import { Modal } from '../components/Modal';
+import { CapabilityPanel, KcFactorPanel } from '../screens/Screens2';
 import { useStore } from '../store';
 
 type AddEdit = { kind: 'add'; table: TableKey; row: AnyRow };
@@ -27,7 +31,7 @@ function batch(project: Project) {
 }
 
 export function DocumentsTab() {
-  const { project, edit, toast } = useStore();
+  const { project, edit, mutate, toast } = useStore();
   const [sel, setSel] = useState<string[]>([]);
   const ai = useAi();
   const doc = project.documents.find((d) => d.id === sel[0]) ?? null;
@@ -43,6 +47,39 @@ export function DocumentsTab() {
     }
     toast('Dosya bağlandı');
   };
+  const [busy, setBusy] = useState(false);
+  const index = doc ? project.docIndex[doc.id] : undefined;
+  const analyze = async () => {
+    if (!doc?.filePath) return;
+    setBusy(true);
+    const r = await api.extractDoc(doc.filePath);
+    setBusy(false);
+    if (!r.ok) return toast(`Doküman ayrıştırılamadı: ${r.error}`, 'err');
+    const x = r.doc;
+    const status = x.status === 'unsupported' ? UNSUPPORTED_MSG : `${x.status} · ${x.parser} · ${x.blocks.length} blok${x.messages.length ? ' · ' + x.messages.map((m) => m.text).join(' | ') : ''}`;
+    mutate((d) => {
+      d.docIndex[doc.id] = x;
+      const row = d.documents.find((r) => r.id === doc.id);
+      if (row) row.parseStatus = status;
+    }, { kind: 'Modified', table: 'documents', id: doc.id, field: 'parseStatus', to: status });
+    toast(x.status === 'unsupported' ? UNSUPPORTED_MSG : `Analiz tamamlandı: ${x.blocks.length} metin bloğu`, x.status === 'ok' ? 'ok' : 'warn');
+  };
+  const addLocal = async () => {
+    if (!doc || !index) return;
+    const have = new Set(project.requirements.map((r) => r.text.trim().toLowerCase()));
+    const cands = findRequirementCandidates(index).filter((c) => !have.has(c.text.trim().toLowerCase()));
+    if (!cands.length) return toast('Yeni gereksinim adayı bulunamadı.', 'warn');
+    const b = batch(project);
+    for (const c of cands) {
+      const evId = b.add('evidence', { docId: doc.id, page: c.loc.page ? String(c.loc.page) : '', section: c.loc.section ?? '', sheet: c.loc.sheet ?? '', cell: c.loc.cell ?? '', balloon: c.loc.balloon ?? '', quote: c.evidence, evidenceType: 'Doküman metni', basis: 'SOURCE DATA', confidence: c.confidence, verification: 'VERIFIED', verifiedLocation: locText(c.loc), origin: 'extraction' } as Partial<AnyRow>);
+      b.add('requirements', {
+        text: c.text, reqType: c.reqType, characteristic: c.characteristic, nominal: c.nominal, lsl: c.lsl, usl: c.usl, unit: c.unit, tolerance: c.tolerance,
+        source: `${doc.docNumber || doc.name} ${locText(c.loc)}`.trim(), sourceDocId: doc.id, sourcePage: c.loc.page ? String(c.loc.page) : '', sourceSection: c.loc.section ?? '', sourceCell: c.loc.cell ?? '', balloon: c.loc.balloon ?? '',
+        evidenceText: c.evidence, confidence: c.confidence, dataStatus: 'DOĞRULAMA GEREKLİ', origin: 'extraction', evidenceIds: [evId],
+      } as Partial<AnyRow>);
+    }
+    await edit(b.edits, `${cands.length} yerel gereksinim adayı`);
+  };
   return (
     <>
       <Grid
@@ -56,6 +93,12 @@ export function DocumentsTab() {
             </button>
             <button className="btn" disabled={!doc?.filePath} onClick={() => doc && api.openPath(doc.filePath)}>
               Dosyayı aç
+            </button>
+            <button className="btn" disabled={!doc?.filePath || busy} onClick={analyze} title="Dosyayı bu bilgisayarda ayrıştırır (internet gerekmez)">
+              {busy ? 'Analiz ediliyor…' : '⚙ Analiz et'}
+            </button>
+            <button className="btn" disabled={!index} onClick={addLocal} title="Yerel ayrıştırıcının bulduğu gereksinim cümlelerini ekler (AI kullanılmaz)">
+              Yerel adayları ekle
             </button>
             <button className="btn ai" disabled={sel.length !== 1} onClick={() => ai.extractRequirements(doc)} title="Seçili dokümandan Requirements Matrix çıkarır">
               ✦ AI: Gereksinim çıkar
@@ -203,16 +246,36 @@ export function ProcessTab() {
     );
     await edit(b.edits, 'Örnek proses akışı');
   };
+  const addTemplate = async () => {
+    const b = batch(project);
+    const have = new Set(project.processSteps.map((s) => s.name.toLowerCase()));
+    for (const t of COMPOSITE_TEMPLATE) {
+      if (have.has(t.name.toLowerCase())) continue;
+      const stepId = b.add('processSteps', { opNo: t.opNo, name: t.name, description: t.description, specialProcess: t.specialProcess, source: 'Kompozit proses şablonu (§69) – ENGINEERING SUGGESTION – VERIFY', origin: 'template' } as Partial<AnyRow>);
+      for (const name of t.params)
+        b.add('processParams', { stepId, parameter: name, source: 'Kompozit şablon – limit VERİ YOK', notes: 'VERİ YOK – doğrulanmalı (limitleri proses spesifikasyonundan girin)', origin: 'template' } as Partial<AnyRow>);
+    }
+    if (!b.edits.length) return;
+    await edit(b.edits, 'Kompozit proses şablonu');
+  };
+  const composite = isComposite(project.settings.productType);
   return (
     <div className="split">
       <Grid
         table="processSteps"
         toolbar={
-          project.processSteps.length === 0 && (
-            <button className="btn" onClick={addStandard} title="Spesifikasyon §8 örnek kompozit akışı; gerçek akışla değiştirin">
-              Örnek kompozit akışı ekle
-            </button>
-          )
+          <>
+            {project.processSteps.length === 0 && !composite && (
+              <button className="btn" onClick={addStandard} title="Spesifikasyon §8 örnek kompozit akışı; gerçek akışla değiştirin">
+                Örnek kompozit akışı ekle
+              </button>
+            )}
+            {composite && (
+              <button className="btn" onClick={addTemplate} title="Ürün tipi kompozit: 17 adımlık şablon ve izlenecek parametre adları (limitler VERİ YOK). Mevcut adımlar silinmez.">
+                Kompozit şablonu uygula
+              </button>
+            )}
+          </>
         }
         emptyHint="Gerçek üretim akışını yüklenen dokümanlardan çıkarın. Örnek akış yalnızca başlangıç içindir."
       />
@@ -406,10 +469,16 @@ function CompositeChecklist({ onClose }: { onClose: () => void }) {
 export function KcTab() {
   const { project, edit } = useStore();
   const [sel, setSel] = useState<string[]>([]);
-  const decide = (status: 'Approved' | 'Rejected' | 'Engineer Reviewed') =>
-    edit(sel.map((id) => ({ kind: 'set' as const, table: 'kcs' as const, id, field: 'status', value: status })), `KC kararı: ${status}`);
+  const { toast } = useStore();
+  const decide = (status: 'Approved' | 'Rejected' | 'Engineer Reviewed') => {
+    // §72: Critical / Safety / Regulatory kategorili KC'ler toplu onaylanamaz; tek tek değerlendirilir.
+    const manual = sel.filter((id) => MANUAL_ONLY_CATEGORIES.includes((project.kcs.find((k) => k.id === id) as KcRow | undefined)?.category ?? ''));
+    if (status === 'Approved' && sel.length > 1 && manual.length) return toast(`${manual.join(', ')} kritik/emniyet/regülasyon kategorisinde; toplu onaylanamaz, tek tek onaylayın.`, 'warn');
+    return edit(sel.map((id) => ({ kind: 'set' as const, table: 'kcs' as const, id, field: 'status', value: status })), `KC kararı: ${status}`);
+  };
   const pending = project.kcs.filter((k) => k.status === 'AI Proposed').length;
   return (
+    <div className="split">
     <Grid
       table="kcs"
       selected={sel}
@@ -424,6 +493,8 @@ export function KcTab() {
       }
       emptyHint="Severity eşiği veya özel karakteristik nedeniyle oluşan “AI Recommended KC” adayları burada görünür. Elle de ekleyebilirsiniz."
     />
+    <KcFactorPanel id={sel[0]} />
+    </div>
   );
 }
 
@@ -474,7 +545,7 @@ export function MsaTab() {
   const fromCp = async () => {
     const b = batch(project);
     for (const c of project.controlPlan.filter((c) => c.method && !project.msa.some((m) => m.cpId === c.id)))
-      b.add('msa', { cpId: c.id, kcId: c.kcId, characteristic: c.productChar || c.processChar, gauge: c.gauge || c.method, study: 'Gage R&R', status: 'Planned' } as Partial<AnyRow>);
+      b.add('msa', { cpId: c.id, kcId: c.kcId, characteristic: c.productChar || c.processChar, gauge: c.gauge || c.method, ...suggestMsaStudy(c.method || c.gauge), status: 'Planned', notes: 'Çalışma tipi ölçüm yöntemine göre önerildi (AI SUGGESTION); mühendis doğrulamalı.' } as Partial<AnyRow>);
     if (!b.edits.length) return toast('Yeni MSA ihtiyacı bulunamadı.', 'warn');
     await edit(b.edits, 'Kontrol planından MSA');
   };
@@ -489,12 +560,18 @@ export function CapabilityTab() {
     if (!b.edits.length) return toast('Tüm KC’lerin capability kaydı var.', 'warn');
     await edit(b.edits, 'KC’lerden capability');
   };
+  const [sel, setSel] = useState<string[]>([]);
   return (
-    <Grid
-      table="capability"
-      toolbar={<button className="btn" onClick={fromKc}>KC’lerden oluştur</button>}
-      emptyHint="Veri yoksa: “Capability calculation cannot be performed – production data required.”"
-    />
+    <div className="split">
+      <Grid
+        table="capability"
+        selected={sel}
+        onSelect={setSel}
+        toolbar={<button className="btn" onClick={fromKc}>KC’lerden oluştur</button>}
+        emptyHint="Veri yoksa: “Capability calculation cannot be performed – production data required.”"
+      />
+      <CapabilityPanel id={sel[0]} />
+    </div>
   );
 }
 

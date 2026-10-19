@@ -68,6 +68,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     undoStack.current.push(projectRef.current);
     if (undoStack.current.length > 100) undoStack.current.shift();
     redoStack.current = [];
+    // Ardışık edit/mutate çağrıları aynı turda en güncel projeyi görsün.
+    projectRef.current = next;
     setProject(next);
     setDirty(true);
   }, []);
@@ -108,6 +110,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     redoStack.current = [];
     const rep = {} as MigrationReport;
     const n = normalizeProject(p, rep);
+    projectRef.current = n;
     setProject(n);
     setPath(path);
     setDirty(!markClean || rep.from < rep.to);
