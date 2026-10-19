@@ -1,0 +1,585 @@
+import { useState } from 'react';
+import { summarizeChanges } from '../../shared/engine';
+import { COMPOSITE_CHECKLIST, blankRow, nextId } from '../../shared/model';
+import type { AnyRow, Project, TableKey } from '../../shared/types';
+import { api, isDesktop } from '../api';
+import { PasteTextDialog, useAi } from '../components/AiDialogs';
+import { Grid } from '../components/Grid';
+import { Modal } from '../components/Modal';
+import { useStore } from '../store';
+
+type AddEdit = { kind: 'add'; table: TableKey; row: AnyRow };
+
+/** Birden çok satırı ardışık ID'lerle eklemek için yardımcı. */
+function batch(project: Project) {
+  let p = project;
+  const edits: AddEdit[] = [];
+  return {
+    add(table: TableKey, data: Partial<AnyRow>) {
+      const id = nextId(p, table);
+      const row = { ...blankRow(table, id), ...data, id } as AnyRow;
+      p = { ...p, [table]: [...(p[table] as AnyRow[]), row] };
+      edits.push({ kind: 'add', table, row });
+      return id;
+    },
+    edits,
+  };
+}
+
+export function DocumentsTab() {
+  const { project, edit, toast } = useStore();
+  const [sel, setSel] = useState<string[]>([]);
+  const ai = useAi();
+  const doc = project.documents.find((d) => d.id === sel[0]) ?? null;
+  const attach = async () => {
+    const f = await api.pickFile();
+    if (!f) return;
+    if (doc) {
+      await edit([{ kind: 'set', table: 'documents', id: doc.id, field: 'filePath', value: f.path }, ...(doc.name ? [] : [{ kind: 'set' as const, table: 'documents' as const, id: doc.id, field: 'name', value: f.name }])]);
+    } else {
+      const b = batch(project);
+      b.add('documents', { name: f.name, filePath: f.path, date: new Date().toISOString().slice(0, 10) } as Partial<AnyRow>);
+      await edit(b.edits, 'Doküman ekle');
+    }
+    toast('Dosya bağlandı');
+  };
+  return (
+    <>
+      <Grid
+        table="documents"
+        selected={sel}
+        onSelect={setSel}
+        toolbar={
+          <>
+            <button className="btn" onClick={attach} disabled={!isDesktop} title="Seçili dokümana dosya bağlar; seçim yoksa yeni doküman ekler">
+              📎 Dosya bağla
+            </button>
+            <button className="btn" disabled={!doc?.filePath} onClick={() => doc && api.openPath(doc.filePath)}>
+              Dosyayı aç
+            </button>
+            <button className="btn ai" disabled={sel.length !== 1} onClick={() => ai.extractRequirements(doc)} title="Seçili dokümandan Requirements Matrix çıkarır">
+              ✦ AI: Gereksinim çıkar
+            </button>
+          </>
+        }
+        emptyHint="Teknik resim, şartname, müşteri gereksinimi, e-posta, toplantı notu, önceki FMEA, NCR/8D kayıtlarını buraya kaydedin."
+      />
+      {ai.dialogs}
+    </>
+  );
+}
+
+export function RequirementsTab() {
+  const [paste, setPaste] = useState(false);
+  const ai = useAi();
+  return (
+    <>
+      <Grid
+        table="requirements"
+        defaults={{ approval: 'AI Proposed' } as Partial<AnyRow>}
+        toolbar={
+          <button className="btn ai" onClick={() => setPaste(true)}>
+            ✦ AI: Metinden çıkar
+          </button>
+        }
+        emptyHint="Gereksinimleri elle girin, Dokümanlar ekranından AI ile çıkarın veya metin yapıştırın."
+      />
+      {paste && (
+        <PasteTextDialog
+          onClose={() => setPaste(false)}
+          onSubmit={(t) => {
+            setPaste(false);
+            ai.extractRequirements(null, t);
+          }}
+        />
+      )}
+      {ai.dialogs}
+    </>
+  );
+}
+
+const NEXT_LEVEL: Record<string, string> = { Product: 'Assembly', Assembly: 'Part', Part: 'Feature', Feature: 'Feature', '': 'Product' };
+
+export function StructureTab() {
+  const { project, edit } = useStore();
+  const [sel, setSel] = useState<string[]>([]);
+  const addChild = async () => {
+    const parent = project.structure.find((s) => s.id === sel[0]);
+    const b = batch(project);
+    b.add('structure', { parentId: parent?.id ?? '', level: NEXT_LEVEL[parent?.level ?? ''] } as Partial<AnyRow>);
+    await edit(b.edits, 'Alt eleman');
+  };
+  return (
+    <div className="split">
+      <Grid
+        table="structure"
+        selected={sel}
+        onSelect={setSel}
+        toolbar={
+          <button className="btn" onClick={addChild} disabled={sel.length > 1}>
+            ↳ Alt eleman ekle
+          </button>
+        }
+        emptyHint="Product → Assembly → Part → Feature hiyerarşisini kurun ve her elemanın fonksiyonunu yazın."
+      />
+      <StructureTree project={project} />
+    </div>
+  );
+}
+
+function StructureTree({ project }: { project: Project }) {
+  const roots = project.structure.filter((s) => !s.parentId || !project.structure.some((x) => x.id === s.parentId));
+  const render = (id: string, depth: number): JSX.Element => {
+    const n = project.structure.find((s) => s.id === id)!;
+    const kids = project.structure.filter((s) => s.parentId === id);
+    const df = project.dfmea.filter((d) => d.functionId === id).length;
+    return (
+      <li key={id}>
+        <div className="tree-node">
+          <span className={`lvl lvl-${n.level || 'x'}`}>{n.level || '?'}</span>
+          <b>{n.element || n.id}</b>
+          {n.function && <span className="muted"> → {n.function}</span>}
+          {df > 0 && <span className="badge b-blue">{df} DFMEA</span>}
+        </div>
+        {kids.length > 0 && depth < 12 && <ul>{kids.map((k) => render(k.id, depth + 1))}</ul>}
+      </li>
+    );
+  };
+  return (
+    <aside className="tree card">
+      <h3>Yapı ağacı</h3>
+      {roots.length ? <ul>{roots.map((r) => render(r.id, 0))}</ul> : <p className="muted">Ağaç burada görünür.</p>}
+    </aside>
+  );
+}
+
+export function DfmeaTab() {
+  const { project, edit, toast } = useStore();
+  const [sel, setSel] = useState<string[]>([]);
+  const ai = useAi();
+  const fromFunctions = async () => {
+    const b = batch(project);
+    for (const s of project.structure.filter((s) => s.function && !project.dfmea.some((d) => d.functionId === s.id)))
+      b.add('dfmea', { functionId: s.id, reqIds: [...s.reqIds], approval: 'AI Proposed' } as Partial<AnyRow>);
+    if (!b.edits.length) return toast('Tüm fonksiyonların DFMEA satırı var.', 'warn');
+    await edit(b.edits, 'Fonksiyonlardan DFMEA satırı');
+  };
+  return (
+    <>
+      <Grid
+        table="dfmea"
+        selected={sel}
+        onSelect={setSel}
+        toolbar={
+          <>
+            <button className="btn" onClick={fromFunctions} title="DFMEA satırı olmayan her fonksiyon için bir satır açar">
+              Fonksiyonlardan oluştur
+            </button>
+            <button className="btn ai" onClick={() => ai.suggestDfmea([])} title="Tüm fonksiyonlar için hata modu, etki, neden ve kontrol önerir">
+              ✦ AI: DFMEA öner
+            </button>
+          </>
+        }
+        emptyHint="Önce Yapı & Fonksiyon ekranında fonksiyonları tanımlayın, sonra “Fonksiyonlardan oluştur” veya “AI: DFMEA öner”."
+      />
+      {ai.dialogs}
+    </>
+  );
+}
+
+export function ProcessTab() {
+  const { project, edit } = useStore();
+  const addStandard = async () => {
+    const b = batch(project);
+    const std = ['Incoming Material', 'Storage', 'Material Preparation', 'Cutting', 'Kitting', 'Lay-up', 'Debulk', 'Vacuum Bagging', 'Cure', 'Demolding', 'Machining', 'Bonding', 'Surface Treatment', 'Painting', 'Inspection', 'Assembly', 'Final Inspection', 'Packaging'];
+    const special = new Set(['Cure', 'Bonding', 'Painting', 'Surface Treatment']);
+    std.forEach((name, i) =>
+      b.add('processSteps', {
+        opNo: String((i + 1) * 10),
+        name,
+        specialProcess: special.has(name),
+        source: 'AI VARSAYIMI – mühendislik doğrulaması gerekli (örnek kompozit akış)',
+      } as Partial<AnyRow>),
+    );
+    await edit(b.edits, 'Örnek proses akışı');
+  };
+  return (
+    <div className="split">
+      <Grid
+        table="processSteps"
+        toolbar={
+          project.processSteps.length === 0 && (
+            <button className="btn" onClick={addStandard} title="Spesifikasyon §8 örnek kompozit akışı; gerçek akışla değiştirin">
+              Örnek kompozit akışı ekle
+            </button>
+          )
+        }
+        emptyHint="Gerçek üretim akışını yüklenen dokümanlardan çıkarın. Örnek akış yalnızca başlangıç içindir."
+      />
+      <aside className="tree card flow">
+        <h3>Proses akış şeması</h3>
+        {project.processSteps.length === 0 && <p className="muted">Adımlar burada sırayla görünür.</p>}
+        {project.processSteps.map((s, i) => (
+          <div key={s.id}>
+            <div className={`flow-step ${s.specialProcess ? 'special' : ''}`}>
+              <span className="op">{s.opNo || s.id}</span> {s.name}
+              {s.specialProcess && <span className="badge b-purple">Özel proses</span>}
+              <span className="muted"> {project.pfmea.filter((p) => p.stepId === s.id).length} PFMEA</span>
+            </div>
+            {i < project.processSteps.length - 1 && <div className="flow-arrow">↓</div>}
+          </div>
+        ))}
+      </aside>
+    </div>
+  );
+}
+
+export function PfmeaTab() {
+  const [sel, setSel] = useState<string[]>([]);
+  const [importDf, setImportDf] = useState(false);
+  const [checklist, setChecklist] = useState(false);
+  const ai = useAi();
+  return (
+    <>
+      <Grid
+        table="pfmea"
+        selected={sel}
+        onSelect={setSel}
+        toolbar={
+          <>
+            <button className="btn" onClick={() => setImportDf(true)} title="DFMEA hata modlarını proses adımlarına aktarır (spesifikasyon §8, §25)">
+              DFMEA’dan aktar
+            </button>
+            <button className="btn" onClick={() => setChecklist(true)} title="Spesifikasyon §9 kompozit hata modu kontrol listesi">
+              Kompozit kontrol listesi
+            </button>
+            <button className="btn ai" onClick={() => ai.suggestPfmea([])}>
+              ✦ AI: PFMEA öner
+            </button>
+          </>
+        }
+        emptyHint="PFMEA DFMEA’dan bağımsız oluşturulmaz: “DFMEA’dan aktar” ile başlayın."
+      />
+      {importDf && <ImportFromDfmea onClose={() => setImportDf(false)} />}
+      {checklist && <CompositeChecklist onClose={() => setChecklist(false)} />}
+      {ai.dialogs}
+    </>
+  );
+}
+
+function ImportFromDfmea({ onClose }: { onClose: () => void }) {
+  const { project, edit } = useStore();
+  const candidates = project.dfmea.filter((d) => d.failureMode);
+  const [picked, setPicked] = useState<Record<string, string>>(() =>
+    Object.fromEntries(candidates.filter((d) => !project.pfmea.some((p) => p.dfIds.includes(d.id))).map((d) => [d.id, ''])),
+  );
+  const apply = async () => {
+    const b = batch(project);
+    for (const [dfId, stepId] of Object.entries(picked)) {
+      const d = project.dfmea.find((x) => x.id === dfId)!;
+      b.add('pfmea', {
+        stepId,
+        dfIds: [dfId],
+        requirement: d.requirement,
+        failureMode: d.cause,
+        effect: d.effect,
+        cause: '',
+        source: dfId,
+        approval: 'AI Proposed',
+        notes: `DFMEA neden: ${d.cause}`,
+      } as Partial<AnyRow>);
+    }
+    if (await edit(b.edits, 'DFMEA’dan PFMEA’ya aktarım')) onClose();
+  };
+  return (
+    <Modal
+      title="DFMEA’dan PFMEA’ya aktar"
+      sub="Her DFMEA satırını üretimde kontrol edildiği proses adımına bağlayın. Severity DFMEA’dan otomatik alınır."
+      onClose={onClose}
+      wide
+      foot={
+        <>
+          <button className="btn" onClick={onClose}>Vazgeç</button>
+          <button className="btn primary" disabled={!Object.keys(picked).length} onClick={apply}>
+            {Object.keys(picked).length} satırı aktar
+          </button>
+        </>
+      }
+    >
+      {candidates.length === 0 && <p className="muted">Aktarılacak DFMEA satırı yok.</p>}
+      <table className="effects">
+        <tbody>
+          {candidates.map((d) => {
+            const on = d.id in picked;
+            const linked = project.pfmea.filter((p) => p.dfIds.includes(d.id)).map((p) => p.id);
+            return (
+              <tr key={d.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) => {
+                      const n = { ...picked };
+                      if (e.target.checked) n[d.id] = '';
+                      else delete n[d.id];
+                      setPicked(n);
+                    }}
+                  />
+                </td>
+                <td className="rid">{d.id}</td>
+                <td>
+                  <b>{d.failureMode}</b>
+                  <div className="why">Neden: {d.cause || '—'} · S {d.s ?? '–'} {linked.length ? `· Zaten bağlı: ${linked.join(', ')}` : ''}</div>
+                </td>
+                <td>
+                  <select className="cell-select" disabled={!on} value={picked[d.id] ?? ''} onChange={(e) => setPicked({ ...picked, [d.id]: e.target.value })}>
+                    <option value="">Proses adımı seç…</option>
+                    {project.processSteps.map((s) => (
+                      <option key={s.id} value={s.id}>{s.opNo} {s.name}</option>
+                    ))}
+                  </select>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </Modal>
+  );
+}
+
+function CompositeChecklist({ onClose }: { onClose: () => void }) {
+  const { project, edit } = useStore();
+  const [stepId, setStepId] = useState(project.processSteps[0]?.id ?? '');
+  const [cat, setCat] = useState(Object.keys(COMPOSITE_CHECKLIST)[0]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const existing = new Set(project.pfmea.filter((p) => p.stepId === stepId).map((p) => p.failureMode.toLowerCase()));
+  const apply = async () => {
+    const b = batch(project);
+    for (const fm of picked)
+      b.add('pfmea', { stepId, failureMode: fm, source: 'Spesifikasyon §9 kompozit kontrol listesi', dataStatus: 'AI RECOMMENDATION', approval: 'AI Proposed' } as Partial<AnyRow>);
+    if (await edit(b.edits, 'Kompozit kontrol listesi')) onClose();
+  };
+  return (
+    <Modal
+      title="Kompozit PFMEA kontrol listesi"
+      sub="Seçilen hata modları, seçili proses adımına PFMEA satırı olarak eklenir. Etki, neden ve kontrolleri doldurmanız gerekir."
+      onClose={onClose}
+      foot={
+        <>
+          <button className="btn" onClick={onClose}>Vazgeç</button>
+          <button className="btn primary" disabled={!picked.length || !stepId} onClick={apply}>{picked.length} hata modu ekle</button>
+        </>
+      }
+    >
+      <div className="form">
+        <label>
+          <span>Proses adımı</span>
+          <select className="cell-select" value={stepId} onChange={(e) => setStepId(e.target.value)}>
+            <option value="">—</option>
+            {project.processSteps.map((s) => (
+              <option key={s.id} value={s.id}>{s.opNo} {s.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Kategori</span>
+          <select className="cell-select" value={cat} onChange={(e) => setCat(e.target.value)}>
+            {Object.keys(COMPOSITE_CHECKLIST).map((k) => (
+              <option key={k}>{k}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="checklist">
+        {COMPOSITE_CHECKLIST[cat].map((fm) => (
+          <label key={fm} className={existing.has(fm) ? 'done' : ''}>
+            <input type="checkbox" checked={picked.includes(fm)} disabled={existing.has(fm)} onChange={(e) => setPicked(e.target.checked ? [...picked, fm] : picked.filter((x) => x !== fm))} />
+            {fm} {existing.has(fm) && <span className="muted">(mevcut)</span>}
+          </label>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+export function KcTab() {
+  const { project, edit } = useStore();
+  const [sel, setSel] = useState<string[]>([]);
+  const decide = (status: 'Approved' | 'Rejected' | 'Engineer Reviewed') =>
+    edit(sel.map((id) => ({ kind: 'set' as const, table: 'kcs' as const, id, field: 'status', value: status })), `KC kararı: ${status}`);
+  const pending = project.kcs.filter((k) => k.status === 'AI Proposed').length;
+  return (
+    <Grid
+      table="kcs"
+      selected={sel}
+      onSelect={setSel}
+      toolbar={
+        <>
+          <button className="btn ok" disabled={!sel.length} onClick={() => decide('Approved')}>✓ Onayla</button>
+          <button className="btn" disabled={!sel.length} onClick={() => decide('Engineer Reviewed')}>İncelendi</button>
+          <button className="btn danger" disabled={!sel.length} onClick={() => decide('Rejected')}>✕ Reddet</button>
+          {pending > 0 && <span className="badge b-amber">{pending} KC mühendis kararı bekliyor</span>}
+        </>
+      }
+      emptyHint="Severity eşiği veya özel karakteristik nedeniyle oluşan “AI Recommended KC” adayları burada görünür. Elle de ekleyebilirsiniz."
+    />
+  );
+}
+
+export function ControlPlanTab() {
+  const { project, edit, toast } = useStore();
+  const fromPfmea = async () => {
+    const b = batch(project);
+    for (const p of project.pfmea.filter((p) => p.failureMode && !project.controlPlan.some((c) => c.pfId === p.id))) {
+      const kc = project.kcs.find((k) => k.sourceId === p.id && k.status === 'Approved');
+      b.add('controlPlan', {
+        pfId: p.id,
+        stepId: p.stepId,
+        kcId: kc?.id ?? '',
+        processChar: p.requirement || p.processFunction,
+        controlMethod: p.prevention,
+        method: p.measurement || p.detection || 'VERİ YOK – doğrulanmalı',
+        reactionPlan: p.reactionPlan || 'Uygunsuz ürün karantina + NCR (AI RECOMMENDATION)',
+        sampleSize: 'VERİ YOK – doğrulanmalı',
+        frequency: 'VERİ YOK – doğrulanmalı',
+      } as Partial<AnyRow>);
+    }
+    if (!b.edits.length) return toast('Tüm PFMEA satırlarının kontrol planı karşılığı var.', 'warn');
+    await edit(b.edits, 'PFMEA’dan kontrol planı');
+  };
+  const fromKc = async () => {
+    const b = batch(project);
+    for (const k of project.kcs.filter((k) => k.status === 'Approved' && !project.controlPlan.some((c) => c.kcId === k.id)))
+      b.add('controlPlan', { kcId: k.id, productChar: k.characteristic, specification: k.specification, sampleSize: 'VERİ YOK – doğrulanmalı', frequency: 'VERİ YOK – doğrulanmalı' } as Partial<AnyRow>);
+    if (!b.edits.length) return toast('Onaylı KC’lerin hepsi kontrol planında.', 'warn');
+    await edit(b.edits, 'KC’lerden kontrol planı');
+  };
+  return (
+    <Grid
+      table="controlPlan"
+      toolbar={
+        <>
+          <button className="btn" onClick={fromPfmea}>PFMEA’dan oluştur</button>
+          <button className="btn" onClick={fromKc}>Onaylı KC’lerden oluştur</button>
+        </>
+      }
+      emptyHint="KC onaylandığında satırlar otomatik önerilir. “PFMEA’dan oluştur” ile tüm proses kontrollerini aktarabilirsiniz."
+    />
+  );
+}
+
+export function MsaTab() {
+  const { project, edit, toast } = useStore();
+  const fromCp = async () => {
+    const b = batch(project);
+    for (const c of project.controlPlan.filter((c) => c.method && !project.msa.some((m) => m.cpId === c.id)))
+      b.add('msa', { cpId: c.id, kcId: c.kcId, characteristic: c.productChar || c.processChar, gauge: c.gauge || c.method, study: 'Gage R&R', status: 'Planned' } as Partial<AnyRow>);
+    if (!b.edits.length) return toast('Yeni MSA ihtiyacı bulunamadı.', 'warn');
+    await edit(b.edits, 'Kontrol planından MSA');
+  };
+  return <Grid table="msa" toolbar={<button className="btn" onClick={fromCp}>Kontrol planından oluştur</button>} emptyHint="Boyutsal, tork, kalınlık, sıcaklık, basınç, ağırlık, bondline ölçümleri için MSA planlayın." />;
+}
+
+export function CapabilityTab() {
+  const { project, edit, toast } = useStore();
+  const fromKc = async () => {
+    const b = batch(project);
+    for (const k of project.kcs.filter((k) => k.status !== 'Rejected' && !project.capability.some((c) => c.kcId === k.id))) b.add('capability', { kcId: k.id, characteristic: k.characteristic } as Partial<AnyRow>);
+    if (!b.edits.length) return toast('Tüm KC’lerin capability kaydı var.', 'warn');
+    await edit(b.edits, 'KC’lerden capability');
+  };
+  return (
+    <Grid
+      table="capability"
+      toolbar={<button className="btn" onClick={fromKc}>KC’lerden oluştur</button>}
+      emptyHint="Veri yoksa: “Capability calculation cannot be performed – production data required.”"
+    />
+  );
+}
+
+export function ActionsTab() {
+  const [onlyOpen, setOnlyOpen] = useState(false);
+  return (
+    <Grid
+      table="actions"
+      filter={onlyOpen ? (r) => !['Completed', 'Cancelled'].includes((r as { status: string }).status) : undefined}
+      toolbar={
+        <label className="check">
+          <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> Sadece açık aksiyonlar
+        </label>
+      }
+      emptyHint="DFMEA/PFMEA’da “Önerilen Aksiyon” yazıldığında kayıt otomatik açılır. Burada yapılan değişiklik FMEA satırına geri yazılır."
+    />
+  );
+}
+
+export function IssuesTab() {
+  return <Grid table="issues" emptyHint="Eksik tolerans, eksik kabul kriteri, eksik çevresel gereksinim gibi konuları “Open Engineering Issue” olarak kaydedin." />;
+}
+
+export function LessonsTab() {
+  return <Grid table="lessons" emptyHint="Geçmiş NCR / 8D / CAPA / müşteri şikayeti kayıtlarını ilgili FMEA satırlarına bağlayın." />;
+}
+
+export function HistoryTab() {
+  const { project, mutate, toast } = useStore();
+  const [open, setOpen] = useState(false);
+  const sum = summarizeChanges(project);
+  const nextRev = (() => {
+    const m = /Rev\s*([A-Z])/i.exec(project.meta.fmeaRevision);
+    return m ? `Rev ${String.fromCharCode(m[1].toUpperCase().charCodeAt(0) + 1)}` : 'Rev B';
+  })();
+  const [rev, setRev] = useState(nextRev);
+  const [desc, setDesc] = useState('');
+  const [author, setAuthor] = useState(project.meta.preparedBy);
+  const create = () => {
+    mutate((d) => {
+      const id = nextId(d, 'history');
+      const today = new Date().toISOString().slice(0, 10);
+      d.history.push({ id, revision: rev, date: today, author, added: sum.added, modified: sum.modified, deleted: sum.deleted, description: desc, approvedBy: '' });
+      d.meta.fmeaRevision = rev;
+      d.meta.revisionDate = today;
+      d.changeLog = [];
+    });
+    setOpen(false);
+    toast(`${rev} oluşturuldu`);
+  };
+  return (
+    <>
+      <Grid
+        table="history"
+        toolbar={
+          <>
+            <button className="btn primary" onClick={() => { setRev(nextRev); setOpen(true); }}>Yeni revizyon oluştur</button>
+            <span className="muted">Son revizyondan bu yana {sum.count} kayıt değişti</span>
+          </>
+        }
+      />
+      {open && (
+        <Modal
+          title="Yeni FMEA revizyonu"
+          sub="Son revizyondan bu yana eklenen, değişen ve silinen kayıtlar otomatik listelenir."
+          onClose={() => setOpen(false)}
+          foot={
+            <>
+              <button className="btn" onClick={() => setOpen(false)}>Vazgeç</button>
+              <button className="btn primary" onClick={create}>{rev} oluştur</button>
+            </>
+          }
+        >
+          <div className="form">
+            <label><span>Revizyon</span><input className="cell-input" value={rev} onChange={(e) => setRev(e.target.value)} /></label>
+            <label><span>Hazırlayan</span><input className="cell-input" value={author} onChange={(e) => setAuthor(e.target.value)} /></label>
+            <label className="wide"><span>Açıklama</span><textarea className="cell-input" rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} /></label>
+          </div>
+          <div className="rev-sum">
+            <p><b>Added:</b> {sum.added || '—'}</p>
+            <p><b>Modified:</b> {sum.modified || '—'}</p>
+            <p><b>Deleted:</b> {sum.deleted || '—'}</p>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
