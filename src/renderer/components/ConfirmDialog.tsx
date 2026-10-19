@@ -1,8 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { fieldLabel, rowLabel } from '../../shared/columns';
 import type { Effect } from '../../shared/engine';
-import { TABLE_LABEL } from '../../shared/model';
-import { TABS } from '../../shared/tabs';
+import { SCREENS, screenLabel, screenOfTable } from '../../shared/nav';
 import { useStore } from '../store';
 
 const SETTINGS_LABEL: Record<string, string> = {
@@ -21,13 +20,17 @@ function fmt(v: unknown): string {
   return s.length > 90 ? s.slice(0, 87) + '…' : s;
 }
 
-function screenName(table: string) {
-  const i = TABS.findIndex((t) => t.key === table);
-  return i >= 0 ? `${i + 1}. ${TABS[i].label}` : TABLE_LABEL[table as keyof typeof TABLE_LABEL] ?? 'Ayarlar';
-}
+const screenName = screenLabel;
+const order = (t: string) => SCREENS.findIndex((s) => s.key === screenOfTable(t)?.screen);
 
 export function ConfirmDialog() {
   const { pending, decide, project } = useStore();
+  const [reason, setReason] = useState('');
+  const [comment, setComment] = useState('');
+  useEffect(() => {
+    setReason('');
+    setComment('');
+  }, [pending]);
   useEffect(() => {
     if (!pending) return;
     const h = (e: KeyboardEvent) => {
@@ -45,7 +48,9 @@ export function ConfirmDialog() {
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k)!.push(e);
   }
-  const order = [...groups.keys()].sort((a, b) => TABS.findIndex((t) => t.key === a) - TABS.findIndex((t) => t.key === b));
+  const sorted = [...groups.keys()].sort((a, b) => order(a) - order(b));
+  const cross = pending.effects.length > 0;
+  const blocked = pending.needReason && !reason.trim();
   const counts = {
     mod: pending.effects.filter((e) => e.kind === 'Modified').length,
     add: pending.effects.filter((e) => e.kind === 'Added').length,
@@ -58,8 +63,8 @@ export function ConfirmDialog() {
         <div className="modal-head warn">
           <div className="icon">⚠</div>
           <div>
-            <h2>Bu değişiklik diğer ekranları da etkiliyor</h2>
-            <p>Onaylamadan önce nelerin değişeceğini kontrol edin. Hiçbir şey siz onaylamadan kaydedilmez.</p>
+            <h2>{cross ? 'Bu değişiklik diğer ekranları da etkiliyor' : 'Değişiklik nedeni gerekli'}</h2>
+            <p>{cross ? 'Onaylamadan önce nelerin değişeceğini kontrol edin. Hiçbir şey siz onaylamadan kaydedilmez.' : 'Bu alan denetim izinde nedeniyle kaydedilir (Ayarlar › Neden sorulan alanlar).'}</p>
           </div>
         </div>
 
@@ -82,14 +87,14 @@ export function ConfirmDialog() {
             </ul>
           </section>
 
-          <section>
+          {cross && <section>
             <h3>
               Onaylarsanız otomatik olarak yapılacaklar
               <span className="pill">{counts.mod} güncelleme</span>
               {counts.add > 0 && <span className="pill green">{counts.add} yeni kayıt</span>}
               {counts.del > 0 && <span className="pill red">{counts.del} silme</span>}
             </h3>
-            {order.map((t) => (
+            {sorted.map((t) => (
               <div key={t} className="effect-group">
                 <h4>{screenName(t)} ekranı</h4>
                 <table className="effects">
@@ -114,6 +119,19 @@ export function ConfirmDialog() {
                 </table>
               </div>
             ))}
+          </section>}
+          <section className="reason">
+            <div className="form">
+              <label className="wide">
+                <span>Değişiklik nedeni{pending.needReason ? ' (zorunlu)' : ' (isteğe bağlı)'}</span>
+                <input className="cell-input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Örn. müşteri resmi Rev C, NCR-0042 sonucu, tasarım incelemesi kararı…" />
+              </label>
+              <label className="wide">
+                <span>Yorum</span>
+                <input className="cell-input" value={comment} onChange={(e) => setComment(e.target.value)} />
+              </label>
+            </div>
+            <p className="muted small">Kullanıcı: {project.settings.userName || '(Ayarlar’da kullanıcı adı girilmemiş)'} · Revizyon: {project.meta.fmeaRevision}</p>
           </section>
         </div>
 
@@ -121,11 +139,13 @@ export function ConfirmDialog() {
           <button className="btn" onClick={() => decide('cancel')}>
             Vazgeç
           </button>
-          <button className="btn" onClick={() => decide('only')} title="Bağlı ekranlar güncellenmez; oluşan tutarsızlıklar Kalite Kontrol ekranında görünür.">
-            Sadece bu ekranda değiştir
-          </button>
-          <button className="btn primary" autoFocus onClick={() => decide('apply')}>
-            Onayla ve tümünü güncelle
+          {cross && (
+            <button className="btn" disabled={blocked} onClick={() => decide('only', reason, comment)} title="Bağlı ekranlar güncellenmez; oluşan tutarsızlıklar Kalite Kontrol ekranında görünür.">
+              Sadece bu ekranda değiştir
+            </button>
+          )}
+          <button className="btn primary" autoFocus={!pending.needReason} disabled={blocked} onClick={() => decide('apply', reason, comment)}>
+            {cross ? 'Onayla ve tümünü güncelle' : 'Kaydet'}
           </button>
         </div>
       </div>

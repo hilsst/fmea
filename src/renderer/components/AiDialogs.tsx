@@ -1,148 +1,182 @@
-import { useEffect, useState } from 'react';
-import { COMPOSITE_CHECKLIST, blankRow, nextId } from '../../shared/model';
-import { actionPriority } from '../../shared/scoring';
-import type { AnyRow, DfmeaRow, DocumentRow, PfmeaRow, Project, TableKey } from '../../shared/types';
+import { Fragment, useEffect, useState } from 'react';
+import { AI_ERROR_TEXT, LOW_CONF_TEXT, type AiResult } from '../../shared/aischema';
+import { findRequirementCandidates, locText, type ExtractedDoc } from '../../shared/docmodel';
+import { COMPOSITE_KB, isComposite } from '../../shared/kb';
+import { blankRow, nextId } from '../../shared/model';
+import { buildProposals, bulkAccept, failedRunEdit, proposalEdits, type ProposalItem, type ProposalSet } from '../../shared/proposals';
+import { apOf } from '../../shared/scoring';
+import { sha256 } from '../../shared/sha256';
+import type { AnyRow, DocumentRow, Project } from '../../shared/types';
 import { api, isDesktop } from '../api';
 import { useStore } from '../store';
 
 export function projectContext(p: Project): string {
   const lines: string[] = [];
   const m = p.meta;
-  lines.push(`PROJE: ${m.name} | Parça: ${m.partNumber} ${m.partName} | Müşteri: ${m.customer} | Program: ${m.program} | FMEA ${m.fmeaRevision}`);
+  lines.push(`PROJE: ${m.name} | Parça: ${m.partNumber} ${m.partName} | Müşteri: ${m.customer} | Program: ${m.program} | Ürün tipi: ${p.settings.productType || 'belirtilmedi'} | FMEA ${m.fmeaRevision}`);
   if (m.scope) lines.push(`Kapsam: ${m.scope}`);
-  lines.push(`KC Severity eşiği: ${p.settings.kcSeverityThreshold}`);
+  lines.push(`KC Severity eşiği: ${p.settings.kcSeverityThreshold} | AP tablosu: ${p.scoring.apName || (p.scoring.apTable ? 'Şirket tablosu' : 'AIAG-VDA 2019')}`);
+  lines.push('PUANLAMA KRİTERLERİ (S/O/D, DFMEA | PFMEA):', ...(['severity', 'occurrence', 'detection'] as const).flatMap((k) => p.scoring[k].map((e) => `${k[0].toUpperCase()}${e.rank}: ${e.df} | ${e.pf}`)));
   if (p.documents.length) lines.push('\nDOKÜMANLAR:', ...p.documents.map((d) => `${d.id} | ${d.docNumber} | ${d.name} | Rev ${d.revision} | ${d.docType}`));
-  if (p.requirements.length) lines.push('\nGEREKSİNİMLER:', ...p.requirements.map((r) => `${r.id} [${r.reqType}] ${r.text} | Kabul: ${r.acceptance || 'VERİ YOK'} | Kaynak: ${r.source}`));
-  if (p.structure.length) lines.push('\nYAPI & FONKSİYON:', ...p.structure.map((s) => `${s.id} ${s.level} ${s.element} (üst: ${s.parentId || '-'}) → ${s.function} | REQ: ${s.reqIds.join(',')}`));
-  if (p.dfmea.length) lines.push('\nDFMEA:', ...p.dfmea.map((d) => `${d.id} fn:${d.functionId} req:${d.reqIds.join(',')} | FM: ${d.failureMode} | Etki: ${d.effect} | Neden: ${d.cause} | Önleme: ${d.prevention} | Tespit: ${d.detection} | S${d.s ?? '-'} O${d.o ?? '-'} D${d.d ?? '-'} AP:${actionPriority(d.s, d.o, d.d)}`));
+  if (p.requirements.length) lines.push('\nGEREKSİNİMLER:', ...p.requirements.map((r) => `${r.id} [${r.reqType}] ${r.text} | Kabul: ${r.acceptance || 'VERİ YOK'}${r.lsl != null || r.usl != null ? ` | Limit: ${r.lsl ?? '–'}…${r.usl ?? '–'} ${r.unit}` : ''} | Kaynak: ${r.source}`));
+  if (p.structure.length) lines.push('\nYAPI & FONKSİYON:', ...p.structure.map((s) => `${s.id} ${s.level} ${s.element} (üst: ${s.parentId || '-'}) → ${s.function}${s.performanceReq ? ` | Performans: ${s.performanceReq}` : ''} | REQ: ${s.reqIds.join(',')}`));
+  if (p.dfmea.length) lines.push('\nDFMEA:', ...p.dfmea.map((d) => `${d.id} fn:${d.functionId} req:${d.reqIds.join(',')} | FM: ${d.failureMode} | Etki: ${d.effect} | Neden: ${d.cause} | Önleme: ${d.prevention} | Tespit: ${d.detection} | S${d.s ?? '-'} O${d.o ?? '-'} D${d.d ?? '-'} AP:${apOf(p, d.s, d.o, d.d)}`));
   if (p.processSteps.length) lines.push('\nPROSES AKIŞI:', ...p.processSteps.map((s) => `${s.id} Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} | ${s.description} | Makine: ${s.machine}`));
-  if (p.pfmea.length) lines.push('\nPFMEA:', ...p.pfmea.map((r) => `${r.id} step:${r.stepId} df:${r.dfIds.join(',')} | FM: ${r.failureMode} | Neden: ${r.cause} | Önleme: ${r.prevention} | Tespit: ${r.detection} | S${r.s ?? '-'} O${r.o ?? '-'} D${r.d ?? '-'}`));
-  if (p.kcs.length) lines.push('\nKC:', ...p.kcs.map((k) => `${k.id} kaynak:${k.sourceId} ${k.kcClass} ${k.characteristic} | ${k.status}`));
-  if (p.controlPlan.length) lines.push('\nKONTROL PLANI:', ...p.controlPlan.map((c) => `${c.id} Op${c.opNo} KC:${c.kcId} ${c.productChar || c.processChar} | ${c.method} | ${c.frequency}`));
+  if (p.processParams.length) lines.push('\nPROSES PARAMETRELERİ:', ...p.processParams.map((x) => `${x.id} step:${x.stepId} ${x.parameter} ${x.lsl ?? ''}…${x.usl ?? ''} ${x.unit} | ürün kar.: ${x.productCharacteristic} | izleme: ${x.monitoring}`));
+  if (p.pfmea.length) lines.push('\nPFMEA:', ...p.pfmea.map((r) => `${r.id} step:${r.stepId} df:${r.dfIds.join(',')} | FM: ${r.failureMode} | Neden(${r.cause4M || '?'}): ${r.cause} | Kök: ${r.rootCause} | Önleme: ${r.prevention} | Tespit: ${r.detection} | S${r.s ?? '-'} O${r.o ?? '-'} D${r.d ?? '-'}`));
+  if (p.kcs.length) lines.push('\nKC:', ...p.kcs.map((k) => `${k.id} kaynak:${k.sourceId} ${k.kcClass} ${k.category} ${k.characteristic} | ${k.status}`));
+  if (p.controlPlan.length) lines.push('\nKONTROL PLANI:', ...p.controlPlan.map((c) => `${c.id} Op${c.opNo} KC:${c.kcId} [${c.charType}] ${c.productChar || c.processChar} | ${c.method} | ${c.sampleSize} | ${c.frequency} | Reaksiyon: ${c.reactionPlan.slice(0, 80)}`));
+  if (p.msa.length) lines.push('\nMSA:', ...p.msa.map((x) => `${x.id} CP:${x.cpId} ${x.study} ${x.status}`));
   if (p.issues.length) lines.push('\nAÇIK KONULAR:', ...p.issues.map((i) => `${i.id} [${i.priority}] ${i.description} | ${i.status}`));
   if (p.lessons.length) lines.push('\nDERSLER:', ...p.lessons.map((l) => `${l.id} ${l.sourceType} ${l.reference}: ${l.description} | Kök neden: ${l.rootCause} | FMEA: ${l.linkedFmeaIds.join(',')}`));
   return lines.join('\n');
 }
 
-interface Proposal {
-  table: TableKey;
-  rows: Record<string, unknown>[];
-  issues: Record<string, unknown>[];
-}
-
 const PREVIEW: Record<string, [string, string][]> = {
-  requirements: [['text', 'Gereksinim'], ['reqType', 'Tip'], ['acceptance', 'Kabul kriteri'], ['source', 'Kaynak'], ['confidence', 'Güven']],
-  dfmea: [['functionId', 'Fonk.'], ['failureMode', 'Hata modu'], ['effect', 'Etki'], ['cause', 'Neden'], ['prevention', 'Önleme'], ['detection', 'Tespit'], ['s', 'S'], ['o', 'O'], ['d', 'D'], ['confidence', 'Güven']],
-  pfmea: [['stepId', 'Adım'], ['dfIds', 'DFMEA'], ['failureMode', 'Hata modu'], ['cause', 'Neden'], ['prevention', 'Önleme'], ['detection', 'Tespit'], ['s', 'S'], ['o', 'O'], ['d', 'D'], ['confidence', 'Güven']],
+  requirements: [['text', 'Gereksinim'], ['reqType', 'Tip'], ['characteristic', 'Karakteristik'], ['nominal', 'Nom.'], ['lsl', 'Alt'], ['usl', 'Üst'], ['unit', 'Birim'], ['acceptance', 'Kabul kriteri']],
+  dfmea: [['functionId', 'Fonk.'], ['failureMode', 'Hata modu'], ['effect', 'Etki'], ['cause', 'Neden'], ['prevention', 'Önleme'], ['detection', 'Tespit'], ['s', 'S'], ['o', 'O'], ['d', 'D']],
+  pfmea: [['stepId', 'Adım'], ['failureMode', 'Hata modu'], ['cause4M', '4M'], ['cause', 'Neden'], ['rootCause', 'Kök neden'], ['prevention', 'Önleme'], ['detection', 'Tespit'], ['s', 'S'], ['o', 'O'], ['d', 'D']],
+};
+const EDITABLE: Record<string, string[]> = {
+  requirements: ['text', 'reqType', 'characteristic', 'unit', 'acceptance', 'verification'],
+  dfmea: ['failureMode', 'effect', 'cause', 'prevention', 'detection', 'recommendedAction'],
+  pfmea: ['failureMode', 'effect', 'cause', 'rootCause', 'prevention', 'detection', 'recommendedAction'],
 };
 
-export function AiProposalDialog({ proposal, onClose }: { proposal: Proposal; onClose: () => void }) {
+const vText = (v: unknown) => (Array.isArray(v) ? v.join(', ') : v == null ? '' : String(v));
+const verdictClass = (v: string) => (v === 'VERIFIED' ? 'b-green' : v.startsWith('VERIFIED') ? 'b-blue' : v === 'MANUAL VERIFICATION REQUIRED' ? 'b-amber' : 'b-red');
+
+export function ProposalDialog({ initial, onClose }: { initial: ProposalSet; onClose: () => void }) {
   const { project, edit, toast } = useStore();
-  const [rowSel, setRowSel] = useState<boolean[]>(proposal.rows.map(() => true));
-  const [issueSel, setIssueSel] = useState<boolean[]>(proposal.issues.map(() => true));
-  const cols = PREVIEW[proposal.table];
+  const [set, setSet] = useState(initial);
+  const [open, setOpen] = useState<string | null>(null);
+  const cols = PREVIEW[set.kind];
+  const upd = (key: string, fn: (it: ProposalItem) => ProposalItem) => setSet((s) => ({ ...s, items: s.items.map((it) => (it.key === key ? fn(it) : it)) }));
+  const counts = {
+    acc: set.items.filter((i) => i.decision === 'accepted').length,
+    rej: set.items.filter((i) => i.decision === 'rejected').length,
+    pend: set.items.filter((i) => i.decision === 'pending').length,
+    crit: set.items.filter((i) => i.decision === 'pending' && i.critical).length,
+  };
+  const missingReason = set.items.some((i) => i.decision === 'rejected' && !i.rejectReason.trim());
 
   const apply = async () => {
-    let p = project;
-    const edits = [] as { kind: 'add'; table: TableKey; row: AnyRow }[];
-    const push = (table: TableKey, data: Record<string, unknown>) => {
-      const id = nextId(p, table);
-      const row = { ...blankRow(table, id), ...data, id } as AnyRow;
-      p = { ...p, [table]: [...(p[table] as AnyRow[]), row] };
-      edits.push({ kind: 'add', table, row });
-    };
-    proposal.rows.forEach((r, i) => {
-      if (!rowSel[i]) return;
-      const clean: Record<string, unknown> = { ...r, approval: 'AI Proposed' };
-      if (proposal.table === 'requirements') clean.dataStatus = String(r.acceptance ?? '').includes('VERİ YOK') ? 'VERİ YOK – doğrulanmalı' : 'Dokümandan (kaynaklı)';
-      for (const k of ['s', 'o', 'd']) if (k in clean && (typeof clean[k] !== 'number' || (clean[k] as number) < 1 || (clean[k] as number) > 10)) clean[k] = null;
-      if (proposal.table === 'dfmea') {
-        const fn = project.structure.find((s) => s.id === r.functionId);
-        if (!fn) clean.functionId = '';
-        clean.reqIds = ((r.reqIds as string[]) ?? []).filter((x) => project.requirements.some((q) => q.id === x));
-      }
-      if (proposal.table === 'pfmea') {
-        if (!project.processSteps.some((s) => s.id === r.stepId)) clean.stepId = '';
-        clean.dfIds = ((r.dfIds as string[]) ?? []).filter((x) => project.dfmea.some((q) => q.id === x));
-      }
-      push(proposal.table, clean);
-    });
-    proposal.issues.forEach((r, i) => {
-      if (issueSel[i]) push('issues', { ...r, status: 'Open' });
-    });
-    if (!edits.length) return onClose();
-    const ok = await edit(edits, 'AI önerilerini ekle');
+    const { edits, accepted, rejected } = proposalEdits(project, set);
+    const ok = await edit(edits, 'AI önerileri');
     if (ok) {
-      toast(`${edits.length} AI önerisi “AI Proposed” durumunda eklendi`);
+      toast(`${accepted} öneri “AI Proposed” olarak eklendi, ${rejected} öneri reddedildi. Onay mühendis tarafından verilir.`);
       onClose();
     }
   };
 
   return (
     <div className="modal-back">
-      <div className="modal wide">
+      <div className="modal xwide">
         <div className="modal-head">
           <div className="icon ai">✦</div>
           <div>
-            <h2>AI önerileri – kontrol edin</h2>
-            <p>Öneriler “AI Proposed” olarak eklenir; S/O/D ve KC kararları mühendis onayı gerektirir. Eklemek istemediklerinizin işaretini kaldırın.</p>
+            <h2>AI önerileri – her birini kabul edin, düzenleyin veya reddedin</h2>
+            <p>
+              {set.meta.role} · {set.meta.model || set.meta.provider} · {set.meta.mode === 'strict' ? 'Strict Engineering Mode' : 'Engineering Knowledge Mode'}
+              {set.meta.cached ? ' · önbellekten' : ''} · {set.meta.tokensIn + set.meta.tokensOut} token. Kabul edilenler “AI Proposed” eklenir; onay mühendisindir.
+            </p>
           </div>
         </div>
         <div className="modal-body">
-          <h3>{proposal.rows.length} satır önerisi</h3>
+          {set.note && <div className="callout warn">{set.note}</div>}
+          {counts.crit > 0 && <div className="callout warn">{counts.crit} kritik / emniyet / regülasyon önerisi toplu kabul edilemez; her birini ayrı ayrı inceleyip kabul edin.</div>}
           <div className="preview-scroll">
             <table className="effects preview">
               <thead>
                 <tr>
-                  <th>
-                    <input type="checkbox" checked={rowSel.every(Boolean)} onChange={(e) => setRowSel(rowSel.map(() => e.target.checked))} />
-                  </th>
-                  {cols.map(([, l]) => (
-                    <th key={l}>{l}</th>
-                  ))}
+                  <th>Karar</th>
+                  {cols.map(([, l]) => <th key={l}>{l}</th>)}
+                  <th>Dayanak / Güven</th>
+                  <th>Kanıt</th>
                 </tr>
               </thead>
               <tbody>
-                {proposal.rows.map((r, i) => (
-                  <tr key={i}>
-                    <td>
-                      <input type="checkbox" checked={rowSel[i]} onChange={(e) => setRowSel(rowSel.map((x, j) => (j === i ? e.target.checked : x)))} />
-                    </td>
-                    {cols.map(([k]) => (
-                      <td key={k}>{Array.isArray(r[k]) ? (r[k] as string[]).join(', ') : String(r[k] ?? '')}</td>
-                    ))}
-                  </tr>
+                {set.items.map((it) => (
+                  <Fragment key={it.key}>
+                    <tr className={`d-${it.decision} ${it.critical ? 'crit' : ''}`}>
+                      <td className="nowrap">
+                        <button className={`btn small ${it.decision === 'accepted' ? 'ok' : ''}`} title="Kabul et" onClick={() => upd(it.key, (x) => ({ ...x, decision: x.decision === 'accepted' ? 'pending' : 'accepted' }))}>✓</button>
+                        <button className="btn small" title="Düzenle" onClick={() => setOpen(open === it.key ? null : it.key)}>✎</button>
+                        <button className={`btn small ${it.decision === 'rejected' ? 'danger' : ''}`} title="Reddet" onClick={() => upd(it.key, (x) => ({ ...x, decision: x.decision === 'rejected' ? 'pending' : 'rejected' }))}>✕</button>
+                        {it.critical && <div className="badge b-red">kritik</div>}
+                      </td>
+                      {cols.map(([k]) => <td key={k}>{vText(it.row[k])}</td>)}
+                      <td>
+                        <span className="badge b-gray">{it.basis}</span> <span className={`badge ${it.confidence === 'High' ? 'b-green' : it.confidence === 'Medium' ? 'b-amber' : 'b-red'}`}>{it.confidence}</span>
+                        {it.confidence === 'Low' && <div className="why">{LOW_CONF_TEXT}</div>}
+                      </td>
+                      <td className="ev">
+                        {it.evidence.length === 0 && <span className="muted">Kanıt yok</span>}
+                        {it.evidence.map((e, k) => (
+                          <div key={k}>
+                            <span className={`badge ${verdictClass(it.checks[k]?.verdict ?? '')}`}>{it.checks[k]?.verdict}</span> <i>“{e.quote.slice(0, 140)}”</i>
+                            <div className="why">{e.docName} {locText({ page: Number(e.page) || undefined, section: e.section || undefined, sheet: e.sheet || undefined, cell: e.cell || undefined, balloon: e.balloon || undefined })}</div>
+                          </div>
+                        ))}
+                        {it.warnings.map((w, k) => <div key={k} className="warn-text small">⚠ {w}</div>)}
+                      </td>
+                    </tr>
+                    {(open === it.key || it.decision === 'rejected') && (
+                      <tr key={it.key + '-edit'} className="edit-row">
+                        <td colSpan={cols.length + 3}>
+                          {it.decision === 'rejected' && (
+                            <label className="inline">
+                              <span>Red nedeni (zorunlu)</span>
+                              <input className="cell-input" value={it.rejectReason} onChange={(e) => upd(it.key, (x) => ({ ...x, rejectReason: e.target.value }))} placeholder="Örn. kaynakta yok, yanlış hata modu, tekrar…" />
+                            </label>
+                          )}
+                          {open === it.key && (
+                            <div className="form">
+                              {EDITABLE[set.kind].map((f) => (
+                                <label key={f}>
+                                  <span>{f}</span>
+                                  <input className="cell-input" value={vText(it.row[f])} onChange={(e) => upd(it.key, (x) => ({ ...x, row: { ...x.row, [f]: e.target.value } }))} />
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
           </div>
-          {proposal.issues.length > 0 && (
+          {set.issues.length > 0 && (
             <>
-              <h3>{proposal.issues.length} açık mühendislik konusu</h3>
+              <h3>{set.issues.length} açık mühendislik konusu</h3>
               <table className="effects">
                 <tbody>
-                  {proposal.issues.map((r, i) => (
+                  {set.issues.map((r, i) => (
                     <tr key={i}>
                       <td>
-                        <input type="checkbox" checked={issueSel[i]} onChange={(e) => setIssueSel(issueSel.map((x, j) => (j === i ? e.target.checked : x)))} />
+                        <input type="checkbox" checked={r.decision === 'accepted'} onChange={(e) => setSet((s) => ({ ...s, issues: s.issues.map((x, j) => (j === i ? { ...x, decision: e.target.checked ? 'accepted' : 'rejected' } : x)) }))} />
                       </td>
-                      <td>
-                        <span className={`badge ${r.priority === 'Critical' ? 'b-red' : r.priority === 'Important' ? 'b-amber' : 'b-gray'}`}>{String(r.priority)}</span>
-                      </td>
-                      <td>{String(r.description)}</td>
+                      <td><span className={`badge ${r.priority === 'Critical' ? 'b-red' : r.priority === 'Important' ? 'b-amber' : 'b-gray'}`}>{r.priority}</span></td>
+                      <td>{r.description}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </>
           )}
+          {set.params.length > 0 && (
+            <p className="muted">AI ayrıca {set.params.length} özel proses parametresi önerdi: {set.params.map((x) => String(x.parameter)).join(', ')}. Proses Parametreleri ekranından elle ekleyin (limit değerleri kaynaktan girilmelidir).</p>
+          )}
         </div>
         <div className="modal-foot">
-          <button className="btn" onClick={onClose}>
-            Vazgeç
-          </button>
-          <button className="btn primary" onClick={apply}>
-            Seçilenleri ekle
+          <span className="muted">{counts.acc} kabul · {counts.rej} red · {counts.pend} bekliyor</span>
+          <span className="grow" />
+          <button className="btn" onClick={onClose}>Vazgeç</button>
+          <button className="btn" onClick={() => setSet(bulkAccept(set))} title="Kritik / emniyet / regülasyon önerileri hariç">Kritik olmayanları kabul et</button>
+          <button className="btn primary" disabled={(!counts.acc && !counts.rej && !set.issues.some((x) => x.decision === 'accepted')) || missingReason} onClick={apply}>
+            Kararları uygula
           </button>
         </div>
       </div>
@@ -152,10 +186,22 @@ export function AiProposalDialog({ proposal, onClose }: { proposal: Proposal; on
 
 type Busy = { label: string } | null;
 
+function textDoc(text: string, name: string): ExtractedDoc {
+  const paras = text.split(/\n\s*\n/).map((t) => t.trim()).filter(Boolean);
+  let line = 1;
+  const blocks = paras.map((t, i) => {
+    const b = { id: `p${i + 1}`, kind: 'paragraph' as const, text: t, loc: { line } };
+    line += t.split('\n').length + 1;
+    return b;
+  });
+  return { fileName: name, ext: 'txt', hash: sha256(text), size: text.length, parser: 'txt', status: 'ok', messages: [], meta: {}, blocks, extractedAt: new Date().toISOString() };
+}
+
 export function useAi() {
-  const { project, toast } = useStore();
+  const { project, edit, mutate, toast } = useStore();
   const [busy, setBusy] = useState<Busy>(null);
-  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [proposal, setProposal] = useState<ProposalSet | null>(null);
+  const mode = project.settings.aiMode;
 
   const guard = async () => {
     if (!isDesktop) {
@@ -163,73 +209,90 @@ export function useAi() {
       return false;
     }
     const s = await api.aiStatus();
-    if (!s.configured) {
-      toast('Önce Ayarlar’dan Claude API anahtarını girin.', 'warn');
+    if (!s.online) {
+      toast(AI_ERROR_TEXT.OFFLINE, 'warn');
+      return false;
+    }
+    if (!s.configured && s.provider === 'anthropic') {
+      toast('Önce Ayarlar › AI bölümünden API anahtarını girin.', 'warn');
       window.dispatchEvent(new CustomEvent('open-settings'));
       return false;
     }
     return true;
   };
 
-  const run = async (label: string, table: TableKey, call: () => Promise<{ ok: boolean; data?: unknown; error?: string }>) => {
+  const run = async (label: string, kind: ProposalSet['kind'], inputs: string, call: () => Promise<AiResult & { note?: string }>, docId?: string, p: Project = project) => {
     if (!(await guard())) return;
     setBusy({ label });
     try {
       const r = await call();
       if (!r.ok) {
-        toast(`AI hatası: ${r.error}`, 'err');
+        toast(`${r.error.kind}: ${r.error.message}`, 'err');
+        mutate((d) => {
+          const e = failedRunEdit(d, r.meta?.role ?? kind, inputs, r.error.kind, r.error.message, r.meta);
+          d.aiRuns.push(e.row as never);
+        });
         return;
       }
-      const d = r.data as { rows?: Record<string, unknown>[]; requirements?: Record<string, unknown>[]; issues?: Record<string, unknown>[] };
-      const rows = d.rows ?? d.requirements ?? [];
-      if (!rows.length && !(d.issues ?? []).length) {
+      const set = buildProposals(p, kind, r.data, r.meta, { docId, inputs, note: r.note });
+      if (!set.items.length && !set.issues.length) {
         toast('AI yeni öneri üretmedi.', 'warn');
         return;
       }
-      setProposal({ table, rows, issues: d.issues ?? [] });
+      setProposal(set);
     } finally {
       setBusy(null);
     }
   };
 
   const extractRequirements = async (doc: DocumentRow | null, text?: string) => {
-    let filePath = doc?.filePath;
-    if (doc && !filePath && !text) {
-      const f = await api.pickFile([{ name: 'Dokümanlar', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'txt', 'md', 'csv', 'xlsx', 'eml'] }]);
-      if (!f) return;
-      filePath = f.path;
+    let p = project;
+    let docId = doc?.id;
+    let extracted: ExtractedDoc | null = doc ? (project.docIndex[doc.id] ?? null) : null;
+    if (text) {
+      // Yapıştırılan metin bir doküman kaydı olur; kaynak doğrulaması için indekslenir.
+      const id = nextId(project, 'documents');
+      extracted = textDoc(text, `Yapıştırılan metin ${new Date().toLocaleString('tr-TR')}`);
+      const row = { ...blankRow('documents', id), name: extracted.fileName, docType: 'Toplantı notu', date: new Date().toISOString().slice(0, 10), parseStatus: `ok · ${extracted.blocks.length} blok`, id } as AnyRow;
+      if (!(await edit({ kind: 'add', table: 'documents', row }, 'Metin dokümanı'))) return;
+      mutate((d) => {
+        d.docIndex[id] = extracted!;
+      });
+      p = { ...project, documents: [...project.documents, row as DocumentRow], docIndex: { ...project.docIndex, [id]: extracted } };
+      docId = id;
     }
-    await run('Doküman analiz ediliyor ve gereksinimler çıkarılıyor…', 'requirements', () =>
-      api.aiRequirements({
-        filePath,
-        text,
-        docId: doc?.id ?? 'METİN',
-        docLabel: doc ? `${doc.docNumber} ${doc.name} Rev ${doc.revision}` : 'Yapıştırılan metin',
-        existing: project.requirements.map((r) => `${r.id}: ${r.text}`),
-      }),
+    if (doc && !extracted && !doc.filePath) {
+      toast('Önce dokümana dosya bağlayın veya “Analiz et” ile yerel analizi çalıştırın.', 'warn');
+      return;
+    }
+    if (extracted?.status === 'unsupported') {
+      toast(AI_ERROR_TEXT.UNSUPPORTED_DOCUMENT, 'err');
+      return;
+    }
+    const candidates = extracted ? findRequirementCandidates(extracted) : [];
+    const label = doc ? `${doc.docNumber} ${doc.name} Rev ${doc.revision}` : 'Yapıştırılan metin';
+    await run('Doküman analiz ediliyor ve gereksinimler çıkarılıyor…', 'requirements', `${docId}: ${label}`, () =>
+      api.aiRequirements({ doc: extracted, filePath: doc?.filePath, docId: docId ?? '', docLabel: label, existing: p.requirements.map((r) => `${r.id}: ${r.text}`), candidates, mode }),
+      docId, p,
     );
   };
 
   const suggestDfmea = async (fnIds: string[]) => {
     const fns = project.structure.filter((s) => fnIds.length === 0 || fnIds.includes(s.id)).filter((s) => s.function);
-    if (!fns.length) {
-      toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
-      return;
-    }
-    await run('DFMEA önerileri hazırlanıyor…', 'dfmea', () =>
-      api.aiDfmea({ context: projectContext(project), target: 'Hedef fonksiyonlar:\n' + fns.map((f) => `${f.id}: ${f.element} → ${f.function} (REQ: ${f.reqIds.join(', ')})`).join('\n') }),
+    if (!fns.length) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
+    await run('DFMEA önerileri hazırlanıyor…', 'dfmea', fns.map((f) => f.id).join(', '), () =>
+      api.aiDfmea({ context: projectContext(project), target: 'Hedef fonksiyonlar:\n' + fns.map((f) => `${f.id}: ${f.element} → ${f.function} (REQ: ${f.reqIds.join(', ')})`).join('\n'), mode }),
     );
   };
 
   const suggestPfmea = async (stepIds: string[]) => {
     const steps = project.processSteps.filter((s) => stepIds.length === 0 || stepIds.includes(s.id));
-    if (!steps.length) {
-      toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
-      return;
-    }
-    const composite = Object.entries(COMPOSITE_CHECKLIST).map(([k, v]) => `${k}: ${v.join(', ')}`).join('\n');
-    await run('PFMEA önerileri hazırlanıyor…', 'pfmea', () =>
-      api.aiPfmea({ context: projectContext(project), composite, target: 'Hedef proses adımları:\n' + steps.map((s) => `${s.id}: Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${s.description}`).join('\n') }),
+    if (!steps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
+    const composite = isComposite(project.settings.productType) || steps.some((s) => s.specialProcess)
+      ? COMPOSITE_KB.map((k) => `${k.area}: hata modları ${k.failureModes.join(', ')}; tipik nedenler ${k.causes.join(', ')}; parametreler ${k.parameters.join(', ')}`).join('\n')
+      : '(ürün tipi kompozit değil)';
+    await run('PFMEA önerileri hazırlanıyor…', 'pfmea', steps.map((s) => s.id).join(', '), () =>
+      api.aiPfmea({ context: projectContext(project), composite, target: 'Hedef proses adımları:\n' + steps.map((s) => `${s.id}: Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${s.description}`).join('\n'), mode }),
     );
   };
 
@@ -241,12 +304,12 @@ export function useAi() {
             <div className="spinner" />
             <div>
               <b>{busy.label}</b>
-              <p className="muted">Claude çalışıyor; büyük dokümanlarda birkaç dakika sürebilir.</p>
+              <p className="muted">Yerel çıkarım tamamlandı; AI çalışıyor. Büyük dokümanlarda birkaç dakika sürebilir.</p>
             </div>
           </div>
         </div>
       )}
-      {proposal && <AiProposalDialog proposal={proposal} onClose={() => setProposal(null)} />}
+      {proposal && <ProposalDialog initial={proposal} onClose={() => setProposal(null)} />}
     </>
   );
 
@@ -267,7 +330,7 @@ export function PasteTextDialog({ onClose, onSubmit }: { onClose: () => void; on
           <div className="icon ai">✦</div>
           <div>
             <h2>Metinden gereksinim çıkar</h2>
-            <p>Şartname bölümü, e-posta veya toplantı notunu yapıştırın.</p>
+            <p>Şartname bölümü, e-posta veya toplantı notunu yapıştırın. Metin bir doküman kaydı olarak saklanır ve kaynak doğrulamasında kullanılır.</p>
           </div>
         </div>
         <div className="modal-body">
@@ -281,5 +344,3 @@ export function PasteTextDialog({ onClose, onSubmit }: { onClose: () => void; on
     </div>
   );
 }
-
-export type { DfmeaRow, PfmeaRow };

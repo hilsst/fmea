@@ -1,0 +1,19 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('FMEA test part','Bracket'),'2;1');
+FILE_NAME('bracket.step','2026-01-01T12:00:00',('Kemal'),('ACME Aero'),'ST-DEVELOPER v18','SolidWorks 2024','');
+FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));
+ENDSEC;
+DATA;
+/* yorum #99=FAKE( */
+#1=APPLICATION_CONTEXT('automotive design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('BRK-001','Bracket \X2\00C7\X0\elik','Main bracket, don''t paint',(#2));
+#4=PRODUCT('SCR-M6','Screw M6','',(#2));
+#10=CARTESIAN_POINT('',(0.,0.,0.));
+#11=CARTESIAN_POINT('',(1.,0.,0.));
+#12=DIRECTION('',(0.,0.,1.));
+#20=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));
+#21=GEOMETRIC_TOLERANCE('flatness','',#3,0.05);
+ENDSEC;
+END-ISO-10303-21;

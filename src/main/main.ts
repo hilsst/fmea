@@ -1,10 +1,17 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, safeStorage, session, shell } from 'electron';
+import ExcelJS from 'exceljs';
 import fs from 'node:fs/promises';
 import fssync from 'node:fs';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
+import type { ExtractedDoc } from '../shared/docmodel';
 import { buildWorkbook } from '../shared/excel';
+import { buildWorkbookV2 } from '../shared/excel2';
+import type { SheetGrid } from '../shared/importmap';
 import type { Project } from '../shared/types';
 import * as ai from './ai';
+import { PROVIDERS } from './ai/provider';
+import { DEFAULT_IFS, ifsConnector, type IfsSettings } from './connectors/ifs';
 
 let win: BrowserWindow | null = null;
 let dirty = false;
@@ -15,9 +22,15 @@ const RECOVERY = () => userFile('recovery.fmea.json');
 const CONFIG = () => userFile('config.json');
 
 interface Config {
+  /** safeStorage (işletim sistemi anahtar zinciri) ile şifrelenmiş anahtar. Düz metin/Base64 saklanmaz. */
   apiKeyEnc?: string;
+  aiProvider?: string;
   recent?: string[];
+  ifs?: IfsSettings;
 }
+
+/** safeStorage yoksa anahtar yalnızca bu oturumun belleğinde tutulur (diske yazılmaz). */
+let sessionKey = '';
 
 function readConfig(): Config {
   try {
@@ -31,15 +44,47 @@ function writeConfig(c: Config) {
   fssync.writeFileSync(CONFIG(), JSON.stringify(c, null, 2));
 }
 function apiKey(): string {
+  if (sessionKey) return sessionKey;
   const c = readConfig();
-  if (!c.apiKeyEnc) return '';
+  if (!c.apiKeyEnc || !safeStorage.isEncryptionAvailable()) return '';
   try {
-    const buf = Buffer.from(c.apiKeyEnc, 'base64');
-    return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(buf) : buf.toString('utf8');
+    return safeStorage.decryptString(Buffer.from(c.apiKeyEnc, 'base64'));
   } catch {
     return '';
   }
 }
+
+function aiEnv(): ai.AiEnv {
+  return { apiKey: apiKey(), provider: readConfig().aiProvider ?? 'anthropic', cacheDir: userFile('ai-cache'), online: () => net.isOnline() };
+}
+
+// ---------------------------------------------------------------- doküman ayrıştırma (worker)
+let worker: Worker | null = null;
+let seq = 0;
+const pending = new Map<number, { resolve: (d: ExtractedDoc) => void; reject: (e: Error) => void }>();
+function extract(file: string): Promise<ExtractedDoc> {
+  if (!worker) {
+    worker = new Worker(path.join(__dirname, 'docworker.js'));
+    worker.on('message', (m: { id: number; doc?: ExtractedDoc; error?: string }) => {
+      const p = pending.get(m.id);
+      pending.delete(m.id);
+      if (m.doc) p?.resolve(m.doc);
+      else p?.reject(new Error(m.error ?? 'Ayrıştırma hatası'));
+    });
+    worker.on('error', (e) => {
+      for (const p of pending.values()) p.reject(e);
+      pending.clear();
+      worker = null;
+    });
+  }
+  const id = ++seq;
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    worker!.postMessage({ id, path: file });
+  });
+}
+
+const isSafeExternal = (url: string) => /^https:\/\//i.test(url);
 function addRecent(file: string) {
   const c = readConfig();
   c.recent = [file, ...(c.recent ?? []).filter((f) => f !== file)].slice(0, 8);
@@ -62,8 +107,17 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
+      webSecurity: true,
+      spellcheck: false,
     },
+  });
+  // Uygulama dışına gezinme engellenir; yalnızca https bağlantıları varsayılan tarayıcıda açılır (§62).
+  win.webContents.on('will-navigate', (e, url) => {
+    const dev = process.env.VITE_DEV_SERVER_URL;
+    if (dev && url.startsWith(dev)) return;
+    e.preventDefault();
+    if (isSafeExternal(url)) shell.openExternal(url);
   });
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) win.loadURL(devUrl);
@@ -89,7 +143,7 @@ function createWindow() {
     }
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (isSafeExternal(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
 }
@@ -105,7 +159,13 @@ function buildMenu() {
         { label: 'Kaydet', accelerator: 'CmdOrCtrl+S', click: m('save') },
         { label: 'Farklı Kaydet…', accelerator: 'CmdOrCtrl+Shift+S', click: m('saveAs') },
         { type: 'separator' },
-        { label: 'Excel’e Aktar…', accelerator: 'CmdOrCtrl+E', click: m('export') },
+        { label: 'Excel’e Aktar (2.0, 14 sayfa)…', accelerator: 'CmdOrCtrl+E', click: m('export2') },
+        { label: 'Excel’e Aktar (1.0 biçimi)…', click: m('export') },
+        { label: 'Excel FMEA İçe Aktar…', click: m('import') },
+        { label: 'İnceleme Raporu (PDF / HTML)…', click: m('report') },
+        { type: 'separator' },
+        { label: 'Şirket Şablonu Olarak Kaydet…', click: m('saveTemplate') },
+        { label: 'Şirket Şablonu Uygula…', click: m('applyTemplate') },
         { label: 'Örnek Proje Yükle', click: m('sample') },
         { type: 'separator' },
         { role: 'quit', label: 'Çıkış' },
@@ -127,7 +187,7 @@ function buildMenu() {
       label: 'Görünüm',
       submenu: [
         { role: 'reload', label: 'Yenile' },
-        { role: 'toggleDevTools', label: 'Geliştirici Araçları' },
+        ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' as const, label: 'Geliştirici Araçları' }]),
         { type: 'separator' },
         { role: 'zoomIn', label: 'Yakınlaştır' },
         { role: 'zoomOut', label: 'Uzaklaştır' },
@@ -139,7 +199,7 @@ function buildMenu() {
       label: 'Yardım',
       submenu: [
         { label: 'Kullanım Kılavuzu', click: m('help') },
-        { label: 'Hakkında', click: () => dialog.showMessageBox(win!, { title: 'FMEA Studio', message: `FMEA Studio ${app.getVersion()}`, detail: 'DFMEA / PFMEA / KC / Kontrol Planı / İzlenebilirlik uygulaması.' }) },
+        { label: 'Hakkında', click: () => dialog.showMessageBox(win!, { title: 'FMEA Studio', message: `FMEA Studio ${app.getVersion()}`, detail: 'DFMEA / PFMEA / Özel Karakteristik / Kontrol Planı / MSA / Capability / İzlenebilirlik uygulaması. AI önerileri mühendis onayı olmadan geçerli değildir.' }) },
       ],
     },
   ];
@@ -210,28 +270,137 @@ function registerIpc() {
   ipcMain.handle('file:open', (_e, p: string) => shell.openPath(p));
   ipcMain.handle('file:reveal', (_e, p: string) => shell.showItemInFolder(p));
 
-  ipcMain.handle('ai:status', () => ({ configured: !!apiKey() || !!process.env.ANTHROPIC_API_KEY, fromEnv: !apiKey() && !!process.env.ANTHROPIC_API_KEY }));
+  ipcMain.handle('ai:status', () => ({
+    configured: !!apiKey() || !!process.env.ANTHROPIC_API_KEY,
+    fromEnv: !apiKey() && !!process.env.ANTHROPIC_API_KEY,
+    secureStorage: safeStorage.isEncryptionAvailable(),
+    sessionOnly: !!sessionKey,
+    provider: readConfig().aiProvider ?? 'anthropic',
+    providers: PROVIDERS,
+    online: net.isOnline(),
+  }));
   ipcMain.handle('ai:setKey', (_e, key: string) => {
     const c = readConfig();
-    if (!key) delete c.apiKeyEnc;
-    else c.apiKeyEnc = (safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(key) : Buffer.from(key, 'utf8')).toString('base64');
+    sessionKey = '';
+    delete c.apiKeyEnc;
+    if (key) {
+      if (safeStorage.isEncryptionAvailable()) c.apiKeyEnc = safeStorage.encryptString(key).toString('base64');
+      else sessionKey = key; // şifreleme yoksa diske yazılmaz
+    }
     writeConfig(c);
-    return true;
+    return { stored: key ? (sessionKey ? 'session' : 'secure') : 'cleared' };
   });
-  const wrap = <A,>(fn: (cfg: ai.AiConfig, a: A) => Promise<unknown>) => async (_e: unknown, a: A) => {
+  ipcMain.handle('ai:setProvider', (_e, id: string) => {
+    const c = readConfig();
+    c.aiProvider = PROVIDERS.some((p) => p.id === id) ? id : 'anthropic';
+    writeConfig(c);
+    return c.aiProvider;
+  });
+  ipcMain.handle('ai:requirements', (_e, a: Parameters<typeof ai.extractRequirements>[1]) => ai.extractRequirements(aiEnv(), a));
+  ipcMain.handle('ai:dfmea', (_e, a: Parameters<typeof ai.suggestDfmea>[1]) => ai.suggestDfmea(aiEnv(), a));
+  ipcMain.handle('ai:pfmea', (_e, a: Parameters<typeof ai.suggestPfmea>[1]) => ai.suggestPfmea(aiEnv(), a));
+  ipcMain.handle('ai:review', (_e, a: Parameters<typeof ai.review>[1]) => ai.review(aiEnv(), a));
+  ipcMain.handle('ai:clearCache', () => fs.rm(userFile('ai-cache'), { recursive: true, force: true }));
+
+  ipcMain.handle('doc:extract', async (_e, file: string) => {
     try {
-      return { ok: true, data: await fn({ apiKey: apiKey() }, a) };
+      return { ok: true, doc: await extract(file) };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('excel:exportV2', async (_e, data: Project) => {
+    const base = `${data.meta.partNumber || data.meta.name || 'FMEA'}_${data.meta.fmeaRevision || 'RevA'}_v2`.replace(/\s+/g, '_');
+    const r = await dialog.showSaveDialog(win!, { defaultPath: `${base}.xlsx`, filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
+    if (r.canceled || !r.filePath) return null;
+    await fs.writeFile(r.filePath, await buildWorkbookV2(data));
+    return r.filePath;
+  });
+  ipcMain.handle('excel:readGrid', async () => {
+    const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters: [{ name: 'Excel / CSV', extensions: ['xlsx', 'xlsm', 'csv'] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    const file = r.filePaths[0];
+    const wb = new ExcelJS.Workbook();
+    if (file.toLowerCase().endsWith('.csv')) await wb.csv.readFile(file);
+    else await wb.xlsx.readFile(file);
+    const sheets: SheetGrid[] = [];
+    wb.eachSheet((ws) => {
+      const rows: SheetGrid['rows'] = [];
+      ws.eachRow({ includeEmpty: true }, (row, n) => {
+        const vals: (string | number | null)[] = [];
+        row.eachCell({ includeEmpty: true }, (c, col) => {
+          const v = c.value as unknown;
+          vals[col - 1] = v == null ? null : typeof v === 'number' ? v : typeof v === 'object' ? String((v as { result?: unknown; text?: unknown }).result ?? (v as { text?: unknown }).text ?? c.text) : String(v);
+        });
+        rows[n - 1] = vals;
+      });
+      sheets.push({ name: ws.name, rows: Array.from(rows, (x) => x ?? []) });
+    });
+    return { name: path.basename(file), sheets };
+  });
+  ipcMain.handle('report:export', async (_e, a: { html: string; format: 'pdf' | 'html'; name: string }) => {
+    const r = await dialog.showSaveDialog(win!, { defaultPath: `${a.name}.${a.format}`, filters: [{ name: a.format.toUpperCase(), extensions: [a.format] }] });
+    if (r.canceled || !r.filePath) return null;
+    if (a.format === 'html') {
+      await fs.writeFile(r.filePath, a.html, 'utf8');
+      return r.filePath;
+    }
+    const pw = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false, contextIsolation: true } });
+    try {
+      await pw.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(a.html)}`);
+      const pdf = await pw.webContents.printToPDF({ pageSize: 'A4', printBackground: true, margins: { marginType: 'default' } });
+      await fs.writeFile(r.filePath, pdf);
+    } finally {
+      pw.destroy();
+    }
+    return r.filePath;
+  });
+  ipcMain.handle('template:save', async (_e, t: { name: string }) => {
+    const r = await dialog.showSaveDialog(win!, { defaultPath: `${t.name || 'Sirket_Sablonu'}.fmeatpl`.replace(/\s+/g, '_'), filters: [{ name: 'FMEA Studio Şablonu', extensions: ['fmeatpl'] }] });
+    if (r.canceled || !r.filePath) return null;
+    await fs.writeFile(r.filePath, JSON.stringify(t, null, 2), 'utf8');
+    return r.filePath;
+  });
+  ipcMain.handle('template:open', async () => {
+    const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters: [{ name: 'FMEA Studio Şablonu', extensions: ['fmeatpl', 'json'] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    return JSON.parse(await fs.readFile(r.filePaths[0], 'utf8'));
+  });
+  ipcMain.handle('reference:open', async () => {
+    const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters: FILTERS });
+    if (r.canceled || !r.filePaths[0]) return null;
+    return { name: path.basename(r.filePaths[0]), data: JSON.parse(await fs.readFile(r.filePaths[0], 'utf8')) as Project };
+  });
+  ipcMain.handle('external:open', (_e, url: string) => (isSafeExternal(url) ? shell.openExternal(url) : Promise.resolve()));
+
+  // Opsiyonel IFS connector – kapalıysa hiçbir çekirdek işlev etkilenmez
+  const ifsSettings = () => ({ ...DEFAULT_IFS, ...(readConfig().ifs ?? {}) });
+  ipcMain.handle('ifs:get', () => ifsSettings());
+  ipcMain.handle('ifs:set', (_e, s: Partial<IfsSettings>) => {
+    const c = readConfig();
+    c.ifs = { ...ifsSettings(), ...s };
+    writeConfig(c);
+    return c.ifs;
+  });
+  const ifsCall = (fn: (c: NonNullable<ReturnType<typeof ifsConnector>>, arg: string) => Promise<unknown>) => async (_e: unknown, arg: string) => {
+    const conn = ifsConnector(ifsSettings());
+    if (!conn) return { ok: false, error: 'IFS bağlantısı kapalı (Ayarlar → IFS).' };
+    try {
+      return { ok: true, data: await fn(conn, arg) };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   };
-  ipcMain.handle('ai:requirements', wrap(ai.extractRequirements));
-  ipcMain.handle('ai:dfmea', wrap(ai.suggestDfmea));
-  ipcMain.handle('ai:pfmea', wrap(ai.suggestPfmea));
-  ipcMain.handle('ai:review', wrap(ai.engineeringReview));
+  ipcMain.handle('ifs:test', ifsCall((c) => c.test()));
+  ipcMain.handle('ifs:parts', ifsCall((c, q) => c.parts(q)));
+  ipcMain.handle('ifs:ncrs', ifsCall((c, q) => c.ncrs(q)));
+  ipcMain.handle('ifs:routing', ifsCall((c, q) => c.routing(q)));
 }
 
 app.whenReady().then(() => {
+  // Arayüzden kamera/mikrofon/konum vb. izin istekleri reddedilir
+  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
   registerIpc();
   buildMenu();
   createWindow();

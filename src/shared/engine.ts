@@ -12,7 +12,9 @@ import type {
   DfmeaRow,
   KcRow,
   PfmeaRow,
+  ProcessParamRow,
   Project,
+  RequirementRow,
   Settings,
   TableKey,
 } from './types';
@@ -46,7 +48,9 @@ type Event =
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 const today = () => new Date().toISOString().slice(0, 10);
-const DEFAULT_REACTION = 'Uygunsuz ürün karantina + NCR (AI RECOMMENDATION)';
+/** §29 gerçek reaksiyon planı sırası. Şirket prosedürüne göre mühendis düzenler. */
+export const DEFAULT_REACTION =
+  '1) Prosesi durdur 2) Şüpheli ürünü ayır (karantina) 3) Son kabul edilen parçayı belirle 4) Etkilenen lot/seri numaralarını belirle 5) Kaliteyi bilgilendir 6) NCR aç 7) Karar (disposition) 8) Kök neden analizi 9) FMEA yeniden değerlendirme 10) Kontrol planı güncelleme (AI SUGGESTION – şirket prosedürüyle doğrulayın)';
 const NO_DATA = 'VERİ YOK – doğrulanmalı';
 
 const ACTION_SYNC: [keyof DfmeaRow & keyof ActionRow | 'recommendedAction' | 'actionStatus', keyof ActionRow][] = [
@@ -124,12 +128,42 @@ function requirementText(c: Ctx, reqIds: string[]) {
     .join('\n');
 }
 
+/** Gereksinimin kabul kriteri; boşsa kaynaktan gelen alt/üst limit (yalnızca girilmiş değerler). */
+export function specOf(r: RequirementRow): string {
+  if (r.acceptance) return r.acceptance;
+  const u = r.unit ? ` ${r.unit}` : '';
+  if (r.lsl != null && r.usl != null) return `${r.lsl}–${r.usl}${u}`;
+  if (r.nominal != null && r.tolerance) return `${r.nominal} ${r.tolerance}${u}`;
+  if (r.lsl != null) return `min ${r.lsl}${u}`;
+  if (r.usl != null) return `max ${r.usl}${u}`;
+  return '';
+}
+
 function acceptanceText(c: Ctx, reqIds: string[]) {
   return reqIds
-    .map((rid) => c.find<AnyRow & { acceptance: string }>('requirements', rid))
-    .filter((r) => r && r.acceptance)
-    .map((r) => `${r!.id}: ${r!.acceptance}`)
+    .map((rid) => c.find<RequirementRow>('requirements', rid))
+    .filter((r) => r && specOf(r))
+    .map((r) => `${r!.id}: ${specOf(r!)}`)
     .join('\n');
+}
+
+/** Ölçüm yöntemine göre MSA çalışma önerisi (§30). Belirsizse boş bırakılır; mühendis seçer. */
+export function suggestMsaStudy(method: string): { study: string; dataType: '' | 'Variable' | 'Attribute' } {
+  const m = method.toLowerCase();
+  if (!m || /veri yok/.test(m)) return { study: '', dataType: '' };
+  if (/görsel|visual|go.?no.?go|tapa|pim mastar|limit numune|attribute|tap test|pass\/fail/.test(m)) return { study: 'Attribute Agreement Analysis', dataType: 'Attribute' };
+  if (/termokupl|thermocouple|sıcaklık|temperature|basınç|pressure|vakum|vacuum|transdüser|data ?logger/.test(m)) return { study: 'Calibration', dataType: 'Variable' };
+  if (/cmm|mikrometre|micrometer|kumpas|caliper|komparatör|bore|ultrason|thickness|kalınlık|profilometre|terazi|tork|torque|gauge|ölçer/.test(m)) return { study: 'Gage R&R', dataType: 'Variable' };
+  return { study: '', dataType: '' };
+}
+
+export function paramSpec(pp: ProcessParamRow): string {
+  const u = pp.unit ? ` ${pp.unit}` : '';
+  if (pp.lsl != null && pp.usl != null) return `${pp.lsl}–${pp.usl}${u}`;
+  if (pp.nominal != null) return `${pp.nominal}${u}${pp.lsl != null ? ` (min ${pp.lsl})` : ''}${pp.usl != null ? ` (max ${pp.usl})` : ''}`;
+  if (pp.lsl != null) return `min ${pp.lsl}${u}`;
+  if (pp.usl != null) return `max ${pp.usl}${u}`;
+  return '';
 }
 
 function maxLinkedSeverity(c: Ctx, dfIds: string[]): number | null {
@@ -173,7 +207,8 @@ function syncKcCandidate(c: Ctx, table: 'dfmea' | 'pfmea', id: string) {
         severity: src.s,
         rationale: src.specialChar
           ? `Özel karakteristik: ${src.specialChar}`
-          : `Severity ${src.s} ≥ KC eşiği ${c.p.settings.kcSeverityThreshold}`,
+          : `Severity ${src.s} ≥ KC eşiği ${c.p.settings.kcSeverityThreshold} → KC değerlendirmesi önerilir. Severity tek başına KC kararı değildir; faktörleri inceleyin.`,
+        origin: 'ai',
         status: 'AI Proposed',
         autoCreated: true,
       } as Partial<KcRow>,
@@ -202,12 +237,14 @@ function cpFromKc(c: Ctx, kc: KcRow): Partial<ControlPlanRow> {
     method: NO_DATA,
     reactionPlan: DEFAULT_REACTION,
     autoCreated: true,
+    charType: 'Product Characteristic',
   };
   const src = c.findAny(kc.sourceId) as DfmeaRow | PfmeaRow | undefined;
   let pf: PfmeaRow | undefined;
   if (src && 'stepId' in src) {
     pf = src;
     base.processChar = kc.characteristic;
+    base.charType = 'Process Characteristic';
   } else {
     base.productChar = kc.characteristic;
     pf = c.rows<PfmeaRow>('pfmea').find((p) => p.dfIds.includes(kc.sourceId));
@@ -231,10 +268,14 @@ function onKcApproved(c: Ctx, kc: KcRow) {
   if (!c.rows<ControlPlanRow>('controlPlan').some((r) => r.kcId === kc.id)) {
     const cpId = c.add('controlPlan', cpFromKc(c, kc), `${kc.id} onaylandı → kontrol planı satırı önerildi (spesifikasyon §12)`);
     const cp = c.find<ControlPlanRow>('controlPlan', cpId)!;
+    const sug = suggestMsaStudy(cp.method);
     c.add(
       'msa',
-      { cpId, kcId: kc.id, characteristic: kc.characteristic, gauge: cp.method, study: 'Gage R&R', status: 'Planned', autoCreated: true },
-      `${kc.id} için ölçüm sistemi analizi ihtiyacı (AI RECOMMENDATION)`,
+      {
+        cpId, kcId: kc.id, characteristic: kc.characteristic, gauge: cp.method, study: sug.study, dataType: sug.dataType, status: 'Planned', autoCreated: true,
+        notes: sug.study ? `Yöntem önerisi: ${sug.study} (AI SUGGESTION – ölçüm sistemine göre mühendis doğrular)` : 'Ölçüm yöntemi belirsiz; MSA çalışması mühendis tarafından seçilmeli.',
+      },
+      `${kc.id} için ölçüm sistemi analizi ihtiyacı (AI SUGGESTION)`,
     );
   }
   if (!c.rows<AnyRow & { kcId: string }>('capability').some((r) => r.kcId === kc.id))
@@ -297,12 +338,12 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
       break;
     }
     case 'requirements': {
-      if (field === 'text' || field === 'acceptance') {
+      if (field === 'text' || field === 'acceptance' || field === 'lsl' || field === 'usl' || field === 'nominal' || field === 'unit' || field === 'tolerance') {
         for (const d of c.rows<DfmeaRow>('dfmea').filter((d) => d.reqIds.includes(id))) {
           c.set('dfmea', d.id, 'requirement', requirementText(c, d.reqIds), `${id} gereksinim metni değişti`);
           if (!fresh) c.set('dfmea', d.id, 'reassess', `FMEA Reassessment Required – ${id} değişti (${today()})`, `${id} değişti`);
           for (const k of c.rows<KcRow>('kcs').filter((k) => k.sourceId === d.id)) {
-            if (field === 'acceptance') c.set('kcs', k.id, 'specification', acceptanceText(c, d.reqIds) || NO_DATA, `${id} kabul kriteri değişti`);
+            if (field !== 'text') c.set('kcs', k.id, 'specification', acceptanceText(c, d.reqIds) || NO_DATA, `${id} kabul kriteri değişti`);
           }
         }
       }
@@ -427,6 +468,17 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
         for (const m of c.rows<AnyRow & { cpId: string }>('msa').filter((m) => m.cpId === id)) c.set('msa', m.id, 'gauge', cp.method, `${id} ölçüm yöntemi değişti`);
       break;
     }
+    case 'processParams': {
+      const pp = c.find<ProcessParamRow>('processParams', id)!;
+      if (['nominal', 'lsl', 'usl', 'unit', 'parameter'].includes(field))
+        for (const cp of c.rows<ControlPlanRow>('controlPlan').filter((r) => r.ppId === id)) {
+          if (field === 'parameter') c.set('controlPlan', cp.id, 'processChar', pp.parameter, `${id} parametre adı değişti`);
+          else c.set('controlPlan', cp.id, 'specification', paramSpec(pp) || NO_DATA, `${id} parametre limiti değişti`);
+        }
+      if ((field === 'nominal' || field === 'lsl' || field === 'usl') && !fresh)
+        for (const pfId of pp.pfIds) c.set('pfmea', pfId, 'reassess', `FMEA Reassessment Required – ${id} parametre limiti değişti (${e.from ?? '—'} → ${e.to ?? '—'})`, `${id} değişti`);
+      break;
+    }
     case 'actions': {
       const a = c.find<ActionRow>('actions', id)!;
       if (field === 'sourceId' && a.sourceId) {
@@ -488,8 +540,11 @@ function onDelete(c: Ctx, e: Extract<Event, { type: 'delete' }>) {
     case 'pfmea':
       if (table === 'dfmea')
         for (const p of c.rows<PfmeaRow>('pfmea').filter((p) => p.dfIds.includes(id))) c.set('pfmea', p.id, 'dfIds', p.dfIds.filter((x) => x !== id), why);
-      if (table === 'pfmea')
+      if (table === 'pfmea') {
         for (const cp of c.rows<ControlPlanRow>('controlPlan').filter((r) => r.pfId === id)) c.set('controlPlan', cp.id, 'pfId', '', why);
+        for (const pp of c.rows<ProcessParamRow>('processParams').filter((r) => r.pfIds.includes(id)))
+          c.set('processParams', pp.id, 'pfIds', pp.pfIds.filter((x) => x !== id), why);
+      }
       for (const k of c.rows<KcRow>('kcs').filter((k) => k.sourceId === id)) c.del('kcs', k.id, `Kaynağı ${why}`);
       for (const a of c.rows<ActionRow>('actions').filter((a) => a.sourceId === id)) c.del('actions', a.id, `Kaynağı ${why}`);
       for (const l of c.rows<AnyRow & { linkedFmeaIds: string[] }>('lessons').filter((l) => l.linkedFmeaIds.includes(id)))
@@ -498,6 +553,7 @@ function onDelete(c: Ctx, e: Extract<Event, { type: 'delete' }>) {
     case 'processSteps':
       for (const p of c.rows<PfmeaRow>('pfmea').filter((p) => p.stepId === id)) c.set('pfmea', p.id, 'stepId', '', why);
       for (const cp of c.rows<ControlPlanRow>('controlPlan').filter((r) => r.stepId === id)) c.set('controlPlan', cp.id, 'stepId', '', why);
+      for (const pp of c.rows<ProcessParamRow>('processParams').filter((r) => r.stepId === id)) c.set('processParams', pp.id, 'stepId', '', why);
       break;
     case 'kcs':
       for (const cp of c.rows<ControlPlanRow>('controlPlan').filter((r) => r.kcId === id)) {
@@ -524,6 +580,14 @@ function onDelete(c: Ctx, e: Extract<Event, { type: 'delete' }>) {
       }
       break;
     }
+    case 'processParams':
+      for (const cp of c.rows<ControlPlanRow>('controlPlan').filter((r) => r.ppId === id)) c.set('controlPlan', cp.id, 'ppId', '', why);
+      break;
+    case 'evidence':
+      for (const t of ['requirements', 'dfmea', 'pfmea', 'kcs', 'controlPlan', 'processParams'] as TableKey[])
+        for (const r of c.rows<AnyRow>(t).filter((r) => r.evidenceIds?.includes(id)))
+          c.set(t, r.id, 'evidenceIds', r.evidenceIds!.filter((x) => x !== id), why);
+      break;
     default:
       break;
   }

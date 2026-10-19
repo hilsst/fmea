@@ -6,9 +6,20 @@ export type Confidence = 'High' | 'Medium' | 'Low' | '';
 export type DataStatus =
   | 'Dokümandan (kaynaklı)'
   | 'VERİ YOK – doğrulanmalı'
+  | 'DOĞRULAMA GEREKLİ'
   | 'AI VARSAYIMI – mühendislik doğrulaması gerekli'
   | 'AI RECOMMENDATION'
+  | 'AI SUGGESTION'
+  | 'ENGINEERING SUGGESTION – VERIFY'
   | '';
+/** Kaydın nereden geldiği (2.0). */
+export type Origin = 'manual' | 'ai' | 'import' | 'extraction' | 'template' | 'similar' | '';
+/** AI çıktısında bilginin dayanağı – Engineering Knowledge Mode'da ayrı gösterilir (§58). */
+export type Basis = 'SOURCE DATA' | 'ENGINEERING KNOWLEDGE' | 'AI INFERENCE' | '';
+export type Cause4M = 'Man' | 'Machine' | 'Material' | 'Method' | 'Measurement' | 'Environment' | '';
+export type KcCategory = 'Normal' | 'Significant' | 'Critical' | 'Key Characteristic' | 'Safety Characteristic' | 'Regulatory Characteristic' | '';
+export type CharType = 'Product Characteristic' | 'Process Characteristic' | 'Process Parameter' | '';
+export type Verification = 'VERIFIED' | 'VERIFIED – farklı konum' | 'SOURCE NOT VERIFIED' | 'MANUAL VERIFICATION REQUIRED' | '';
 export type ActionStatus = 'Open' | 'In Progress' | 'Completed' | 'Cancelled' | '';
 export type IssueStatus = 'Open' | 'Under Review' | 'Waiting Customer' | 'Resolved' | 'Closed' | '';
 export type KcClass = 'KC-1 Critical' | 'KC-2 Significant' | 'KC-3 Process KC' | '';
@@ -18,6 +29,12 @@ export interface BaseRow {
   id: string;
   /** Değişiklik yönetimi: kaynak doküman/gereksinim değiştiğinde dolar. */
   reassess?: string;
+  /** 2.0: kaydın kaynağı (elle, AI, içe aktarma, doküman çıkarımı ...). */
+  origin?: Origin;
+  /** 2.0: bu kaydı destekleyen kanıtlar (EV-xxx). */
+  evidenceIds?: string[];
+  /** 2.0: AI önerisi reddedildiyse gerekçe (§72). */
+  rejectReason?: string;
 }
 
 export interface ProjectMeta {
@@ -53,6 +70,18 @@ export interface Settings {
   autoControlPlan: boolean;
   /** Yüksek severity satırlar için otomatik KC adayı önerilsin. */
   autoKcCandidates: boolean;
+  // 2.0
+  userName: string;
+  userRole: string;
+  /** Strict Engineering Mode (§57) / Engineering Knowledge Mode (§58) */
+  aiMode: 'strict' | 'knowledge';
+  productType: string;
+  causeView: '4M' | '5M+E';
+  kcRules: KcRules;
+  kcClasses: string[];
+  workflow: { step: WorkflowStep; enabled: boolean; role: string }[];
+  /** Bu alanlar değişirken neden sorulur (§37). */
+  reasonFields: string[];
 }
 
 export interface DocumentRow extends BaseRow {
@@ -65,6 +94,8 @@ export interface DocumentRow extends BaseRow {
   product: string;
   notes: string;
   filePath: string;
+  /** 2.0: analiz durumu (docIndex özetinden). */
+  parseStatus: string;
 }
 
 export interface RequirementRow extends BaseRow {
@@ -76,9 +107,23 @@ export interface RequirementRow extends BaseRow {
   dataStatus: DataStatus;
   approval: Approval;
   notes: string;
+  // 2.0 Requirement Engine (§12)
+  characteristic: string;
+  nominal: number | null;
+  lsl: number | null;
+  usl: number | null;
+  unit: string;
+  tolerance: string;
+  sourceDocId: string;
+  sourcePage: string;
+  sourceSection: string;
+  sourceCell: string;
+  balloon: string;
+  evidenceText: string;
+  confidence: Confidence;
 }
 
-export type StructureLevel = 'Product' | 'Assembly' | 'Part' | 'Feature';
+export type StructureLevel = 'System' | 'Subsystem' | 'Product' | 'Assembly' | 'Component' | 'Part' | 'Feature';
 
 export interface StructureRow extends BaseRow {
   level: StructureLevel | '';
@@ -89,6 +134,10 @@ export interface StructureRow extends BaseRow {
   reqIds: string[];
   source: string;
   notes: string;
+  // 2.0 Function analysis (§16)
+  performanceReq: string;
+  constraint: string;
+  interface: string;
 }
 
 interface FmeaCommon extends BaseRow {
@@ -115,9 +164,23 @@ interface FmeaCommon extends BaseRow {
   approval: Approval;
   dataStatus: DataStatus;
   notes: string;
+  // 2.0 S/O/D gerekçesi (§24–25): kriter puanın kendisinden gelir; gerekçe, kanıt, güven saklanır.
+  sReason: string;
+  sEvidence: string;
+  sConf: Confidence;
+  oReason: string;
+  oEvidence: string;
+  oConf: Confidence;
+  dReason: string;
+  dEvidence: string;
+  dConf: Confidence;
+  basis: Basis;
 }
 
 export interface DfmeaRow extends FmeaCommon {
+  system: string;
+  subsystem: string;
+  component: string;
   functionId: string;
   function: string;
   reqIds: string[];
@@ -150,6 +213,34 @@ export interface PfmeaRow extends FmeaCommon {
   errorProofing: string;
   measurement: string;
   reactionPlan: string;
+  // 2.0 (§19–21)
+  processElement: string;
+  cause4M: Cause4M;
+  why1: string;
+  why2: string;
+  why3: string;
+  why4: string;
+  why5: string;
+  rootCause: string;
+}
+
+/** 2.0 Special Process Engine (§23): proses parametresi → ürün karakteristiği → hata modu → kontrol. */
+export interface ProcessParamRow extends BaseRow {
+  stepId: string;
+  parameter: string;
+  category: string;
+  nominal: number | null;
+  lsl: number | null;
+  usl: number | null;
+  unit: string;
+  productCharacteristic: string;
+  pfIds: string[];
+  prevention: string;
+  monitoring: string;
+  reaction: string;
+  validation: string;
+  source: string;
+  notes: string;
 }
 
 export interface KcRow extends BaseRow {
@@ -162,6 +253,16 @@ export interface KcRow extends BaseRow {
   status: Approval;
   autoCreated: boolean;
   notes: string;
+  // 2.0 Special Characteristic Engine (§27)
+  category: KcCategory;
+  fSafety: boolean;
+  fRegulatory: boolean;
+  fCustomer: boolean;
+  fSpecialProcess: boolean;
+  fTolerance: boolean;
+  fCapability: boolean;
+  fHistorical: boolean;
+  fDetection: boolean;
 }
 
 export interface ControlPlanRow extends BaseRow {
@@ -185,6 +286,11 @@ export interface ControlPlanRow extends BaseRow {
   responsible: string;
   autoCreated: boolean;
   notes: string;
+  // 2.0 (§28–29)
+  charType: CharType;
+  tolerance: string;
+  record: string;
+  ppId: string;
 }
 
 export interface MsaRow extends BaseRow {
@@ -197,6 +303,7 @@ export interface MsaRow extends BaseRow {
   result: string;
   autoCreated: boolean;
   notes: string;
+  dataType: 'Variable' | 'Attribute' | '';
 }
 
 export interface CapabilityRow extends BaseRow {
@@ -207,6 +314,8 @@ export interface CapabilityRow extends BaseRow {
   target: number | null;
   data: string; // virgül/boşluk/satır ile ayrılmış ölçümler
   notes: string;
+  subgroupSize: number | null;
+  distribution: 'Normal' | 'Non-normal' | 'Unknown' | '';
 }
 
 export interface ActionRow extends BaseRow {
@@ -247,6 +356,62 @@ export interface LessonRow extends BaseRow {
   linkedFmeaIds: string[];
   lesson: string;
   date: string;
+  // 2.0 Lessons Learned Knowledge Base (§33)
+  product: string;
+  process: string;
+  failureMode: string;
+  previousAction: string;
+  status: string;
+}
+
+/** 2.0 Evidence System (§13): her kanıt doküman konumuna ve alıntıya bağlıdır. */
+export interface EvidenceRow extends BaseRow {
+  docId: string;
+  page: string;
+  section: string;
+  sheet: string;
+  cell: string;
+  balloon: string;
+  quote: string;
+  evidenceType: string;
+  basis: Basis;
+  confidence: Confidence;
+  verification: Verification;
+  verifiedLocation: string;
+  linkedIds: string[];
+  aiRunId: string;
+  notes: string;
+}
+
+/** 2.0 Change Impact (§34) */
+export interface ChangeRequestRow extends BaseRow {
+  title: string;
+  trigger: string;
+  description: string;
+  impactedIds: string[];
+  status: 'Open' | 'Assessed' | 'Implemented' | 'Rejected' | '';
+  requestedBy: string;
+  date: string;
+  decision: string;
+}
+
+/** 2.0 AI çalıştırma kaydı (§37, §64). */
+export interface AiRunRow extends BaseRow {
+  role: string;
+  provider: string;
+  model: string;
+  at: string;
+  inputs: string;
+  mode: string;
+  status: 'ok' | 'error' | '';
+  errorKind: string;
+  message: string;
+  items: number;
+  accepted: number;
+  rejected: number;
+  tokensIn: number;
+  tokensOut: number;
+  cached: boolean;
 }
 
 export interface HistoryRow extends BaseRow {
@@ -270,6 +435,68 @@ export interface Scoring {
   severity: ScoringEntry[];
   occurrence: ScoringEntry[];
   detection: ScoringEntry[];
+  /**
+   * 2.0: şirkete özel AP tablosu (§26). Anahtar "S bandı,O bandı" (1–5), değer D bantları için 4 harf
+   * [D=1, D=2–4, D=5–6, D=7–10], örn. { "5,5": "HHHH" }. Boş = AIAG-VDA 2019.
+   */
+  apTable?: Record<string, string> | null;
+  /** Tablonun adı / kaynağı (örn. "Şirket AP Tablosu Rev 2"). */
+  apName?: string;
+}
+
+export type WorkflowStep = 'AI Draft' | 'Engineer Review' | 'Design Review' | 'Manufacturing Review' | 'Quality Review' | 'Final Approval' | 'Baseline';
+export const WORKFLOW_STEPS: WorkflowStep[] = ['AI Draft', 'Engineer Review', 'Design Review', 'Manufacturing Review', 'Quality Review', 'Final Approval', 'Baseline'];
+export const ROLES = ['Design Engineer', 'Manufacturing Engineer', 'Quality Engineer', 'Configuration Engineer', 'Approver'] as const;
+
+/** KC değerlendirme faktörleri (§27). Severity eşiği `kcSeverityThreshold` ayarındadır. */
+export interface KcRules {
+  safety: boolean;
+  regulatory: boolean;
+  customer: boolean;
+  specialProcess: boolean;
+  tolerance: boolean;
+  capability: boolean;
+  historical: boolean;
+  detection: boolean;
+}
+
+/** 2.0 Revision / Baseline (§35): baseline değiştirilemez; snapshot + SHA-256 ile korunur. */
+export interface Baseline {
+  id: string;
+  revision: string;
+  author: string;
+  date: string;
+  approver: string;
+  approvalComment: string;
+  changeReason: string;
+  hash: string;
+  snapshot: string;
+}
+
+export interface ApprovalRecord {
+  id: string;
+  step: WorkflowStep;
+  role: string;
+  user: string;
+  at: string;
+  decision: 'Approved' | 'Rejected' | 'Returned';
+  comment: string;
+  revision: string;
+}
+
+/** 2.0 Audit Trail (§37) */
+export interface AuditEntry {
+  at: string;
+  user: string;
+  kind: 'Added' | 'Modified' | 'Deleted' | 'Approval' | 'AI' | 'Baseline' | 'Import';
+  table: string;
+  id: string;
+  field?: string;
+  from?: unknown;
+  to?: unknown;
+  reason?: string;
+  comment?: string;
+  revision: string;
 }
 
 /** Revizyonlar arası değişiklik sayacı (Added/Modified/Deleted). */
@@ -303,6 +530,16 @@ export interface Project {
   lessons: LessonRow[];
   history: HistoryRow[];
   changeLog: ChangeLogEntry[];
+  // 2.0
+  processParams: ProcessParamRow[];
+  evidence: EvidenceRow[];
+  changeRequests: ChangeRequestRow[];
+  aiRuns: AiRunRow[];
+  baselines: Baseline[];
+  approvals: ApprovalRecord[];
+  auditLog: AuditEntry[];
+  /** Doküman analiz çıktısı (yerel ayrıştırma); kaynak doğrulama için dosyada saklanır. */
+  docIndex: Record<string, import('./docmodel').ExtractedDoc>;
 }
 
 export type TableKey =
@@ -319,6 +556,10 @@ export type TableKey =
   | 'actions'
   | 'issues'
   | 'lessons'
-  | 'history';
+  | 'history'
+  | 'processParams'
+  | 'evidence'
+  | 'changeRequests'
+  | 'aiRuns';
 
 export type AnyRow = Project[TableKey][number];

@@ -6,8 +6,10 @@ import type {
   Settings,
   TableKey,
 } from './types';
+import { WORKFLOW_STEPS } from './types';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+export const APP_VERSION = '2.0.0';
 
 export const ID_PREFIX: Record<TableKey, string> = {
   documents: 'DOC',
@@ -24,6 +26,10 @@ export const ID_PREFIX: Record<TableKey, string> = {
   issues: 'OI',
   lessons: 'LL',
   history: 'CH',
+  processParams: 'PP',
+  evidence: 'EV',
+  changeRequests: 'CR',
+  aiRuns: 'AIR',
 };
 
 export const TABLE_LABEL: Record<TableKey, string> = {
@@ -41,6 +47,10 @@ export const TABLE_LABEL: Record<TableKey, string> = {
   issues: 'Açık Konular',
   lessons: 'Dersler',
   history: 'Revizyon Geçmişi',
+  processParams: 'Proses Parametreleri',
+  evidence: 'Kanıtlar',
+  changeRequests: 'Değişiklik Talepleri',
+  aiRuns: 'AI Çalıştırmaları',
 };
 
 /** Bir ID'nin hangi tabloya ait olduğunu prefix'ten bulur. */
@@ -84,38 +94,56 @@ const fmeaCommon = {
   approval: '' as const,
   dataStatus: '' as const,
   notes: '',
+  sReason: '',
+  sEvidence: '',
+  sConf: '' as const,
+  oReason: '',
+  oEvidence: '',
+  oConf: '' as const,
+  dReason: '',
+  dEvidence: '',
+  dConf: '' as const,
+  basis: '' as const,
 };
 
 export function blankRow(table: TableKey, id: string): AnyRow {
   switch (table) {
     case 'documents':
-      return { id, name: '', docType: '', docNumber: '', revision: '', date: '', source: '', product: '', notes: '', filePath: '' };
+      return { id, name: '', docType: '', docNumber: '', revision: '', date: '', source: '', product: '', notes: '', filePath: '', parseStatus: '' };
     case 'requirements':
-      return { id, text: '', reqType: '', acceptance: '', verification: '', source: '', dataStatus: '', approval: 'AI Proposed', notes: '' };
+      return { id, text: '', reqType: '', acceptance: '', verification: '', source: '', dataStatus: '', approval: 'AI Proposed', notes: '', characteristic: '', nominal: null, lsl: null, usl: null, unit: '', tolerance: '', sourceDocId: '', sourcePage: '', sourceSection: '', sourceCell: '', balloon: '', evidenceText: '', confidence: '' };
     case 'structure':
-      return { id, level: '', parentId: '', element: '', function: '', functionType: '', reqIds: [], source: '', notes: '' };
+      return { id, level: '', parentId: '', element: '', function: '', functionType: '', reqIds: [], source: '', notes: '', performanceReq: '', constraint: '', interface: '' };
     case 'dfmea':
-      return { id, ...fmeaCommon, functionId: '', function: '', reqIds: [], requirement: '', localEffect: '', higherEffect: '', verification: '' };
+      return { id, ...fmeaCommon, system: '', subsystem: '', component: '', functionId: '', function: '', reqIds: [], requirement: '', localEffect: '', higherEffect: '', verification: '' };
     case 'processSteps':
       return { id, opNo: '', name: '', description: '', machine: '', tool: '', specialProcess: false, productChars: '', processChars: '', source: '', notes: '' };
     case 'pfmea':
-      return { id, ...fmeaCommon, stepId: '', opNo: '', stepName: '', processFunction: '', requirement: '', dfIds: [], errorProofing: '', measurement: '', reactionPlan: '' };
+      return { id, ...fmeaCommon, stepId: '', opNo: '', stepName: '', processFunction: '', requirement: '', dfIds: [], errorProofing: '', measurement: '', reactionPlan: '', processElement: '', cause4M: '', why1: '', why2: '', why3: '', why4: '', why5: '', rootCause: '' };
     case 'kcs':
-      return { id, sourceId: '', characteristic: '', kcClass: '', specification: '', severity: null, rationale: '', status: 'AI Proposed', autoCreated: false, notes: '' };
+      return { id, sourceId: '', characteristic: '', kcClass: '', specification: '', severity: null, rationale: '', status: 'AI Proposed', autoCreated: false, notes: '', category: '', fSafety: false, fRegulatory: false, fCustomer: false, fSpecialProcess: false, fTolerance: false, fCapability: false, fHistorical: false, fDetection: false };
     case 'controlPlan':
-      return { id, stepId: '', opNo: '', processName: '', machine: '', tool: '', pfId: '', kcId: '', productChar: '', processChar: '', kcClass: '', specification: '', method: '', gauge: '', sampleSize: '', frequency: '', controlMethod: '', reactionPlan: '', responsible: '', autoCreated: false, notes: '' };
+      return { id, stepId: '', opNo: '', processName: '', machine: '', tool: '', pfId: '', kcId: '', productChar: '', processChar: '', kcClass: '', specification: '', method: '', gauge: '', sampleSize: '', frequency: '', controlMethod: '', reactionPlan: '', responsible: '', autoCreated: false, notes: '', charType: '', tolerance: '', record: '', ppId: '' };
     case 'msa':
-      return { id, cpId: '', kcId: '', characteristic: '', gauge: '', study: '', status: 'Planned', result: '', autoCreated: false, notes: '' };
+      return { id, cpId: '', kcId: '', characteristic: '', gauge: '', study: '', status: 'Planned', result: '', autoCreated: false, notes: '', dataType: '' };
     case 'capability':
-      return { id, kcId: '', characteristic: '', lsl: null, usl: null, target: null, data: '', notes: '' };
+      return { id, kcId: '', characteristic: '', lsl: null, usl: null, target: null, data: '', notes: '', subgroupSize: null, distribution: '' };
     case 'actions':
       return { id, sourceId: '', description: '', actionType: '', owner: '', dueDate: '', status: 'Open', actionTaken: '', completionDate: '', newS: null, newO: null, newD: null, verification: '', notes: '' };
     case 'issues':
       return { id, description: '', priority: '', source: '', risk: '', relatedReq: '', relatedFmea: '', recommendedAction: '', responsible: '', dueDate: '', status: 'Open', answer: '' };
     case 'lessons':
-      return { id, sourceType: '', reference: '', description: '', rootCause: '', linkedFmeaIds: [], lesson: '', date: '' };
+      return { id, sourceType: '', reference: '', description: '', rootCause: '', linkedFmeaIds: [], lesson: '', date: '', product: '', process: '', failureMode: '', previousAction: '', status: '' };
     case 'history':
       return { id, revision: '', date: '', author: '', added: '', modified: '', deleted: '', description: '', approvedBy: '' };
+    case 'processParams':
+      return { id, stepId: '', parameter: '', category: '', nominal: null, lsl: null, usl: null, unit: '', productCharacteristic: '', pfIds: [], prevention: '', monitoring: '', reaction: '', validation: '', source: '', notes: '' };
+    case 'evidence':
+      return { id, docId: '', page: '', section: '', sheet: '', cell: '', balloon: '', quote: '', evidenceType: '', basis: '', confidence: '', verification: '', verifiedLocation: '', linkedIds: [], aiRunId: '', notes: '' };
+    case 'changeRequests':
+      return { id, title: '', trigger: '', description: '', impactedIds: [], status: 'Open', requestedBy: '', date: '', decision: '' };
+    case 'aiRuns':
+      return { id, role: '', provider: '', model: '', at: '', inputs: '', mode: '', status: '', errorKind: '', message: '', items: 0, accepted: 0, rejected: 0, tokensIn: 0, tokensOut: 0, cached: false };
   }
 }
 
@@ -138,6 +166,16 @@ export const DEFAULT_META: ProjectMeta = {
   confidentiality: '',
 };
 
+const DEFAULT_STEP_ROLE: Record<string, string> = {
+  'AI Draft': '',
+  'Engineer Review': 'Design Engineer',
+  'Design Review': 'Design Engineer',
+  'Manufacturing Review': 'Manufacturing Engineer',
+  'Quality Review': 'Quality Engineer',
+  'Final Approval': 'Approver',
+  Baseline: 'Configuration Engineer',
+};
+
 export const DEFAULT_SETTINGS: Settings = {
   kcSeverityThreshold: 9,
   highSeverityThreshold: 8,
@@ -146,6 +184,15 @@ export const DEFAULT_SETTINGS: Settings = {
   minSamples: null,
   autoControlPlan: true,
   autoKcCandidates: true,
+  userName: '',
+  userRole: '',
+  aiMode: 'strict',
+  productType: '',
+  causeView: '5M+E',
+  kcRules: { safety: true, regulatory: true, customer: true, specialProcess: true, tolerance: true, capability: true, historical: true, detection: true },
+  kcClasses: ['Normal', 'Significant', 'Critical', 'Key Characteristic', 'Safety Characteristic', 'Regulatory Characteristic'],
+  workflow: WORKFLOW_STEPS.map((step) => ({ step, enabled: true, role: DEFAULT_STEP_ROLE[step] })),
+  reasonFields: ['s', 'o', 'd', 'kcs.status', 'kcs.category', 'kcs.kcClass', 'approval'],
 };
 
 // AIAG-VDA (2019) yapısına dayalı özet kriterler. Kurum/müşteri tablosu varsa "Puanlama" sekmesinden değiştirilir.
@@ -256,24 +303,62 @@ export function newProject(): Project {
       { id: 'CH-001', revision: 'Rev A', date: today, author: '', added: '', modified: '', deleted: '', description: 'İlk sürüm', approvedBy: '' },
     ],
     changeLog: [],
+    processParams: [],
+    evidence: [],
+    changeRequests: [],
+    aiRuns: [],
+    baselines: [],
+    approvals: [],
+    auditLog: [],
+    docIndex: {},
   };
 }
 
-/** Eski/eksik dosyaları güncel şemaya tamamlar. */
-export function normalizeProject(raw: Partial<Project>): Project {
+export interface MigrationReport {
+  from: number;
+  to: number;
+  notes: string[];
+}
+
+/**
+ * Eski/eksik dosyaları güncel şemaya tamamlar (v1 veya sürümsüz → v2).
+ * Hiçbir mevcut alan silinmez; yalnızca eksik alanlar boş değerle eklenir.
+ */
+export function normalizeProject(raw: Partial<Project>, report?: MigrationReport): Project {
   const base = newProject();
+  const from = typeof raw.schemaVersion === 'number' ? raw.schemaVersion : 0;
+  const notes: string[] = [];
   const p: Project = {
     ...base,
     ...raw,
+    schemaVersion: SCHEMA_VERSION,
     meta: { ...base.meta, ...(raw.meta ?? {}) },
-    settings: { ...base.settings, ...(raw.settings ?? {}) },
+    settings: {
+      ...base.settings,
+      ...(raw.settings ?? {}),
+      kcRules: { ...base.settings.kcRules, ...(raw.settings?.kcRules ?? {}) },
+    },
     scoring: raw.scoring ?? base.scoring,
     changeLog: raw.changeLog ?? [],
+    baselines: raw.baselines ?? [],
+    approvals: raw.approvals ?? [],
+    auditLog: raw.auditLog ?? [],
+    docIndex: raw.docIndex ?? {},
   } as Project;
   for (const t of Object.keys(ID_PREFIX) as TableKey[]) {
     const rows = (raw[t] as AnyRow[] | undefined) ?? (t === 'history' ? base.history : []);
     (p as unknown as Record<string, AnyRow[]>)[t] = rows.map((r) => ({ ...blankRow(t, r.id), ...r }) as AnyRow);
   }
+  if (from < 2) {
+    notes.push(`Dosya şema ${from || 'sürümsüz'} → ${SCHEMA_VERSION} güncellendi; mevcut veriler korundu, yeni alanlar boş eklendi.`);
+    // v1 kayıtları: kaynağı elle/AI olarak işaretle (AI Proposed olanlar AI kökenli kabul edilir)
+    for (const t of ['requirements', 'dfmea', 'pfmea', 'kcs'] as TableKey[])
+      for (const r of p[t] as AnyRow[]) {
+        const rr = r as AnyRow & { approval?: string; status?: string; origin?: string };
+        if (!rr.origin) rr.origin = (rr.approval ?? rr.status) === 'AI Proposed' ? 'ai' : 'manual';
+      }
+  }
+  if (report) Object.assign(report, { from, to: SCHEMA_VERSION, notes });
   return p;
 }
 
@@ -281,10 +366,10 @@ export const LISTS = {
   reqType: ['Functional', 'Performance', 'Dimensional', 'Material', 'Structural', 'Environmental', 'Safety', 'Reliability', 'Interface', 'Manufacturing', 'Inspection', 'Regulatory', 'Customer-specific'],
   docType: ['Teknik resim', 'Teknik şartname', 'Müşteri gereksinimi', 'CAD (STEP/IGES/DXF)', 'E-posta', 'Toplantı notu', 'Malzeme datasheet', 'Proses spesifikasyonu', 'Üretim talimatı', 'Kontrol planı', 'Test raporu', 'Laboratuvar raporu', 'Önceki FMEA', 'NCR / CAPA / 8D', 'Müşteri şikayeti', 'Üretim problemi kaydı', 'Diğer'],
   functionType: ['Taşıma', 'Yük aktarma', 'Sızdırmazlık', 'Elektromanyetik performans', 'Termal dayanım', 'Geometrik uyum', 'Bağlantı', 'Yüzey koruması', 'Aerodinamik / akış performansı', 'Titreşim dayanımı', 'Çevresel dayanım', 'Diğer'],
-  level: ['Product', 'Assembly', 'Part', 'Feature'],
+  level: ['System', 'Subsystem', 'Product', 'Assembly', 'Component', 'Part', 'Feature'],
   approval: ['AI Proposed', 'Engineer Reviewed', 'Approved', 'Rejected'],
   confidence: ['High', 'Medium', 'Low'],
-  dataStatus: ['Dokümandan (kaynaklı)', 'VERİ YOK – doğrulanmalı', 'AI VARSAYIMI – mühendislik doğrulaması gerekli', 'AI RECOMMENDATION'],
+  dataStatus: ['Dokümandan (kaynaklı)', 'VERİ YOK – doğrulanmalı', 'DOĞRULAMA GEREKLİ', 'AI SUGGESTION', 'ENGINEERING SUGGESTION – VERIFY', 'AI VARSAYIMI – mühendislik doğrulaması gerekli', 'AI RECOMMENDATION'],
   actionStatus: ['Open', 'In Progress', 'Completed', 'Cancelled'],
   issueStatus: ['Open', 'Under Review', 'Waiting Customer', 'Resolved', 'Closed'],
   priority: ['Critical', 'Important', 'Optional'],
@@ -292,7 +377,19 @@ export const LISTS = {
   specialChar: ['Safety', 'Regulatory', 'Critical', 'Significant', 'Process'],
   actionType: ['Design change', 'Process change', 'Prevention control', 'Detection control', 'Error proofing', 'Validation / Test', 'Analysis', 'Work instruction / Documentation', 'Training (destekleyici)'],
   errorProofing: ['Poka-yoke', 'Barcode', 'QR verification', 'Interlock', 'Software parameter lock', 'Fixture', 'Template', 'Visual aid', 'Automated inspection', 'Sensor', 'Recipe management', 'None (operator dependent)'],
-  llSource: ['NCR', '8D', 'CAPA', 'Customer complaint', 'Scrap', 'Rework', 'Warranty', 'Production failure'],
+  llSource: ['NCR', '8D', 'CAPA', 'Customer complaint', 'Scrap', 'Rework', 'Audit finding', 'Warranty', 'Test failure', 'Production failure'],
+  cause4M: ['Man', 'Machine', 'Material', 'Method', 'Measurement', 'Environment'],
+  kcCategory: ['Normal', 'Significant', 'Critical', 'Key Characteristic', 'Safety Characteristic', 'Regulatory Characteristic'],
+  charType: ['Product Characteristic', 'Process Characteristic', 'Process Parameter'],
+  basis: ['SOURCE DATA', 'ENGINEERING KNOWLEDGE', 'AI INFERENCE'],
+  verification: ['VERIFIED', 'VERIFIED – farklı konum', 'SOURCE NOT VERIFIED', 'MANUAL VERIFICATION REQUIRED'],
+  evidenceType: ['Requirement text', 'Drawing dimension', 'Drawing note', 'GD&T', 'Table cell', 'E-mail', 'Specification clause', 'Test result', 'Historical record', 'Engineering knowledge'],
+  crStatus: ['Open', 'Assessed', 'Implemented', 'Rejected'],
+  paramCategory: ['Temperature', 'Pressure', 'Vacuum', 'Time', 'Ramp rate', 'Humidity', 'Cure cycle', 'Mix ratio', 'Pot life', 'Out-time', 'Thickness', 'Speed / feed', 'Torque', 'Other'],
+  distribution: ['Normal', 'Non-normal', 'Unknown'],
+  dataType: ['Variable', 'Attribute'],
+  productType: ['Composite Part', 'Composite Assembly', 'Bonded Assembly', 'Radome', 'Sandwich Panel', 'Metallic Part', 'General'],
+  llStatus: ['Open', 'Closed', 'Verified'],
   msaStudy: ['Gage R&R', 'Bias', 'Linearity', 'Stability', 'Calibration', 'Attribute Agreement Analysis'],
   msaStatus: ['Planned', 'In Progress', 'Acceptable', 'Conditionally acceptable', 'Not acceptable'],
   processStep: ['Incoming Material', 'Storage', 'Material Preparation', 'Cutting', 'Kitting', 'Lay-up', 'Debulk', 'Vacuum Bagging', 'Cure', 'Demolding', 'Machining', 'Bonding', 'Surface Treatment', 'Painting', 'Inspection', 'Assembly', 'Final Inspection', 'Packaging'],

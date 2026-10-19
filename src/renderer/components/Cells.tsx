@@ -137,20 +137,49 @@ export function refOptions(project: Project, ref: TableKey | TableKey[] | undefi
   return tables.flatMap((t) => (project[t] as { id: string }[]).map((r) => ({ id: r.id, label: rowLabel(project, r.id) })));
 }
 
+/** Tek seçimli bağlantı hücresi. Seçenek listesi yalnızca açıldığında hesaplanır (500+ satırda performans). */
 export function RefCell({ col, value, readonly, onCommit, project }: CellProps) {
   const v = value == null ? '' : String(value);
-  const opts = useMemo(() => refOptions(project, col.ref), [project, col.ref]);
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const box = useRef<HTMLDivElement>(null);
+  const opts = useMemo(() => (open ? refOptions(project, col.ref) : []), [open, project, col.ref]);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
   if (readonly) return <div className="cell-ro">{v}</div>;
+  const pick = (id: string) => {
+    setOpen(false);
+    if (id !== v) onCommit(id);
+  };
   return (
-    <select className="cell-select" value={v} title={opts.find((o) => o.id === v)?.label} onChange={(e) => onCommit(e.target.value)}>
-      <option value=""></option>
-      {v && !opts.some((o) => o.id === v) && <option value={v}>{v} (bulunamadı)</option>}
-      {opts.map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <div className="multi-cell" ref={box}>
+      <button className="chips ref" onClick={() => setOpen(!open)} title={v ? rowLabel(project, v) : ''}>
+        {v ? <span className="chip">{v}</span> : <span className="muted">seç…</span>}
+      </button>
+      {open && (
+        <div className="popover">
+          <input autoFocus className="pop-search" placeholder="Ara…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setOpen(false)} />
+          <div className="pop-list">
+            <button className="pop-item btnlike" onClick={() => pick('')}><span className="muted">(boş)</span></button>
+            {v && !opts.some((o) => o.id === v) && <div className="pop-item muted">{v} (bulunamadı)</div>}
+            {opts
+              .filter((o) => o.label.toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr')))
+              .map((o) => (
+                <button key={o.id} className={`pop-item btnlike ${o.id === v ? 'on' : ''}`} onClick={() => pick(o.id)}>
+                  <span>{o.label}</span>
+                </button>
+              ))}
+            {opts.length === 0 && <div className="muted pad">Bağlanacak kayıt yok</div>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -159,7 +188,7 @@ export function MultiCell({ col, value, readonly, onCommit, project }: CellProps
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState<string[]>(ids);
   const [q, setQ] = useState('');
-  const opts = useMemo(() => refOptions(project, col.ref), [project, col.ref]);
+  const opts = useMemo(() => (open ? refOptions(project, col.ref) : []), [open, project, col.ref]);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => setSel(ids), [ids.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -176,7 +205,7 @@ export function MultiCell({ col, value, readonly, onCommit, project }: CellProps
   };
   return (
     <div className="multi-cell" ref={box}>
-      <button className="chips" disabled={readonly} onClick={() => (open ? close() : setOpen(true))} title={ids.map((i) => rowLabel(project, i)).join('\n')}>
+      <button className="chips" disabled={readonly} onClick={() => (open ? close() : setOpen(true))} title={ids.length ? ids.map((i) => rowLabel(project, i)).join('\n') : ''}>
         {ids.length ? ids.map((i) => <span key={i} className="chip">{i}</span>) : <span className="muted">seç…</span>}
       </button>
       {open && (

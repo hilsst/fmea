@@ -1,6 +1,8 @@
-# FMEA Studio
+# FMEA Studio 2.0
 
-DFMEA → PFMEA → Kritik Karakteristik (KC) → Kontrol Planı → MSA → Yeterlilik → İzlenebilirlik zincirini tek dosyada yöneten masaüstü uygulaması (Windows / macOS / Linux).
+Doküman → Gereksinim → DFMEA → PFMEA → Risk → Özel Karakteristik → Kontrol Planı → MSA → Capability → Aksiyon → Kalite Doğrulama → AI İnceleme → Mühendis Onayı zincirini tek dosyada yöneten masaüstü uygulaması (Windows / macOS / Linux).
+
+1.0 `.fmea` dosyaları açılışta veri kaybı olmadan 2.0 şemasına dönüştürülür. 2.0 ayrıntıları: [docs/v2/02-final-rapor.md](docs/v2/02-final-rapor.md).
 
 ## Kurulum (Windows)
 
@@ -9,30 +11,32 @@ DFMEA → PFMEA → Kritik Karakteristik (KC) → Kontrol Planı → MSA → Yet
 2. `FMEA-Studio-Kurulum-….exe` kurulum sihirbazıdır, `FMEA-Studio-Tasinabilir-….exe` kurulum gerektirmeden çalışır.
 3. Uygulama kod imzalı olmadığı için Windows SmartScreen “Bilinmeyen yayımcı” uyarısı gösterebilir: **Ek bilgi → Yine de çalıştır**.
 
-## Ekranlar (çalışma sırasına göre)
-
-Sekmeler AIAG-VDA 7 adımı ve proje spesifikasyonundaki çalışma akışına göre dizilidir. Her ekranın üstündeki ← → düğmeleriyle sırayla ilerlenir.
+## Ekranlar (sol menü, çalışma sırasına göre)
 
 | # | Ekran | Ne yapılır |
 |---|---|---|
-| 1 | Proje | Kapsam, ekip, parça, revizyon; KC/High Severity/RPN eşikleri; özet panosu |
-| 2 | Dokümanlar | Kaynak doküman kaydı, dosya bağlama, **AI ile gereksinim çıkarma** |
-| 3 | Gereksinimler | Requirements Matrix (REQ-001…), kabul kriteri, doğrulama, kaynak, onay |
-| 4 | Yapı & Fonksiyon | Product → Assembly → Part → Feature → Function ağacı |
-| 5 | DFMEA | Fonksiyon → Gereksinim → Hata Modu → Etki → Neden → Önleme → Tespit, S/O/D, AP, RPN, risk, KC |
-| 6 | Proses Akışı | Proses adımları, makine/takım, özel proses işareti, akış şeması |
-| 7 | PFMEA | DFMEA’dan aktarım, kompozit hata modu kontrol listesi, hata önleme, ölçüm, reaksiyon planı |
-| 8 | Kritik Karakteristikler | “AI Recommended KC” adayları, mühendis onayı / reddi |
-| 9 | Kontrol Planı | KC ve PFMEA’dan otomatik satırlar; yöntem, mastar, örnek, sıklık, reaksiyon |
-| 10 | MSA | Gage R&R, bias, linearity, stability, kalibrasyon ihtiyaçları |
-| 11 | Yeterlilik | Ölçüm verisi yapıştırılır; Cp, Cpk, Pp, Ppk otomatik hesaplanır |
-| 12 | Aksiyonlar | FMEA’daki önerilen aksiyonlar; iki yönlü senkron, gecikme takibi |
-| 13 | Açık Konular | Eksik bilgi / Open Engineering Issue (Critical / Important / Optional) |
-| 14 | İzlenebilirlik | 10 matris (Gereksinim→DFMEA, DFMEA→PFMEA, KC→Kontrol Planı …) ve uçtan uca zincir |
-| 15 | Kalite Kontrol | FMEA Completeness Score, kritik riskler, AI mühendislik özeti |
-| 16 | Dersler | NCR / 8D / CAPA kayıtları → “Historical Occurrence Evidence” |
-| 17 | Puanlama | S/O/D kriterleri (düzenlenebilir) ve AIAG-VDA AP tablosu |
-| 18 | Revizyon | Rev A/B/C; Added / Modified / Deleted otomatik özet |
+| 1 | Gösterge Paneli | FMEA Quality Score (7 boyut), onay adımı, AI durumu, bekleyen kararlar |
+| 2 | Proje | Kapsam, ekip, parça, revizyon, ürün tipi |
+| 3 | Dokümanlar | Doküman kaydı, **yerel analiz** (PDF/DOCX/XLSX/CSV/PPTX/TXT/EML/MSG/görsel/STEP/IGES/DXF), kanıtlar, açık konular |
+| 4 | Gereksinimler | Kaynak konumu, nominal/LSL/USL/birim, kanıt ve güven seviyesiyle gereksinimler |
+| 5 | DFMEA | Yapı & fonksiyon ağacı ve DFMEA |
+| 6 | PFMEA | Proses akışı (kompozit şablon), proses parametreleri, PFMEA (4M/5M, 5 Neden) |
+| 7 | Risk | S/O/D kriterleri, düzenlenebilir şirket AP tablosu, RPN uyarısı |
+| 8 | Özel Karakteristikler | KC adayları ve faktör paneli (emniyet, regülasyon, tolerans, capability …) |
+| 9 | Kontrol Planı | Ürün / proses karakteristiği / proses parametresi ayrımı, tam reaksiyon planı |
+| 10 | MSA | Ölçüm tipine göre çalışma önerisi (Attribute / Kalibrasyon / GR&R) |
+| 11 | Capability | Normallik, kararlılık ve örnek sayısıyla VALID / INVALID / INSUFFICIENT DATA |
+| 12 | Aksiyonlar | FMEA ile iki yönlü senkron |
+| 13 | Dersler | Ders kayıtları ve benzerlik araması, kompozit bilgi tabanı |
+| 14 | İzlenebilirlik | Matrisler ve uçtan uca zincir |
+| 15 | Değişiklik Etkisi | “Bu değişiklik N mühendislik kaydını etkiliyor”, değişiklik talepleri |
+| 16 | Kalite Kontrol | Level 1 + Level 2 kontroller, “Neyi kaçırdım?”, PDF/HTML inceleme raporu |
+| 17 | AI İnceleme | Bağımsız AI denetçi, WHAT DID I MISS?, AI çalıştırma kayıtları |
+| 18 | Onay | Engineer → Design → Manufacturing → Quality → Final → Baseline; denetim izi |
+| 19 | Revizyon / Baseline | Revizyon geçmişi, SHA-256 mühürlü baseline, karşılaştırma |
+| 20 | Ayarlar | Kullanıcı/rol, AI sağlayıcı ve mod, şirket şablonu, KC kuralları, onay akışı, opsiyonel IFS |
+
+Her tablo satırında **Neden burada?** düğmesi kaydın kaynağını, köken zincirini, kanıtlarını ve son değişikliklerini gösterir.
 
 ## Ekranlar arası otomatik güncelleme
 
@@ -66,21 +70,21 @@ Değişiklikler geri alınabilir (Ctrl+Z / Ctrl+Y).
 - Önceliklendirme: emniyet/regülasyon → yüksek severity → KC → özel karakteristik → AP High → RPN → müşteriye özel. RPN tek başına karar kriteri değildir.
 - AP, AIAG & VDA FMEA Handbook (2019) tablosuyla otomatik hesaplanır.
 
-## AI önerileri (Claude)
+## AI önerileri
 
-**⚙ Ayarlar** penceresinde Claude API anahtarı girilince şu özellikler açılır:
+**Ayarlar → AI** bölümünde API anahtarı girilince açılır. AI çıktısı JSON şemasıyla doğrulanır; her öneri **✓ Kabul / ✎ Düzenle / ✕ Reddet** ile tek tek değerlendirilir (ret nedeni zorunlu). Kritik, emniyet ve regülasyon önerileri toplu kabul edilemez. Kaynakta bulunamayan alıntı **SOURCE NOT VERIFIED**, kaynakta olmayan sayısal değer **VERİ YOK** olur. AI hiçbir FMEA, KC, S/O/D veya değişikliği onaylamaz.
 
-- **Dokümanlar → AI: Gereksinim çıkar**: PDF, görsel, metin veya Excel dosyasından gereksinim matrisi ve açık konular çıkarır.
-- **Gereksinimler → AI: Metinden çıkar**: yapıştırılan şartname, e-posta veya toplantı notunu analiz eder.
-- **DFMEA → AI: DFMEA öner** ve **PFMEA → AI: PFMEA öner**: hata modu, etki, neden ve kontrol önerir. PFMEA önerileri kompozit kontrol listesini kullanır ve DFMEA ID’lerine bağlanır.
-- **Kalite Kontrol → AI: Mühendislik özeti**: Critical Risks, KC, eksik gereksinimler, boşluklar ve Critical / Important / Optional soruları içeren özet hazırlar.
-
-Öneriler eklenmeden önce bir önizleme penceresinde gösterilir; seçilenler “AI Proposed” durumunda eklenir. Anahtar, işletim sisteminin şifreli deposunda saklanır. `ANTHROPIC_API_KEY` ortam değişkeni de kullanılabilir. AI özellikleri dokümanları Anthropic API’sine gönderir; gizli dokümanlar için kurum politikanızı kontrol edin.
+- Anahtar yalnızca işletim sisteminin şifreli deposunda saklanır; depo yoksa yalnızca oturum boyunca bellekte tutulur.
+- İnternet yoksa: “AI analysis requires internet connection.” Çekirdek FMEA işlevleri çevrimdışı çalışır.
+- Strict Engineering ve Engineering Knowledge modları; OpenAI / yerel model sağlayıcıları bu sürümde NOT SUPPORTED.
 
 ## Dosyalar
 
 - Proje dosyası: `.fmea` (JSON). Çift tıklamayla açılır.
-- **Excel’e aktar**: 18 sayfalık, filtreli, dondurulmuş başlıklı, renk kodlu `.xlsx` (High risk, high severity, KC, açık aksiyon, VERİ YOK vurgulu).
+- **Excel’e aktar**: 14 sayfalık 2.0 çalışma kitabı (01_Project Summary … 14_Approval). 1.0 biçimi Dosya menüsünde durur.
+- **Excel FMEA içe aktar**: mevcut bir Excel FMEA kolon eşleme ekranıyla içe alınır; RPN/AP yeniden hesaplanır.
+- **Şirket şablonu** (`.fmeatpl`): ayarlar, KC kuralları, onay akışı ve AP tablosu.
+- **İnceleme raporu**: PDF veya HTML.
 - Kaydedilmemiş çalışma birkaç saniyede bir kurtarma dosyasına yazılır; uygulama beklenmedik kapanırsa açılışta geri yükleme önerilir.
 
 ## Geliştirme

@@ -1,5 +1,5 @@
 // Spesifikasyon §35 FMEA kalite kontrolü ve §26 izlenebilirlik matrisleri.
-import { actionPriority, isKcCandidate } from './scoring';
+import { apOf, isKcCandidate } from './scoring';
 import type { ControlPlanRow, DfmeaRow, KcRow, PfmeaRow, Project } from './types';
 
 export interface CheckResult {
@@ -96,7 +96,7 @@ export function qualityChecks(p: Project): CheckResult[] {
     'Tüm satırlar puanlanmış', (n) => `${n} satırda S/O/D eksik`, df.length + pf.length > 0);
 
   add('ap-high', 'AP=High satırlar için aksiyon tanımlanmış mı?', 8,
-    [...df, ...pf].filter((r) => actionPriority(r.s, r.o, r.d) === 'H' && !nonEmpty(r.recommendedAction)).map((r) => r.id),
+    [...df, ...pf].filter((r) => apOf(p, r.s, r.o, r.d) === 'H' && !nonEmpty(r.recommendedAction)).map((r) => r.id),
     'AP=High satırların hepsinde aksiyon var', (n) => `${n} AP=High satırda önerilen aksiyon yok`, df.length + pf.length > 0);
 
   return out;

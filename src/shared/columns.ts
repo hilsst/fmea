@@ -1,8 +1,12 @@
 // Ekran tabloları ve Excel çıktısı için ortak kolon tanımları.
 import { historicalIds } from './checks';
 import { LISTS } from './model';
-import { actionPriority, capability, isKcCandidate, parseData, riskLevel, rpn } from './scoring';
-import type { AnyRow, CapabilityRow, DfmeaRow, PfmeaRow, Project, TableKey } from './types';
+import { capabilityAnalysis, verdictText } from './capability';
+import { apOf, RPN_WARNING, isKcCandidate, parseData, riskLevel, rpn } from './scoring';
+import type { CapabilityAnalysis } from './capability';
+import { impactOf } from './impact';
+import { evaluateKc } from './kc';
+import type { AnyRow, CapabilityRow, ChangeRequestRow, DfmeaRow, KcRow, PfmeaRow, Project, TableKey } from './types';
 
 export type ColType = 'text' | 'long' | 'score' | 'select' | 'multi' | 'ref' | 'bool' | 'date' | 'number' | 'computed';
 
@@ -35,9 +39,9 @@ const fmeaScores = (): Col[] => [
   score('s', 'S', 'Severity 1–10 (Puanlama sekmesi). Gerçek veri yoksa AI önerisidir; onay gerekir.'),
   score('o', 'O', 'Occurrence 1–10'),
   score('d', 'D', 'Detection 1–10'),
-  comp('ap', 'AP', (r) => actionPriority((r as DfmeaRow).s, (r as DfmeaRow).o, (r as DfmeaRow).d), 46, 'AIAG-VDA Action Priority (otomatik)'),
-  comp('rpn', 'RPN', (r) => rpn((r as DfmeaRow).s, (r as DfmeaRow).o, (r as DfmeaRow).d), 52, 'S×O×D – tek başına karar kriteri değildir'),
-  comp('risk', 'Risk', (r, p) => riskLevel(r as DfmeaRow, p.settings), 82, 'Öncelik: Emniyet/regülasyon > yüksek S > KC > AP > RPN'),
+  comp('ap', 'AP', (r, p) => apOf(p, (r as DfmeaRow).s, (r as DfmeaRow).o, (r as DfmeaRow).d), 46, 'Action Priority (AIAG-VDA veya şirket AP tablosu, Risk ekranı)'),
+  comp('rpn', 'RPN', (r) => rpn((r as DfmeaRow).s, (r as DfmeaRow).o, (r as DfmeaRow).d), 52, `S×O×D – ${RPN_WARNING}`),
+  comp('risk', 'Risk', (r, p) => riskLevel(r as DfmeaRow, p.settings, p.scoring.apTable), 82, 'Öncelik: Emniyet/regülasyon > yüksek S > KC > AP > RPN'),
   sel('specialChar', 'Özel Kar.', LISTS.specialChar, 100),
   comp('kcFlag', 'KC', (r, p) => {
     const k = p.kcs.find((k) => k.sourceId === r.id);
@@ -45,6 +49,14 @@ const fmeaScores = (): Col[] => [
     return isKcCandidate(r as DfmeaRow, p.settings) ? 'AI Recommended KC' : '';
   }, 120),
 ];
+
+/** S/O/D gerekçesi, kanıtı ve güveni (§24–25). Kriter metni puandan gelir (Risk ekranı). */
+const scoreReasons = (): Col[] =>
+  (['s', 'o', 'd'] as const).flatMap((k) => [
+    long(`${k}Reason`, `${k.toUpperCase()} Gerekçe`, 170, { secondary: true, help: 'Neden bu puan? Kriter tablosundaki satıra atıf yapın' }),
+    t(`${k}Evidence`, `${k.toUpperCase()} Kanıt`, 140, { secondary: true, help: 'Kanıt ID (EV-xxx), doküman/sayfa, test raporu' }),
+    sel(`${k}Conf`, `${k.toUpperCase()} Güven`, LISTS.confidence, 80, { secondary: true }),
+  ]);
 
 const fmeaTail = (): Col[] => [
   long('recommendedAction', 'Önerilen Aksiyon', 220, { help: 'Girildiğinde Aksiyonlar sekmesine otomatik kayıt açılır' }),
@@ -56,11 +68,13 @@ const fmeaTail = (): Col[] => [
   score('newS', 'Yeni S', 'Aksiyon sonrası', { secondary: true }),
   score('newO', 'Yeni O', 'Aksiyon sonrası', { secondary: true }),
   score('newD', 'Yeni D', 'Aksiyon sonrası', { secondary: true }),
-  comp('newAp', 'Yeni AP', (r) => actionPriority((r as DfmeaRow).newS, (r as DfmeaRow).newO, (r as DfmeaRow).newD), 60),
+  comp('newAp', 'Yeni AP', (r, p) => apOf(p, (r as DfmeaRow).newS, (r as DfmeaRow).newO, (r as DfmeaRow).newD), 60),
   t('source', 'Kaynak', 150, { help: 'Örn. REQ-023, DRW-001 / Sayfa 4 / Ölçü 35, EMAIL-003' }),
   sel('confidence', 'AI Güven', LISTS.confidence, 80, { secondary: true }),
   sel('dataStatus', 'Veri Durumu', LISTS.dataStatus, 170, { secondary: true }),
   sel('approval', 'Onay', LISTS.approval, 130),
+  sel('basis', 'Dayanak', LISTS.basis, 150, { secondary: true, help: 'SOURCE DATA / ENGINEERING KNOWLEDGE / AI INFERENCE' }),
+  { key: 'evidenceIds', label: 'Kanıtlar', width: 120, type: 'multi', ref: 'evidence', secondary: true },
   comp('hist', 'Geçmiş', (r, p) => (historicalIds(p).has(r.id) ? 'Historical Occurrence Evidence' : ''), 110, 'Dersler sekmesinde bu satıra bağlı NCR/8D/CAPA varsa'),
   t('reassess', 'Yeniden Değerlendirme', 200, { help: 'Kaynak değiştiğinde otomatik dolar; değerlendirince temizleyin' }),
   long('notes', 'Notlar', 160, { secondary: true }),
@@ -77,13 +91,27 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     t('product', 'İlgili Ürün/Parça/Proses', 170),
     long('notes', 'Kritik Gereksinimler / Notlar', 260),
     t('filePath', 'Dosya', 160, { readonly: true }),
+    t('parseStatus', 'Analiz Durumu', 200, { readonly: true, help: 'Yerel doküman analizi sonucu (Dokümanlar → Analiz Et)' }),
   ],
   requirements: [
     long('text', 'Gereksinim', 300),
     sel('reqType', 'Tip', LISTS.reqType, 130),
     long('acceptance', 'Kabul Kriteri', 200, { help: 'Değiştiğinde DFMEA, KC ve Kontrol Planı güncellenir' }),
+    t('characteristic', 'Karakteristik', 130),
+    { key: 'nominal', label: 'Nominal', width: 76, type: 'number' },
+    { key: 'lsl', label: 'Alt Limit', width: 76, type: 'number' },
+    { key: 'usl', label: 'Üst Limit', width: 76, type: 'number' },
+    t('unit', 'Birim', 60),
+    t('tolerance', 'Tolerans', 90, { secondary: true }),
     t('verification', 'Doğrulama Yöntemi', 150),
     t('source', 'Kaynak', 170, { help: 'Doküman ID / No, sayfa, bölüm, ölçü no' }),
+    { key: 'sourceDocId', label: 'Kaynak Doküman', width: 110, type: 'ref', ref: 'documents', secondary: true },
+    t('sourcePage', 'Sayfa', 60, { secondary: true }),
+    t('sourceSection', 'Bölüm', 80, { secondary: true }),
+    t('sourceCell', 'Hücre', 70, { secondary: true }),
+    t('balloon', 'Balon', 60, { secondary: true }),
+    long('evidenceText', 'Kanıt Metni', 220, { secondary: true, help: 'Kaynaktaki birebir alıntı' }),
+    sel('confidence', 'Güven', LISTS.confidence, 80, { secondary: true }),
     sel('dataStatus', 'Veri Durumu', LISTS.dataStatus, 170),
     sel('approval', 'Onay', LISTS.approval, 130),
     comp('dfCount', 'DFMEA', (r, p) => p.dfmea.filter((d) => d.reqIds.includes(r.id)).length || '', 60, 'Bu gereksinime bağlı DFMEA satırı sayısı'),
@@ -93,9 +121,12 @@ export const COLUMNS: Record<TableKey, Col[]> = {
   structure: [
     sel('level', 'Seviye', LISTS.level, 100),
     { key: 'parentId', label: 'Üst Eleman', width: 110, type: 'ref', ref: 'structure' },
-    t('element', 'Yapı Elemanı', 180, { help: 'Product → Assembly → Part → Feature' }),
-    long('function', 'Fonksiyon', 240, { help: 'Değiştiğinde bağlı DFMEA satırları güncellenir' }),
+    t('element', 'Yapı Elemanı', 180, { help: 'System → Subsystem → Component → Part → Feature' }),
+    long('function', 'Fonksiyon', 240, { help: 'Fiil + nesne (örn. “yükü aktarır”). Değiştiğinde bağlı DFMEA satırları güncellenir' }),
     sel('functionType', 'Fonksiyon Tipi', LISTS.functionType, 150),
+    long('performanceReq', 'Performans Gereksinimi', 200, { help: 'Fonksiyonun ne kadar iyi yerine getirileceği (ölçülebilir)' }),
+    long('constraint', 'Kısıt', 160, { secondary: true }),
+    long('interface', 'Arayüz', 160, { secondary: true }),
     { key: 'reqIds', label: 'Gereksinimler', width: 160, type: 'multi', ref: 'requirements' },
     comp('dfCount', 'DFMEA', (r, p) => p.dfmea.filter((d) => d.functionId === r.id).length || '', 60),
     t('source', 'Kaynak', 150),
@@ -103,6 +134,9 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('notes', 'Notlar', 160),
   ],
   dfmea: [
+    t('system', 'Sistem', 110, { secondary: true }),
+    t('subsystem', 'Alt Sistem', 110, { secondary: true }),
+    t('component', 'Komponent', 120, { secondary: true }),
     { key: 'functionId', label: 'Fonksiyon ID', width: 130, type: 'ref', ref: 'structure' },
     long('function', 'Fonksiyon', 200, { derived: 'Yapı & Fonksiyon' }),
     { key: 'reqIds', label: 'Gereksinim ID', width: 120, type: 'multi', ref: 'requirements' },
@@ -115,6 +149,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('prevention', 'Önleme Kontrolü', 190),
     long('detection', 'Tespit Kontrolü', 190),
     ...fmeaScores(),
+    ...scoreReasons(),
     long('verification', 'Doğrulama', 160, { secondary: true }),
     ...fmeaTail(),
   ],
@@ -137,14 +172,23 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     t('stepName', 'Proses Adımı', 140, { readonly: true, derived: 'Proses Akışı' }),
     long('processFunction', 'Proses Fonksiyonu', 180),
     long('requirement', 'Gereksinim / Karakteristik', 180),
+    t('processElement', 'Proses Elemanı', 130, { secondary: true, help: 'Man / Machine / Material / Method / Measurement / Environment elemanı' }),
     { key: 'dfIds', label: 'Bağlı DFMEA', width: 120, type: 'multi', ref: 'dfmea', help: 'Bağlıysa Severity DFMEA ile otomatik eşitlenir' },
     long('failureMode', 'Hata Modu', 190),
     long('effect', 'Etki', 190),
+    sel('cause4M', '4M/5M', LISTS.cause4M, 110, { help: 'Nedenin kategorisi' }),
     long('cause', 'Neden', 190, { help: 'İnsan faktörü, makine, malzeme, metot, ölçüm, çevre' }),
+    long('why1', 'Neden 1', 150, { secondary: true }),
+    long('why2', 'Neden 2', 150, { secondary: true }),
+    long('why3', 'Neden 3', 150, { secondary: true }),
+    long('why4', 'Neden 4', 150, { secondary: true }),
+    long('why5', 'Neden 5', 150, { secondary: true }),
+    long('rootCause', 'Kök Neden', 180, { help: '“Operatör hatası” kök neden değildir; sistemdeki zafiyeti yazın' }),
     long('prevention', 'Önleme Kontrolü', 180),
     long('detection', 'Tespit Kontrolü', 180),
     sel('errorProofing', 'Hata Önleme', LISTS.errorProofing, 140),
     ...fmeaScores(),
+    ...scoreReasons(),
     t('measurement', 'Ölçüm Yöntemi', 150, { help: 'Kontrol Planı ölçüm yöntemine aktarılır' }),
     long('reactionPlan', 'Reaksiyon Planı', 170),
     ...fmeaTail(),
@@ -153,8 +197,20 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     { key: 'sourceId', label: 'Kaynak FMEA', width: 130, type: 'ref', ref: ['dfmea', 'pfmea'] },
     long('characteristic', 'Karakteristik', 220),
     sel('kcClass', 'KC Sınıfı', LISTS.kcClass, 140),
+    sel('category', 'Kategori', LISTS.kcCategory, 170, { free: true, help: 'Şirket sınıflandırması Ayarlar’dan değiştirilebilir. Mühendis seçer' }),
     long('specification', 'Spesifikasyon', 200, { help: 'Değiştiğinde Kontrol Planı güncellenir' }),
     t('severity', 'S', 50, { readonly: true, derived: 'DFMEA / PFMEA' }),
+    comp('factors', 'KC Faktörleri', (r, p) => {
+      const k = r as KcRow;
+      const src = p.dfmea.find((d) => d.id === k.sourceId) ?? p.pfmea.find((x) => x.id === k.sourceId);
+      return src ? evaluateKc(p, src, k).factors.filter((f) => f.on).map((f) => f.label).join(', ') : '';
+    }, 180, 'Severity, emniyet, regülasyon, müşteri, özel proses, tolerans, capability, geçmiş hata, tespit zorluğu'),
+    comp('suggested', 'Önerilen Kategori', (r, p) => {
+      const k = r as KcRow;
+      const src = p.dfmea.find((d) => d.id === k.sourceId) ?? p.pfmea.find((x) => x.id === k.sourceId);
+      const c = src ? evaluateKc(p, src, k).suggestedCategory : '';
+      return c ? `${c} (AI SUGGESTION)` : '';
+    }, 170),
     long('rationale', 'Gerekçe', 200),
     sel('status', 'Mühendis Kararı', LISTS.approval, 140, { help: 'Approved → kontrol planı, MSA ve capability satırları önerilir. Rejected → otomatik satırlar kaldırılır' }),
     comp('cp', 'Kontrol Planı', (r, p) => p.controlPlan.filter((c) => c.kcId === r.id).map((c) => c.id).join(', '), 100),
@@ -168,17 +224,21 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     t('tool', 'Takım', 100, { secondary: true }),
     { key: 'pfId', label: 'PFMEA', width: 90, type: 'ref', ref: 'pfmea' },
     { key: 'kcId', label: 'KC', width: 90, type: 'ref', ref: 'kcs' },
+    sel('charType', 'Karakteristik Tipi', LISTS.charType, 150, { help: 'Ürün karakteristiği, proses karakteristiği ve proses parametresi ayrı tutulur' }),
     long('productChar', 'Ürün Karakteristiği', 180),
-    long('processChar', 'Proses Karakteristiği', 180),
+    long('processChar', 'Proses Karakteristiği / Parametre', 180),
+    { key: 'ppId', label: 'Proses Parametresi', width: 110, type: 'ref', ref: 'processParams', secondary: true },
     t('kcClass', 'KC Sınıfı', 110, { readonly: true, derived: 'Kritik Karakteristikler' }),
-    long('specification', 'Spesifikasyon / Tolerans', 180),
+    long('specification', 'Spesifikasyon', 180),
+    t('tolerance', 'Tolerans', 100),
     t('method', 'Ölçüm Yöntemi', 150),
     t('gauge', 'Mastar / Cihaz', 130),
     t('sampleSize', 'Örnek', 90),
     t('frequency', 'Sıklık', 100),
     long('controlMethod', 'Kontrol Metodu', 170),
-    long('reactionPlan', 'Reaksiyon Planı', 180),
+    long('reactionPlan', 'Reaksiyon Planı', 180, { help: 'Durdur → ayır → son kabul edilen parça → etkilenen lot/seri → Kalite → NCR → karar → kök neden → FMEA ve kontrol planı güncelleme' }),
     t('responsible', 'Sorumlu', 110),
+    t('record', 'Kayıt', 120, { help: 'Ölçüm sonucunun kaydedildiği form / sistem' }),
     long('notes', 'Notlar', 150, { secondary: true }),
   ],
   msa: [
@@ -186,6 +246,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     { key: 'kcId', label: 'KC', width: 90, type: 'ref', ref: 'kcs' },
     long('characteristic', 'Karakteristik', 220, { derived: 'Kritik Karakteristikler' }),
     t('gauge', 'Ölçüm Sistemi', 180, { derived: 'Kontrol Planı' }),
+    sel('dataType', 'Veri Tipi', LISTS.dataType, 90, { help: 'Değişken → GR&R; nitel (attribute) → Attribute Agreement' }),
     sel('study', 'Çalışma', LISTS.msaStudy, 160),
     sel('status', 'Durum', LISTS.msaStatus, 150),
     t('result', 'Sonuç (%GRR, ndc ...)', 160),
@@ -198,22 +259,24 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     { key: 'usl', label: 'USL', width: 70, type: 'number' },
     { key: 'target', label: 'Hedef', width: 70, type: 'number' },
     long('data', 'Ölçüm Verisi', 220, { help: 'Değerleri üretim sırasıyla boşluk, satır veya ; ile ayırarak yapıştırın' }),
+    { key: 'subgroupSize', label: 'Alt Grup', width: 66, type: 'number', help: '1 veya boş = bireysel değer (I-MR); 2–10 = Xbar-R' },
+    sel('distribution', 'Dağılım', LISTS.distribution, 100),
     ...(['n', 'mean', 'cp', 'cpk', 'pp', 'ppk'] as const).map((k) =>
       comp(k, k === 'mean' ? 'Ort.' : k.toUpperCase().replace('CPK', 'Cpk').replace('PPK', 'Ppk').replace('CP', 'Cp').replace('PP', 'Pp'), (r, p) => {
-        const c = r as CapabilityRow;
-        const res = capability(parseData(c.data), c.lsl, c.usl, p.settings.minSamples);
-        const v = res[k];
+        const v = capOf(r, p)[k];
         return v == null ? '' : k === 'n' ? v : Number(v.toFixed(3));
       }, 64),
     ),
-    comp('result', 'Sonuç', (r, p) => {
-      const c = r as CapabilityRow;
-      const res = capability(parseData(c.data), c.lsl, c.usl, p.settings.minSamples);
-      if (res.cpk == null) return res.message;
-      const target = p.settings.targetCpk;
-      const verdict = target == null ? 'Hedef Cpk VERİ YOK' : res.cpk >= target ? `Uygun (Cpk ≥ ${target})` : `Yetersiz (Cpk < ${target})`;
-      return [verdict, res.message].filter(Boolean).join(' – ');
-    }, 220),
+    comp('normality', 'Normallik', (r, p) => {
+      const a = capOf(r, p);
+      return a.adP == null ? '' : `${a.normal ? 'Normal' : 'Normal değil'} (AD p=${a.adP.toFixed(3)})`;
+    }, 140),
+    comp('stability', 'Kararlılık', (r, p) => {
+      const a = capOf(r, p);
+      return a.stable == null ? '' : a.stable ? `Kararlı (${a.method})` : `Kararsız: ${a.outOfControl.length} nokta`;
+    }, 130),
+    comp('result', 'Geçerlilik / Sonuç', (r, p) => verdictText(capOf(r, p), p.settings.targetCpk), 220),
+    comp('reasons', 'Açıklama', (r, p) => capOf(r, p).reasons.join(' '), 260),
     long('notes', 'Notlar', 160),
   ],
   actions: [
@@ -232,9 +295,9 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     score('newS', 'Yeni S', 'Aksiyon sonrası'),
     score('newO', 'Yeni O', 'Aksiyon sonrası'),
     score('newD', 'Yeni D', 'Aksiyon sonrası'),
-    comp('newAp', 'Yeni AP', (r) => {
+    comp('newAp', 'Yeni AP', (r, p) => {
       const a = r as unknown as DfmeaRow;
-      return actionPriority(a.newS, a.newO, a.newD);
+      return apOf(p, a.newS, a.newO, a.newD);
     }, 60),
     long('verification', 'Etkinlik Doğrulaması', 180),
     long('notes', 'Notlar', 150),
@@ -259,6 +322,11 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('rootCause', 'Kök Neden', 200),
     { key: 'linkedFmeaIds', label: 'Bağlı FMEA', width: 140, type: 'multi', ref: ['dfmea', 'pfmea'], help: 'Bağlanan satırlar “Historical Occurrence Evidence” olarak işaretlenir' },
     long('lesson', 'Öğrenilen Ders / Kalıcı Önlem', 240),
+    t('product', 'Ürün', 120),
+    t('process', 'Proses', 120),
+    long('failureMode', 'Hata Modu', 160),
+    long('previousAction', 'Önceki Aksiyon', 180),
+    sel('status', 'Durum', LISTS.llStatus, 90),
     { key: 'date', label: 'Tarih', width: 120, type: 'date' },
   ],
   history: [
@@ -271,7 +339,83 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('description', 'Açıklama', 240),
     t('approvedBy', 'Onaylayan', 120),
   ],
+  processParams: [
+    { key: 'stepId', label: 'Adım ID', width: 120, type: 'ref', ref: 'processSteps' },
+    t('parameter', 'Parametre', 170),
+    sel('category', 'Kategori', LISTS.paramCategory, 120, { free: true }),
+    { key: 'nominal', label: 'Nominal', width: 76, type: 'number' },
+    { key: 'lsl', label: 'Alt', width: 66, type: 'number' },
+    { key: 'usl', label: 'Üst', width: 66, type: 'number' },
+    t('unit', 'Birim', 60),
+    long('productCharacteristic', 'Etkilenen Ürün Karakteristiği', 190),
+    { key: 'pfIds', label: 'PFMEA', width: 120, type: 'multi', ref: 'pfmea', help: 'Bu parametre sapınca oluşan hata modları' },
+    long('prevention', 'Önleme', 160),
+    long('monitoring', 'İzleme', 160, { help: 'Sürekli kayıt / termokupl / vakum logu ...' }),
+    long('reaction', 'Reaksiyon', 160),
+    long('validation', 'Validasyon', 160, { help: 'Proses kalifikasyonu / ilk parça / periyodik doğrulama' }),
+    t('source', 'Kaynak', 150, { help: 'Proses spesifikasyonu / malzeme datasheet; yoksa VERİ YOK' }),
+    long('notes', 'Notlar', 150, { secondary: true }),
+  ],
+  evidence: [
+    { key: 'docId', label: 'Doküman', width: 110, type: 'ref', ref: 'documents' },
+    t('page', 'Sayfa', 60),
+    t('section', 'Bölüm', 80),
+    t('sheet', 'Sayfa (Excel)', 100, { secondary: true }),
+    t('cell', 'Hücre', 70, { secondary: true }),
+    t('balloon', 'Balon', 60, { secondary: true }),
+    long('quote', 'Kanıt (alıntı)', 300),
+    sel('evidenceType', 'Kanıt Tipi', LISTS.evidenceType, 150, { free: true }),
+    sel('basis', 'Dayanak', LISTS.basis, 150),
+    sel('confidence', 'Güven', LISTS.confidence, 80),
+    sel('verification', 'Doğrulama', LISTS.verification, 190, { readonly: true, help: 'Kaynak doğrulayıcı alıntıyı dokümanda arar' }),
+    t('verifiedLocation', 'Bulunan Konum', 140, { readonly: true }),
+    { key: 'linkedIds', label: 'Bağlı Kayıtlar', width: 160, type: 'multi', ref: ['requirements', 'dfmea', 'pfmea', 'kcs', 'controlPlan', 'processParams'] },
+    t('aiRunId', 'AI Çalıştırma', 90, { readonly: true, secondary: true }),
+    long('notes', 'Notlar', 150, { secondary: true }),
+  ],
+  changeRequests: [
+    t('title', 'Başlık', 200),
+    sel('trigger', 'Tetikleyici', ['Drawing revision', 'Specification change', 'Customer request', 'Process change', 'Material change', 'Supplier change', 'NCR / 8D', 'Other'], 150, { free: true }),
+    long('description', 'Açıklama', 240),
+    { key: 'impactedIds', label: 'Etkilenen Kayıtlar', width: 200, type: 'multi', ref: ['documents', 'requirements', 'structure', 'dfmea', 'processSteps', 'pfmea', 'kcs', 'controlPlan', 'msa', 'capability', 'processParams'] },
+    comp('impactCount', 'Etki', (r, p) => {
+      const ids = (r as ChangeRequestRow).impactedIds;
+      return ids.length ? `${impactOf(p, ids).ids.length} kayıt` : '';
+    }, 80, 'Değişiklik Etkisi ekranında zincir olarak görülür'),
+    sel('status', 'Durum', LISTS.crStatus, 110),
+    t('requestedBy', 'Talep Eden', 120),
+    { key: 'date', label: 'Tarih', width: 120, type: 'date' },
+    long('decision', 'Karar', 180),
+  ],
+  aiRuns: [
+    t('at', 'Zaman', 150, { readonly: true }),
+    t('role', 'AI Rolü', 150, { readonly: true }),
+    t('provider', 'Sağlayıcı', 90, { readonly: true }),
+    t('model', 'Model', 120, { readonly: true }),
+    t('mode', 'Mod', 90, { readonly: true }),
+    t('inputs', 'Girdi', 200, { readonly: true }),
+    t('status', 'Durum', 70, { readonly: true }),
+    t('errorKind', 'Hata', 120, { readonly: true }),
+    { key: 'items', label: 'Öneri', width: 60, type: 'number', readonly: true },
+    { key: 'accepted', label: 'Kabul', width: 60, type: 'number', readonly: true },
+    { key: 'rejected', label: 'Red', width: 60, type: 'number', readonly: true },
+    { key: 'tokensIn', label: 'Token (girdi)', width: 90, type: 'number', readonly: true },
+    { key: 'tokensOut', label: 'Token (çıktı)', width: 90, type: 'number', readonly: true },
+    { key: 'cached', label: 'Önbellek', width: 70, type: 'bool', readonly: true },
+    long('message', 'Mesaj', 220, { readonly: true }),
+  ],
 };
+
+const capCache = new WeakMap<object, CapabilityAnalysis>();
+/** Satır başına analiz önbelleği (aynı render içinde 10 kolon aynı sonucu kullanır). */
+function capOf(r: AnyRow, p: Project): CapabilityAnalysis {
+  const hit = capCache.get(r);
+  if (hit) return hit;
+  const c = r as CapabilityRow;
+  const a = capabilityAnalysis(parseData(c.data), c.lsl, c.usl, c.target, p.settings, c.subgroupSize, c.distribution);
+  capCache.set(r, a);
+  return a;
+}
 
 const LONG_LABEL: Record<string, string> = { s: 'Severity (S)', o: 'Occurrence (O)', d: 'Detection (D)', severity: 'Severity (S)', newS: 'Yeni Severity', newO: 'Yeni Occurrence', newD: 'Yeni Detection' };
 
@@ -294,13 +438,22 @@ export function cellText(col: Col, row: AnyRow, p: Project): string {
   return v == null ? '' : String(v);
 }
 
+const labelIndex = new WeakMap<Project, Map<string, AnyRow>>();
+function rowIndex(p: Project): Map<string, AnyRow> {
+  let m = labelIndex.get(p);
+  if (!m) {
+    m = new Map();
+    for (const t of ['documents', 'requirements', 'structure', 'dfmea', 'processSteps', 'pfmea', 'kcs', 'controlPlan', 'processParams', 'msa', 'capability', 'actions', 'evidence', 'changeRequests', 'lessons', 'issues'] as TableKey[])
+      for (const r of p[t] as AnyRow[]) m.set(r.id, r);
+    labelIndex.set(p, m);
+  }
+  return m;
+}
+
 export function rowLabel(p: Project, id: string): string {
-  const all: AnyRow[] = [
-    ...p.requirements, ...p.structure, ...p.dfmea, ...p.processSteps, ...p.pfmea, ...p.kcs, ...p.controlPlan,
-  ];
-  const r = all.find((x) => x.id === id) as unknown as Record<string, string> | undefined;
+  const r = rowIndex(p).get(id) as unknown as Record<string, string> | undefined;
   if (!r) return id;
-  const txt = r.text || r.function || r.failureMode || r.name || r.characteristic || r.productChar || r.processChar || r.element || '';
+  const txt = r.text || r.function || r.failureMode || r.name || r.characteristic || r.productChar || r.processChar || r.element || r.parameter || r.description || r.title || r.quote || '';
   const prefix = r.opNo ? `${r.opNo} ` : '';
   return txt ? `${id} – ${prefix}${txt}`.slice(0, 90) : id;
 }

@@ -1,11 +1,8 @@
 import { useState } from 'react';
-import { completenessScore, qualityChecks, traceability } from '../../shared/checks';
+import { traceability } from '../../shared/checks';
 import { rowLabel } from '../../shared/columns';
-import { actionPriority, riskLevel } from '../../shared/scoring';
-import type { TabKey } from '../../shared/tabs';
+import { apOf, riskLevel } from '../../shared/scoring';
 import type { ScoringEntry } from '../../shared/types';
-import { api, isDesktop } from '../api';
-import { projectContext } from '../components/AiDialogs';
 import { TextCell } from '../components/Cells';
 import { useStore } from '../store';
 
@@ -84,7 +81,7 @@ export function TraceabilityTab() {
                   const cps = project.controlPlan.filter((c) => kcs.some((k) => k.id === c.kcId) || pfs.some((p) => p.id === c.pfId));
                   return (
                     <div key={d.id} className="row">
-                      <div className={`node df ${riskLevel(d, project.settings).toLowerCase()}`}>{d.id}<small>{d.failureMode.slice(0, 50)} · AP {actionPriority(d.s, d.o, d.d) || '–'}</small></div>
+                      <div className={`node df ${riskLevel(d, project.settings, project.scoring.apTable).toLowerCase()}`}>{d.id}<small>{d.failureMode.slice(0, 50)} · AP {apOf(project, d.s, d.o, d.d) || '–'}</small></div>
                       <span className="arr">→</span>
                       <div className="node pf">{pfs.length ? pfs.map((p) => p.id).join(', ') : <span className="gap-t">PFMEA yok</span>}</div>
                       <span className="arr">→</span>
@@ -103,120 +100,6 @@ export function TraceabilityTab() {
   );
 }
 
-function md(text: string) {
-  // Minimal markdown → HTML (başlık, madde, kalın)
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const lines = esc(text).split('\n');
-  let html = '';
-  let inList = false;
-  for (const l of lines) {
-    const b = l.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-    if (/^\s*[-*] /.test(l)) {
-      if (!inList) html += '<ul>';
-      inList = true;
-      html += `<li>${b.replace(/^\s*[-*] /, '')}</li>`;
-      continue;
-    }
-    if (inList) {
-      html += '</ul>';
-      inList = false;
-    }
-    if (/^### /.test(l)) html += `<h5>${b.slice(4)}</h5>`;
-    else if (/^## /.test(l)) html += `<h4>${b.slice(3)}</h4>`;
-    else if (/^# /.test(l)) html += `<h3>${b.slice(2)}</h3>`;
-    else if (l.trim()) html += `<p>${b}</p>`;
-  }
-  if (inList) html += '</ul>';
-  return html;
-}
-
-export function QualityTab({ go }: { go: (t: TabKey) => void }) {
-  const { project, toast } = useStore();
-  const checks = qualityChecks(project);
-  const score = completenessScore(checks);
-  const [review, setReview] = useState<string>('');
-  const [busy, setBusy] = useState(false);
-
-  const top = [...project.dfmea, ...project.pfmea]
-    .filter((r) => r.failureMode)
-    .map((r) => ({ r, risk: riskLevel(r, project.settings), ap: actionPriority(r.s, r.o, r.d) }))
-    .filter((x) => x.risk)
-    .sort((a, b) => {
-      const ord = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, '': 4 };
-      return ord[a.risk] - ord[b.risk] || (b.r.s ?? 0) - (a.r.s ?? 0) || ((b.r.s ?? 0) * (b.r.o ?? 0)) - ((a.r.s ?? 0) * (a.r.o ?? 0));
-    })
-    .slice(0, 10);
-
-  const runReview = async () => {
-    if (!isDesktop) return toast('AI özeti masaüstü uygulamasında çalışır.', 'warn');
-    const s = await api.aiStatus();
-    if (!s.configured) {
-      window.dispatchEvent(new CustomEvent('open-settings'));
-      return toast('Önce Claude API anahtarını girin.', 'warn');
-    }
-    setBusy(true);
-    const r = await api.aiReview({ context: projectContext(project) + '\n\nKALİTE KONTROL:\n' + checks.map((c) => `${c.ok ? 'UYGUN' : 'EKSİK'} – ${c.question}: ${c.detail} ${c.ids.slice(0, 20).join(',')}`).join('\n') });
-    setBusy(false);
-    if (!r.ok) return toast(`AI hatası: ${r.error}`, 'err');
-    setReview(String((r.data as { markdown: string }).markdown));
-  };
-
-  return (
-    <div className="page">
-      <div className="two-col">
-        <section className="card">
-          <div className="score-head">
-            <div className={`gauge ${score >= 80 ? 'green' : score >= 50 ? 'amber' : 'red'}`} style={{ ['--p' as string]: score }}>
-              <span>%{score}</span>
-            </div>
-            <div>
-              <h3>FMEA Completeness Score</h3>
-              <p className="muted">Ağırlıklı kontrol listesi (spesifikasyon §35). Bu skor bir kalite sertifikası değildir; mühendislik değerlendirmesinin yerini tutmaz.</p>
-            </div>
-          </div>
-          <ul className="checks">
-            {checks.map((c) => (
-              <li key={c.key} className={c.ok ? 'ok' : 'bad'}>
-                <span className="mark">{c.ok ? '✓' : '!'}</span>
-                <div>
-                  <b>{c.question}</b>
-                  <div className="muted">{c.detail}</div>
-                  {!c.ok && c.ids.length > 0 && <div className="ids">{c.ids.slice(0, 30).join(', ')}{c.ids.length > 30 ? ' …' : ''}</div>}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-        <section className="card">
-          <h3>Kritik riskler (ilk 10)</h3>
-          <p className="muted">Sıralama: emniyet/regülasyon ve yüksek severity önce, sonra AP ve S×O. RPN tek başına kullanılmaz.</p>
-          {top.length === 0 && <p className="muted">Puanlanmış satır yok.</p>}
-          <table className="effects">
-            <tbody>
-              {top.map(({ r, risk, ap }) => (
-                <tr key={r.id} onClick={() => go(r.id.startsWith('DF') ? 'dfmea' : 'pfmea')} className="click">
-                  <td><span className={`badge ${risk === 'CRITICAL' || risk === 'HIGH' ? 'b-red' : risk === 'MEDIUM' ? 'b-amber' : 'b-green'}`}>{risk}</span></td>
-                  <td className="rid">{r.id}</td>
-                  <td>{r.failureMode}<div className="why">S{r.s ?? '–'} O{r.o ?? '–'} D{r.d ?? '–'} · AP {ap || '–'}</div></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <h3 className="mt">Mühendislik özeti</h3>
-          <p className="muted">Claude, mevcut proje verisinden spesifikasyon §36 formatında özet ve Critical / Important / Optional soruları hazırlar.</p>
-          <button className="btn ai" disabled={busy} onClick={runReview}>{busy ? 'Hazırlanıyor…' : '✦ AI: Mühendislik özeti oluştur'}</button>
-          {review && <div className="md" dangerouslySetInnerHTML={{ __html: md(review) }} />}
-        </section>
-      </div>
-    </div>
-  );
-}
-
-const S_BANDS = ['9–10', '7–8', '4–6', '2–3', '1'];
-const O_BANDS = ['8–10', '6–7', '4–5', '2–3', '1'];
-const D_COLS: [string, number][] = [['D 7–10', 8], ['D 5–6', 5], ['D 2–4', 3], ['D 1', 1]];
-const S_REP = [10, 8, 5, 2, 1];
-const O_REP = [9, 6, 4, 2, 1];
 
 export function ScoringTab() {
   const { project, mutate } = useStore();
@@ -230,9 +113,10 @@ export function ScoringTab() {
     return Promise.resolve(true);
   };
   return (
-    <div className="page">
-      <div className="two-col">
+    <div>
+      <div>
         <section className="card">
+          <h3>Puanlama kriterleri</h3>
           <div className="matrix-tabs">
             {(['severity', 'occurrence', 'detection'] as const).map((k) => (
               <button key={k} className={`chip-btn ${k === kind ? 'on' : ''}`} onClick={() => setKind(k)}>
@@ -253,29 +137,6 @@ export function ScoringTab() {
                   <td><TextCell value={e.pf} multiline onCommit={setEntry(e.rank, 'pf')} /></td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-        </section>
-        <section className="card">
-          <h3>Action Priority (AP) tablosu</h3>
-          <p className="muted">AIAG & VDA FMEA Handbook (2019). AP her satırda S, O, D girildiğinde otomatik hesaplanır.</p>
-          <table className="ap-table">
-            <thead>
-              <tr><th>S</th><th>O</th>{D_COLS.map(([l]) => <th key={l}>{l}</th>)}</tr>
-            </thead>
-            <tbody>
-              {S_BANDS.flatMap((sb, si) =>
-                O_BANDS.map((ob, oi) => (
-                  <tr key={`${si}-${oi}`}>
-                    {oi === 0 && <td rowSpan={5} className="band">{sb}</td>}
-                    <td className="band">{ob}</td>
-                    {D_COLS.map(([l, d]) => {
-                      const ap = actionPriority(S_REP[si], O_REP[oi], d);
-                      return <td key={l} className={`ap ap-${ap}`}>{ap}</td>;
-                    })}
-                  </tr>
-                )),
-              )}
             </tbody>
           </table>
         </section>
