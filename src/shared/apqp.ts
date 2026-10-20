@@ -3,6 +3,7 @@
 // FMEA güncelleme tetikleyicileri ve aile/yeniden kullanım. Hiçbir kural onay vermez veya cevap seçmez:
 // kontrol listesi önerileri yalnızca gösterilir, kararları kullanıcı adıyla mühendis verir.
 import { capabilityAnalysis } from './capability';
+import { isPpapCapabilityEvidence } from './capBand';
 import type { CheckResult } from './checks';
 import { blankRow, nextId } from './model';
 import { parseData } from './scoring';
@@ -370,9 +371,10 @@ export function ppapReadiness(p: Project): Readiness[] {
   r(5, prod > 0 && deliverableApproved(p, 'CP') && !kcMiss.length, [`${prod} üretim KP satırı`, deliverableApproved(p, 'CP') ? 'KP onaylı' : 'KP onayı eksik', kcMiss.length ? `KP’de olmayan KC: ${kcMiss.join(', ')}` : ''].filter(Boolean).join('; '), kcMiss);
   const msaBad = p.msa.filter((m) => m.status !== 'Acceptable' || !/\d/.test(m.result)).map((m) => m.id);
   r(6, p.msa.length > 0 && !msaBad.length, msaBad.length ? `Kabul/sayısal sonuç eksik: ${msaBad.join(', ')} (“değişken veri sayısal sonuçla verilmeli”)` : `${p.msa.length} MSA kabul, sayısal sonuçlu`, msaBad);
-  const caps = capValid(p);
-  const capBad = caps.filter((x) => x.a.verdict !== 'VALID' || (x.a.ppk ?? x.a.cpk) == null).map((x) => x.c.id);
-  r(7, caps.length > 0 && !capBad.length, capBad.length ? `Geçerli/sayısal olmayan: ${capBad.join(', ')} (kabul bandı Capability ekranında)` : `${caps.length} çalışma VALID`, capBad);
+  // Eleman 7: üretim koşusu verisi + VALID (cap akışının kuralı; PPAP webinar s.26)
+  const caps = p.capability.filter((c) => c.kcId);
+  const capBad = caps.filter((c) => !isPpapCapabilityEvidence(c, p.settings)).map((c) => c.id);
+  r(7, caps.length > 0 && !capBad.length, capBad.length ? `PPAP kanıtı olmayan (üretim koşusu + VALID değil): ${capBad.join(', ')} (kabul bandı Capability ekranında)` : `${caps.length} çalışma üretim koşusu verisiyle VALID`, capBad);
   r(8, packagingApproved(p), packagingApproved(p) ? '7.2.20 müşteri onayı kayıtlı' : packagingIssues(p).join('; ') || 'Müşteri onayı yok');
   r(9, has(st(9)?.ref), has(st(9)?.ref) ? `FAIR: ${st(9)!.ref}` : 'FAIR (AS9102) referansı girilmedi (dış kayıt)');
   r(10, has(st(10)?.ref), has(st(10)?.ref) ? `CSR: ${st(10)!.ref}` : 'Müşteriye özel gereksinim kaydı referansı yok');
@@ -480,7 +482,7 @@ export function reuseRows(target: Project, src: Project, opts: { dfmea: boolean;
   if (opts.process) {
     for (const s of src.processSteps) put('processSteps', s.id, { opNo: s.opNo, name: s.name, description: s.description, machine: s.machine, tool: s.tool, specialProcess: s.specialProcess, stepType: [...(s.stepType ?? [])], stepTypeOther: s.stepTypeOther, notes: note });
     for (const x of src.pfmea)
-      put('pfmea', x.id, { stepId: ref(x.stepId), opNo: x.opNo, stepName: x.stepName, processFunction: x.processFunction, failureMode: x.failureMode, effect: x.effect, cause: x.cause, cause4M: x.cause4M, prevention: x.prevention, detection: x.detection, errorProofing: x.errorProofing, measurement: x.measurement, dfIds: x.dfIds.map(ref).filter(Boolean), stage: 'Preliminary', dataStatus: 'VERİ YOK – doğrulanmalı', notes: note });
+      put('pfmea', x.id, { stepId: ref(x.stepId), opNo: x.opNo, stepName: x.stepName, processFunction: x.processFunction, productRequirement: x.productRequirement, processRequirement: x.processRequirement, failureMode: x.failureMode, effect: x.effect, cause: x.cause, cause4M: x.cause4M, prevention: x.prevention, detection: x.detection, errorProofing: x.errorProofing, measurement: x.measurement, dfIds: x.dfIds.map(ref).filter(Boolean), stage: 'Preliminary', dataStatus: 'VERİ YOK – doğrulanmalı', notes: note });
     for (const c of src.controlPlan)
       put('controlPlan', c.id, { stepId: ref(c.stepId), pfId: ref(c.pfId), productChar: c.productChar, processChar: c.processChar, charType: c.charType, method: c.method, gauge: c.gauge, sampleSize: c.sampleSize || 'VERİ YOK – doğrulanmalı', frequency: c.frequency || 'VERİ YOK – doğrulanmalı', controlMethod: c.controlMethod, reactionPlan: c.reactionPlan, specification: 'VERİ YOK – doğrulanmalı', phases: [], notes: note });
   }

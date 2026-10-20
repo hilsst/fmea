@@ -173,6 +173,8 @@ describe('PRR gate', () => {
     const p = seed();
     p.actions.push(row<ActionRow>('actions', 'ACT-001', { sourceId: 'DF-001', description: 'Kalıp', status: 'Open' }));
     expect(prrBlockers(p)).toEqual(['ACT-001']);
+    p.dfmea[0].s = 8; // S 9–10 karar kapısı (risk akışı) bu testin konusu değil
+    p.pfmea[0].s = 8;
     p.approvals = [];
     p.settings.workflow = p.settings.workflow.map((w) => ({ ...w, enabled: w.step === 'Final Approval' }));
     const d = { step: 'Final Approval' as const, decision: 'Approved' as const, user: 'A', role: 'Approver', comment: '' };

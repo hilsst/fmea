@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { findRequirementCandidates, locText, UNSUPPORTED_MSG } from '../../shared/docmodel';
-import { suggestMsaStudy, summarizeChanges } from '../../shared/engine';
+import { summarizeChanges } from '../../shared/engine';
 import { COMPOSITE_TEMPLATE, isComposite } from '../../shared/kb';
 import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
 import { COMPOSITE_CHECKLIST, blankRow, nextId } from '../../shared/model';
@@ -9,7 +9,10 @@ import { api, isDesktop } from '../api';
 import { PasteTextDialog, useAi } from '../components/AiDialogs';
 import { Grid } from '../components/Grid';
 import { Modal } from '../components/Modal';
+import { CapabilityScreen, MsaScreen } from '../screens/Cap'; // v4-cap
 import { CapabilityPanel, KcFactorPanel } from '../screens/Screens2';
+import { DfmeaCoveragePanel } from '../screens/Risk'; // v4-risk
+import { cpCoverageGap } from '../../shared/risk'; // v4-risk
 import { useStore } from '../store';
 
 type AddEdit = { kind: 'add'; table: TableKey; row: AnyRow };
@@ -225,6 +228,7 @@ export function DfmeaTab() {
         }
         emptyHint="Önce Yapı & Fonksiyon ekranında fonksiyonları tanımlayın, sonra “Fonksiyonlardan oluştur” veya “AI: DFMEA öner”."
       />
+      <DfmeaCoveragePanel />{/* v4-risk */}
       {ai.dialogs}
     </>
   );
@@ -299,6 +303,8 @@ export function ProcessTab() {
 
 export function PfmeaTab() {
   const [sel, setSel] = useState<string[]>([]);
+  const { project } = useStore(); // v4-risk
+  const [notInCp, setNotInCp] = useState(false); // v4-risk: "Kontrol planında yok" filtresi
   const [importDf, setImportDf] = useState(false);
   const [checklist, setChecklist] = useState(false);
   const ai = useAi();
@@ -308,8 +314,10 @@ export function PfmeaTab() {
         table="pfmea"
         selected={sel}
         onSelect={setSel}
+        filter={notInCp ? (r) => cpCoverageGap(project, r as never) : undefined}
         toolbar={
           <>
+            <label className="check-row" title="S 9–10, KC/CI veya ekibin önemli saydığı riskler: kontrol planında olmalı ya da gerekçeyle dışarıda bırakılmalı (CP webinar p43)"><input type="checkbox" checked={notInCp} onChange={(e) => setNotInCp(e.target.checked)} /> Önemli ama KP’de yok</label>
             <button className="btn" onClick={() => setImportDf(true)} title="DFMEA hata modlarını proses adımlarına aktarır (spesifikasyon §8, §25)">
               DFMEA’dan aktar
             </button>
@@ -540,39 +548,13 @@ export function ControlPlanTab() {
   );
 }
 
+// v4-cap: MSA ve Capability ekranları screens/Cap.tsx içinde
 export function MsaTab() {
-  const { project, edit, toast } = useStore();
-  const fromCp = async () => {
-    const b = batch(project);
-    for (const c of project.controlPlan.filter((c) => c.method && !project.msa.some((m) => m.cpId === c.id)))
-      b.add('msa', { cpId: c.id, kcId: c.kcId, characteristic: c.productChar || c.processChar, gauge: c.gauge || c.method, ...suggestMsaStudy(c.method || c.gauge), status: 'Planned', notes: 'Çalışma tipi ölçüm yöntemine göre önerildi (AI SUGGESTION); mühendis doğrulamalı.' } as Partial<AnyRow>);
-    if (!b.edits.length) return toast('Yeni MSA ihtiyacı bulunamadı.', 'warn');
-    await edit(b.edits, 'Kontrol planından MSA');
-  };
-  return <Grid table="msa" toolbar={<button className="btn" onClick={fromCp}>Kontrol planından oluştur</button>} emptyHint="Boyutsal, tork, kalınlık, sıcaklık, basınç, ağırlık, bondline ölçümleri için MSA planlayın." />;
+  return <MsaScreen />;
 }
 
 export function CapabilityTab() {
-  const { project, edit, toast } = useStore();
-  const fromKc = async () => {
-    const b = batch(project);
-    for (const k of project.kcs.filter((k) => k.status !== 'Rejected' && !project.capability.some((c) => c.kcId === k.id))) b.add('capability', { kcId: k.id, characteristic: k.characteristic } as Partial<AnyRow>);
-    if (!b.edits.length) return toast('Tüm KC’lerin capability kaydı var.', 'warn');
-    await edit(b.edits, 'KC’lerden capability');
-  };
-  const [sel, setSel] = useState<string[]>([]);
-  return (
-    <div className="split">
-      <Grid
-        table="capability"
-        selected={sel}
-        onSelect={setSel}
-        toolbar={<button className="btn" onClick={fromKc}>KC’lerden oluştur</button>}
-        emptyHint="Veri yoksa: “Capability calculation cannot be performed – production data required.”"
-      />
-      <CapabilityPanel id={sel[0]} />
-    </div>
-  );
+  return <CapabilityScreen />;
 }
 
 export function ActionsTab() {

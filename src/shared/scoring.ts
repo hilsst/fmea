@@ -59,12 +59,13 @@ export function riskLevel(
   apTable?: Record<string, string> | null,
 ): RiskLevel {
   if (!valid(row.s)) return '';
-  const ap = actionPriority(row.s, row.o, row.d, apTable);
+  // v4-risk: SCMH'de Action Priority yoktur (SCMH 7.2.3 p33/p61); proje bağlamlı sürüm risk.ts riskLevelOf.
+  const ap = settings.scoringStandard === 'SCMH' ? '' : actionPriority(row.s, row.o, row.d, apTable);
   const r = rpn(row.s, row.o, row.d);
   if (row.specialChar === 'Safety' || row.specialChar === 'Regulatory' || row.s >= settings.kcSeverityThreshold) return 'CRITICAL';
   if (ap === 'H' || (settings.rpnThreshold != null && r != null && r >= settings.rpnThreshold)) return 'HIGH';
   if (ap === 'M' || row.s >= settings.highSeverityThreshold) return 'MEDIUM';
-  return ap ? 'LOW' : '';
+  return ap || (settings.scoringStandard === 'SCMH' && r != null) ? 'LOW' : ''; // v4-risk
 }
 
 /**

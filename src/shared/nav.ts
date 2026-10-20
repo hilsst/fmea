@@ -44,7 +44,7 @@ export const SCREENS: Screen[] = [
   },
   {
     key: 'pfmea', label: 'PFMEA', group: 'Analiz', stage: 'Adım 2–6 · Proses FMEA', hint: 'Proses adımı → Proses elemanı (4M/5M) → Fonksiyon → Gereksinim → Hata modu → Neden (5 Neden) → Kontroller.',
-    subs: [{ key: 'processSteps', label: 'Proses Akışı (PFD)', table: 'processSteps' }, { key: 'processParams', label: 'Proses Parametreleri', table: 'processParams' }, { key: 'pfmea', label: 'PFMEA', table: 'pfmea' }],
+    subs: [{ key: 'processSteps', label: 'Proses Akışı (PFD)', table: 'processSteps' }, { key: 'pfdItems', label: 'PFD Girdi / Çıktı', table: 'pfdItems' } /* v4-risk */, { key: 'processParams', label: 'Proses Parametreleri', table: 'processParams' }, { key: 'pfmea', label: 'PFMEA', table: 'pfmea' }],
   },
   { key: 'risk', label: 'Risk', group: 'Analiz', stage: 'Risk Engine', hint: 'Puanlama standardı (IAQG SCMH veya AIAG-VDA), S/O/D kriterleri ve önceliklendirme.' },
   { key: 'kcs', label: 'Özel Karakteristikler', group: 'Analiz', stage: 'Special Characteristic Engine', hint: 'KC adayları faktörleriyle değerlendirilir; karar ve kategori mühendisindir.' },
