@@ -1,6 +1,6 @@
 {
   "name": "fmea-studio",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "DFMEA / PFMEA / KC / Kontrol Planı / İzlenebilirlik masaüstü uygulaması",
   "main": "dist/main/main.js",
   "scripts": {

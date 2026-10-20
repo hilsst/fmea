@@ -8,7 +8,7 @@ import { TABLE_LABEL } from '../../shared/model';
 import { useStore } from '../store';
 
 export function ScmhPriorityPanel() {
-  const { project: p, edit, mutate } = useStore();
+  const { project: p, edit, mutate, confirm } = useStore();
   const [m, setM] = useState<ScmhMeasure>('rpn');
   const ranked = useMemo(() => scmhSortBy([...p.dfmea, ...p.pfmea].filter((r) => r.failureMode), m).slice(0, 40), [p, m]);
   const topN = p.settings.scmhReviewTopN;
@@ -17,8 +17,8 @@ export function ScmhPriorityPanel() {
     if (n !== null && !Number.isFinite(n)) return;
     if (n !== topN) void edit({ kind: 'settings', field: 'scmhReviewTopN', value: n }, 'SCMH inceleme listesi (Top-N)');
   };
-  const renumber = (t: LineTable) => {
-    if (!window.confirm(`${TABLE_LABEL[t]} satır numaraları SCMH çıktı sırasına göre 1…n olarak yeniden verilecek.\n\nRevizyon geçmişi ve KC formu notları eski numaralara atıf yapıyorsa güncellenmelidir. Baseline öncesi yapılması önerilir.\n\nOnaylıyor musunuz?`)) return;
+  const renumber = async (t: LineTable) => {
+    if (!(await confirm(`${TABLE_LABEL[t]} satır numaraları yeniden verilsin mi?`, `${TABLE_LABEL[t]} satır numaraları SCMH çıktı sırasına göre 1…n olarak yeniden verilecek.\n\nRevizyon geçmişi ve KC formu notları eski numaralara atıf yapıyorsa güncellenmelidir. Baseline öncesi yapılması önerilir.\n\n`))) return;
     mutate((d) => renumberLines(d, t), { kind: 'Modified', table: t, id: 'lineNo', field: 'lineNo', comment: `${TABLE_LABEL[t]} satır numaraları yeniden verildi` });
   };
   return (

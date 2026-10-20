@@ -11,7 +11,7 @@ import { applyTemplate, makeTemplate, validateTemplate, type CompanyTemplate } f
 import type { DfmeaRow, PfmeaRow, Project } from '../shared/types';
 import { currentStep } from '../shared/workflow';
 import { api, isDesktop } from './api';
-import { ConfirmDialog } from './components/ConfirmDialog';
+import { AskDialog, ConfirmDialog } from './components/ConfirmDialog';
 import { ImportDialog, SimilarDialog, WhyDrawer } from './components/Dialogs2';
 import { Grid } from './components/Grid';
 import { Modal } from './components/Modal';
@@ -61,7 +61,7 @@ const fromTab = (t: TabKey): [ScreenKey, string?] => {
 
 export function App() {
   const store = useStore();
-  const { project, filePath, dirty, replace, setPath, markSaved, toast, toasts, undo, redo, canUndo, canRedo, mutate } = store;
+  const { project, filePath, dirty, replace, setPath, markSaved, toast, toasts, undo, redo, canUndo, canRedo, mutate, ask, confirm } = store;
   const [screen, setScreen] = useState<ScreenKey>('dashboard');
   const [subs, setSubs] = useState<Record<string, string>>({});
   const [help, setHelp] = useState(false);
@@ -94,7 +94,7 @@ export function App() {
     };
   }, [go]);
 
-  const confirmDiscard = () => !dirty || window.confirm('Kaydedilmemiş değişiklikler kaybolacak. Devam edilsin mi?');
+  const confirmDiscard = async () => !dirty || (await confirm('Kaydedilmemiş değişiklikler kaybolacak', 'Devam edilsin mi?', true));
 
   const save = useCallback(
     async (saveAs = false) => {
@@ -112,7 +112,7 @@ export function App() {
 
   const open = useCallback(
     async (file?: string) => {
-      if (!confirmDiscard()) return;
+      if (!(await confirmDiscard())) return;
       try {
         const r = await api.openProject(file);
         if (!r) return;
@@ -153,9 +153,9 @@ export function App() {
   }, [project, toast]);
 
   const saveTemplate = useCallback(async () => {
-    const name = window.prompt('Şablon adı', 'Şirket FMEA şablonu');
+    const name = await ask({ title: 'Şablon adı', input: 'Şirket FMEA şablonu' });
     if (name && (await api.saveTemplate(makeTemplate(project, name)))) toast('Şirket şablonu kaydedildi');
-  }, [project, toast]);
+  }, [project, toast, ask]);
 
   const openTemplate = useCallback(async () => {
     const t = await api.openTemplate();
@@ -169,7 +169,7 @@ export function App() {
     () =>
       api.onMenu(async (id) => {
         if (id === 'new') {
-          if (confirmDiscard()) {
+          if (await confirmDiscard()) {
             replace(newProject());
             setWelcome(false);
             setScreen('project');
@@ -185,7 +185,7 @@ export function App() {
         else if (id === 'saveTemplate') saveTemplate();
         else if (id === 'applyTemplate') openTemplate();
         else if (id === 'sample') {
-          if (confirmDiscard()) {
+          if (await confirmDiscard()) {
             replace(sampleProject(), undefined, false);
             setWelcome(false);
           }
@@ -246,7 +246,7 @@ export function App() {
           </div>
         </div>
         <div className="actions">
-          <button className="btn ghost" onClick={() => { if (confirmDiscard()) { replace(newProject()); setWelcome(false); setScreen('project'); } }}>Yeni</button>
+          <button className="btn ghost" onClick={async () => { if (await confirmDiscard()) { replace(newProject()); setWelcome(false); setScreen('project'); } }}>Yeni</button>
           <button className="btn ghost" onClick={() => open()}>Aç</button>
           <button className="btn ghost" onClick={() => save()}>Kaydet</button>
           <button className="btn ghost" disabled={!canUndo} onClick={undo} title="Geri al (Ctrl+Z)">↶</button>
@@ -310,6 +310,7 @@ export function App() {
       </div>
 
       <ConfirmDialog />
+      <AskDialog />
       <WhyDrawer />
       {importing && <ImportDialog onClose={() => setImporting(false)} />}
       {similar && <SimilarDialog onClose={() => setSimilar(false)} />}

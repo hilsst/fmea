@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { findRequirementCandidates, locText, UNSUPPORTED_MSG } from '../../shared/docmodel';
-import { summarizeChanges } from '../../shared/engine';
+import { summarizeChanges, type Edit } from '../../shared/engine';
+import { reqAutoValues } from '../../shared/reqAutofill';
+import type { GenStage } from '../../shared/autogen';
 import { COMPOSITE_TEMPLATE, isComposite } from '../../shared/kb';
 import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
 import { KC_LOCK_MSG, isCi, kcLocked, scmhKcDecision } from '../../shared/kcScmh'; // v4-kc
@@ -10,6 +12,7 @@ import { COMPOSITE_CHECKLIST, blankRow, nextId } from '../../shared/model';
 import type { AnyRow, KcRow, Project, TableKey } from '../../shared/types';
 import { api, isDesktop } from '../api';
 import { PasteTextDialog, useAi } from '../components/AiDialogs';
+import { useAutogen, useFillBlanks } from '../components/Autogen';
 import { Grid } from '../components/Grid';
 import { Modal } from '../components/Modal';
 import { CapabilityScreen, MsaScreen } from '../screens/Cap'; // v4-cap
@@ -36,10 +39,13 @@ function batch(project: Project) {
   };
 }
 
+const ALL_STAGES: GenStage[] = ['requirements', 'structure', 'dfmea', 'pfmea', 'fill'];
+
 export function DocumentsTab() {
   const { project, edit, mutate, toast } = useStore();
   const [sel, setSel] = useState<string[]>([]);
   const ai = useAi();
+  const gen = useAutogen();
   const doc = project.documents.find((d) => d.id === sel[0]) ?? null;
   const attach = async () => {
     const f = await api.pickFile();
@@ -69,6 +75,9 @@ export function DocumentsTab() {
       if (row) row.parseStatus = status;
     }, { kind: 'Modified', table: 'documents', id: doc.id, field: 'parseStatus', to: status });
     toast(x.status === 'unsupported' ? UNSUPPORTED_MSG : `Analiz tamamlandı: ${x.blocks.length} metin bloğu`, x.status === 'ok' ? 'ok' : 'warn');
+    // Ana akış: doküman analiz edilince tüm tablolar kütüphaneden önerilir; mühendise kontrol, düzeltme ve onay kalır.
+    if (x.status !== 'unsupported')
+      await gen(ALL_STAGES, `${doc.docNumber || doc.name} analizinden öneriler`, { docIds: [doc.id] }, { ...project, docIndex: { ...project.docIndex, [doc.id]: x } });
   };
   const addLocal = async () => {
     if (!doc || !index) return;
@@ -106,6 +115,9 @@ export function DocumentsTab() {
             <button className="btn" disabled={!index} onClick={addLocal} title="Yerel ayrıştırıcının bulduğu gereksinim cümlelerini ekler (AI kullanılmaz)">
               Yerel adayları ekle
             </button>
+            <button className="btn" disabled={!Object.keys(project.docIndex).length} onClick={() => gen(ALL_STAGES, 'Dokümanlardan tüm zincir', { docIds: sel.length ? sel : undefined })} title="Analiz edilmiş dokümanlardan (seçim yoksa hepsi) gereksinim → yapı/fonksiyon → DFMEA → PFMEA önerir. Yalnızca eksik satırlar eklenir; hepsi AI Proposed gelir.">
+              ⟳ Tüm zinciri öner
+            </button>
             <button className="btn ai" disabled={sel.length !== 1} onClick={() => ai.extractRequirements(doc)} title="Seçili dokümandan Requirements Matrix çıkarır">
               ✦ AI: Gereksinim çıkar
             </button>
@@ -119,17 +131,41 @@ export function DocumentsTab() {
 }
 
 export function RequirementsTab() {
+  const { project, edit, toast } = useStore();
   const [paste, setPaste] = useState(false);
+  const [sel, setSel] = useState<string[]>([]);
   const ai = useAi();
+  // Boş kabul kriteri / doğrulama yöntemi / ölçü alanlarını gereksinim metninden doldurur (seçim yoksa tüm satırlar).
+  const autofill = async () => {
+    const rows = project.requirements.filter((r) => (sel.length ? sel.includes(r.id) : true) && r.text.trim());
+    const edits: Edit[] = rows.flatMap((r) => {
+      const v = reqAutoValues(r);
+      const f = Object.keys(v);
+      if (!f.length) return [];
+      return [
+        { kind: 'set' as const, table: 'requirements' as const, id: r.id, field: 'autoFields', value: [...new Set([...(r.autoFields ?? []), ...f])] },
+        ...f.map((field) => ({ kind: 'set' as const, table: 'requirements' as const, id: r.id, field, value: v[field as keyof typeof v] })),
+      ];
+    });
+    if (!edits.length) return toast('Doldurulacak boş alan yok.', 'warn');
+    if (await edit(edits, 'Gereksinimden otomatik doldurma')) toast(`${new Set(edits.map((e) => (e as { id: string }).id)).size} gereksinim dolduruldu – AI ÖNERİSİ değerleri onaylayın`);
+  };
   return (
     <>
       <Grid
         table="requirements"
+        selected={sel}
+        onSelect={setSel}
         defaults={{ approval: 'AI Proposed' } as Partial<AnyRow>}
         toolbar={
-          <button className="btn ai" onClick={() => setPaste(true)}>
-            ✦ AI: Metinden çıkar
-          </button>
+          <>
+            <button className="btn" onClick={autofill} title="Kabul kriteri, doğrulama yöntemi ve ölçü alanlarını gereksinim metninden doldurur. Yalnızca boş (veya daha önce otomatik dolmuş) alanlar değişir; kaynakta olmayan değer VERİ YOK olur.">
+              ⟳ Otomatik doldur{sel.length ? ` (${sel.length})` : ''}
+            </button>
+            <button className="btn ai" onClick={() => setPaste(true)}>
+              ✦ AI: Metinden çıkar
+            </button>
+          </>
         }
         emptyHint="Gereksinimleri elle girin, Dokümanlar ekranından AI ile çıkarın veya metin yapıştırın."
       />
@@ -152,6 +188,7 @@ const NEXT_LEVEL: Record<string, string> = { Product: 'Assembly', Assembly: 'Par
 export function StructureTab() {
   const { project, edit } = useStore();
   const [sel, setSel] = useState<string[]>([]);
+  const gen = useAutogen();
   const addChild = async () => {
     const parent = project.structure.find((s) => s.id === sel[0]);
     const b = batch(project);
@@ -165,39 +202,106 @@ export function StructureTab() {
         selected={sel}
         onSelect={setSel}
         toolbar={
-          <button className="btn" onClick={addChild} disabled={sel.length > 1}>
-            ↳ Alt eleman ekle
-          </button>
+          <>
+            <button className="btn" onClick={addChild} disabled={sel.length > 1}>
+              ↳ Alt eleman ekle
+            </button>
+            <button className="btn" onClick={() => gen(['structure'], 'Gereksinimlerden yapı & fonksiyon')} title="Yapıya bağlı olmayan gereksinimlerden Product → Part → Feature ağacı ve fonksiyonlar önerir (AI Proposed)">
+              ⟳ Gereksinimlerden öner
+            </button>
+          </>
         }
-        emptyHint="Product → Assembly → Part → Feature hiyerarşisini kurun ve her elemanın fonksiyonunu yazın."
+        emptyHint="“⟳ Gereksinimlerden öner” ile ağacı otomatik oluşturun veya Product → Assembly → Part → Feature hiyerarşisini elle kurun."
       />
-      <StructureTree project={project} />
+      <StructureTree project={project} onSelect={setSel} />
     </div>
   );
 }
 
-function StructureTree({ project }: { project: Project }) {
-  const roots = project.structure.filter((s) => !s.parentId || !project.structure.some((x) => x.id === s.parentId));
-  const render = (id: string, depth: number): JSX.Element => {
-    const n = project.structure.find((s) => s.id === id)!;
-    const kids = project.structure.filter((s) => s.parentId === id);
-    const df = project.dfmea.filter((d) => d.functionId === id).length;
+/** Yapı ağacı: aynı seviye/ad/üst elemana sahip satırlar tek düğümde birleşir (bir elemanın birden çok fonksiyonu).
+ *  Düğümden onay, yeniden adlandırma ve silme yapılabilir; değişiklikler onay penceresinden geçer. */
+function StructureTree({ project, onSelect }: { project: Project; onSelect: (ids: string[]) => void }) {
+  const { edit, ask, confirm, toast } = useStore();
+  const rows = project.structure;
+  const key = (s: (typeof rows)[number]) => `${s.level}|${s.element.trim().toLocaleLowerCase('tr')}|${groupOf.get(s.parentId) ?? s.parentId}`;
+  // Üst elemanın grubu: aynı gruptaki satırlardan herhangi birine bağlanan çocuklar o düğümün altında görünür.
+  const groupOf = new Map<string, string>();
+  const groups = new Map<string, typeof rows>();
+  for (let pass = 0; pass < 12; pass++) {
+    groups.clear();
+    for (const s of rows) {
+      const k = key(s);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k)!.push(s);
+    }
+    for (const [k, g] of groups) for (const s of g) groupOf.set(s.id, k);
+  }
+  const exists = new Set(rows.map((r) => r.id));
+  const rootKeys = [...groups.keys()].filter((k) => groups.get(k)!.every((s) => !s.parentId || !exists.has(s.parentId)));
+  const kidsOf = (k: string) => [...groups.keys()].filter((c) => c !== k && groups.get(c)!.some((s) => s.parentId && groupOf.get(s.parentId) === k));
+
+  const approve = async (g: typeof rows, v: string) => {
+    const e = g.filter((s) => s.approval !== v).map((s) => ({ kind: 'set' as const, table: 'structure' as const, id: s.id, field: 'approval', value: v }));
+    if (e.length) await edit(e, `Yapı elemanı ${v === 'Approved' ? 'onayı' : 'onayı kaldırıldı'}`);
+  };
+  const rename = async (g: typeof rows) => {
+    const name = await ask({ title: 'Eleman adını değiştir', input: g[0].element });
+    if (name && name !== g[0].element) await edit(g.map((s) => ({ kind: 'set' as const, table: 'structure' as const, id: s.id, field: 'element', value: name })), 'Yapı elemanı adı');
+  };
+  const remove = async (k: string) => {
+    const all: string[] = [];
+    const walk = (x: string, depth: number) => {
+      all.push(...groups.get(x)!.map((s) => s.id));
+      if (depth < 12) for (const c of kidsOf(x)) walk(c, depth + 1);
+    };
+    walk(k, 0);
+    const df = project.dfmea.filter((d) => all.includes(d.functionId)).length;
+    if (!(await confirm(`${all.length} yapı satırı silinsin mi?`, `${all.join(', ')}${df ? `\n\n${df} DFMEA satırının fonksiyon bağlantısı kaldırılacak (DFMEA satırları silinmez).` : ''}`, true))) return;
+    if (await edit(all.map((id) => ({ kind: 'delete' as const, table: 'structure' as const, id })), 'Yapı elemanı silme')) toast(`${all.length} yapı satırı silindi`);
+  };
+
+  const render = (k: string, depth: number): JSX.Element => {
+    const g = groups.get(k)!;
+    const n = g[0];
+    const kids = kidsOf(k);
+    const df = project.dfmea.filter((d) => g.some((s) => s.id === d.functionId)).length;
+    const pending = g.some((s) => s.approval === 'AI Proposed');
+    const approved = g.every((s) => s.approval === 'Approved');
     return (
-      <li key={id}>
-        <div className="tree-node">
+      <li key={k}>
+        <div className={`tree-node ${pending ? 'pending' : ''}`}>
           <span className={`lvl lvl-${n.level || 'x'}`}>{n.level || '?'}</span>
-          <b>{n.element || n.id}</b>
-          {n.function && <span className="muted"> → {n.function}</span>}
+          <button className="link" onClick={() => onSelect(g.map((s) => s.id))} title="Tabloda seç">
+            <b>{n.element || n.id}</b>
+          </button>
+          {pending && <span className="badge b-amber">AI Proposed</span>}
+          {approved && <span className="badge b-green">Onaylı</span>}
           {df > 0 && <span className="badge b-blue">{df} DFMEA</span>}
+          <span className="tree-acts">
+            {approved ? (
+              <button className="btn small" title="Onayı geri al" onClick={() => approve(g, 'Engineer Reviewed')}>↺</button>
+            ) : (
+              <button className="btn small ok" title="Onayla" onClick={() => approve(g, 'Approved')}>✓</button>
+            )}
+            <button className="btn small" title="Yeniden adlandır" onClick={() => rename(g)}>✎</button>
+            <button className="btn small danger" title="Sil (alt elemanlarla)" onClick={() => remove(k)}>🗑</button>
+          </span>
         </div>
-        {kids.length > 0 && depth < 12 && <ul>{kids.map((k) => render(k.id, depth + 1))}</ul>}
+        {g.some((s) => s.function) && (
+          <ul className="fn-list">
+            {g.filter((s) => s.function).map((s) => (
+              <li key={s.id} className="muted">→ {s.function} <span className="rid">{s.id}</span></li>
+            ))}
+          </ul>
+        )}
+        {kids.length > 0 && depth < 12 && <ul>{kids.map((c) => render(c, depth + 1))}</ul>}
       </li>
     );
   };
   return (
     <aside className="tree card">
       <h3>Yapı ağacı</h3>
-      {roots.length ? <ul>{roots.map((r) => render(r.id, 0))}</ul> : <p className="muted">Ağaç burada görünür.</p>}
+      {rootKeys.length ? <ul>{rootKeys.map((r) => render(r, 0))}</ul> : <p className="muted">Ağaç burada görünür.</p>}
     </aside>
   );
 }
@@ -206,6 +310,8 @@ export function DfmeaTab() {
   const { project, edit, toast } = useStore();
   const [sel, setSel] = useState<string[]>([]);
   const ai = useAi();
+  const gen = useAutogen();
+  const fillBlanks = useFillBlanks('dfmea');
   const fromFunctions = async () => {
     const b = batch(project);
     for (const s of project.structure.filter((s) => s.function && !project.dfmea.some((d) => d.functionId === s.id)))
@@ -223,6 +329,15 @@ export function DfmeaTab() {
           <>
             <button className="btn" onClick={fromFunctions} title="DFMEA satırı olmayan her fonksiyon için bir satır açar">
               Fonksiyonlardan oluştur
+            </button>
+            <button className="btn" onClick={() => gen(['dfmea'], 'Hata kütüphanesinden DFMEA')} title="DFMEA satırı olmayan her fonksiyon için gereksinim tipine göre hazır hata modu, etki, neden, önleme/tespit kontrolü ve başlangıç S/O/D önerir">
+              ⟳ Kütüphaneden öner
+            </button>
+            <button className="btn" onClick={() => fillBlanks(sel)} title="Seçili (seçim yoksa tüm) satırların boş alanlarını yapı ağacı ve gereksinimlerden doldurur: sistem/komponent, lokal/üst etki, doğrulama, risk kategorisi, gürültü faktörü, özel karakteristik, S 9–10 kararı ve aksiyon önerisi. Dolu alanlar değişmez.">
+              ⟳ Boşları doldur{sel.length ? ` (${sel.length})` : ''}
+            </button>
+            <button className="btn" onClick={() => gen(['structure', 'dfmea'], 'Gereksinim → yapı → DFMEA')} title="Önce eksik yapı/fonksiyonları, sonra DFMEA satırlarını önerir">
+              ⟳ Gereksinimlerden tümü
             </button>
             <button className="btn ai" onClick={() => ai.suggestDfmea([])} title="Tüm fonksiyonlar için hata modu, etki, neden ve kontrol önerir">
               ✦ AI: DFMEA öner
@@ -311,6 +426,8 @@ export function PfmeaTab() {
   const [importDf, setImportDf] = useState(false);
   const [checklist, setChecklist] = useState(false);
   const ai = useAi();
+  const gen = useAutogen();
+  const fillBlanks = useFillBlanks('pfmea');
   return (
     <>
       <Grid
@@ -326,6 +443,12 @@ export function PfmeaTab() {
             </button>
             <button className="btn" onClick={() => setChecklist(true)} title="Spesifikasyon §9 kompozit hata modu kontrol listesi">
               Kompozit kontrol listesi
+            </button>
+            <button className="btn" onClick={() => gen(['pfmea'], 'Hata kütüphanesinden PFMEA')} title="PFMEA satırı olmayan her proses adımı için hazır hata modu, etki, neden (4M), kök neden, önleme/tespit, hata önleme ve başlangıç S/O/D önerir; özel proses parametreleri için limit dışı hata modlarını ekler">
+              ⟳ Kütüphaneden öner
+            </button>
+            <button className="btn" onClick={() => fillBlanks(sel)} title="Seçili (seçim yoksa tüm) satırların boş alanlarını proses adımı, parametreler, gereksinimler ve DFMEA'dan doldurur: proses fonksiyonu, ürün/proses gereksinimi, bağlı DFMEA, proses elemanı, ölçüm yöntemi, reaksiyon planı, özel karakteristik, S 9–10 kararı ve aksiyon önerisi. Dolu alanlar değişmez.">
+              ⟳ Boşları doldur{sel.length ? ` (${sel.length})` : ''}
             </button>
             <button className="btn ai" onClick={() => ai.suggestPfmea([])}>
               ✦ AI: PFMEA öner

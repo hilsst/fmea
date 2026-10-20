@@ -138,7 +138,7 @@ function blankRowV3(table: TableKey, id: string): { id: string } & Record<string
     case 'requirements':
       return { id, text: '', reqType: '', acceptance: '', verification: '', source: '', dataStatus: '', approval: 'AI Proposed', notes: '', characteristic: '', nominal: null, lsl: null, usl: null, unit: '', tolerance: '', sourceDocId: '', sourcePage: '', sourceSection: '', sourceCell: '', balloon: '', evidenceText: '', confidence: '' };
     case 'structure':
-      return { id, level: '', parentId: '', element: '', function: '', functionType: '', reqIds: [], source: '', notes: '', performanceReq: '', constraint: '', interface: '' };
+      return { id, level: '', parentId: '', element: '', function: '', functionType: '', reqIds: [], source: '', notes: '', performanceReq: '', constraint: '', interface: '', approval: '' };
     case 'dfmea':
       return { id, ...fmeaCommon, system: '', subsystem: '', component: '', functionId: '', function: '', reqIds: [], requirement: '', localEffect: '', higherEffect: '', verification: '', causeFromIds: [], localEffectS: null, higherEffectS: null, riskCategory: [], noiseFactor: [] }; // v4-risk: son 5 alan
     case 'processSteps':
@@ -366,6 +366,7 @@ export function newProject(): Project {
     apqp: defaultApqp(), // v4-apqp
     pfdItems: [], // v4-risk
     lineCounters: {}, // v4-risk
+    tableApprovals: {},
   };
 }
 
@@ -402,6 +403,7 @@ export function normalizeProject(raw: Partial<Project>, report?: MigrationReport
     kcRegistry: { kc: 0, ci: 0, ...(raw.kcRegistry ?? {}) }, // v4-kc
     apqp: normalizeApqp(raw.apqp), // v4-apqp: 3.0 dosyalarında yok → varsayılanlar
     lineCounters: { ...(raw.lineCounters ?? {}) }, // v4-risk
+    tableApprovals: { ...(raw.tableApprovals ?? {}) },
   } as Project;
   // scoringStandard alanı olmayan (SCMH öncesi) dosyalar AIAG-VDA olarak kalır; mevcut projeler sessizce değişmez.
   if (!raw.settings?.scoringStandard) {

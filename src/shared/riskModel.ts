@@ -40,7 +40,8 @@ export function exportOrder<T extends AnyRow>(p: Project, table: LineTable): T[]
     return [...p.processSteps].sort((a, c) => opNum(a.opNo) - opNum(c.opNo) || t(a.opNo).localeCompare(t(c.opNo)) || a.id.localeCompare(c.id)) as unknown as T[];
   const rows = (table === 'pfmea' ? p.pfmea : p.controlPlan) as (PfmeaRow | ControlPlanRow)[];
   const op = (r: PfmeaRow | ControlPlanRow) => t(step.get(r.stepId)?.opNo) || t(r.opNo);
-  return [...rows].sort((a, b) => opNum(op(a)) - opNum(op(b)) || op(a).localeCompare(op(b)) || a.id.localeCompare(b.id)) as unknown as T[];
+  // Aynı operasyonda tablodaki satır sırası korunur (sort kararlıdır; mühendis satırları taşıyabilir).
+  return [...rows].sort((a, b) => opNum(op(a)) - opNum(op(b)) || op(a).localeCompare(op(b))) as unknown as T[];
 }
 
 /** Numarası olmayan satırlara (çıktı sırasıyla) yeni numara verir; mevcut numaralar değişmez. Değişen satır sayısını döndürür. */

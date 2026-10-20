@@ -16,6 +16,19 @@ export interface PendingChange {
   resolve: (applied: boolean) => void;
 }
 
+/** Uygulama içi onay / metin sorusu (window.confirm/prompt yerine: Windows'ta Electron sistem penceresi klavye odağını bozuyor). */
+export interface AskOptions {
+  title: string;
+  message?: string;
+  /** Verilirse metin kutusu gösterilir; değer varsayılan metindir. */
+  input?: string;
+  okLabel?: string;
+  danger?: boolean;
+}
+export interface AskRequest extends AskOptions {
+  resolve: (v: string | null) => void;
+}
+
 interface Store {
   project: Project;
   filePath?: string;
@@ -34,6 +47,12 @@ interface Store {
   canUndo: boolean;
   canRedo: boolean;
   toast: (msg: string, kind?: 'ok' | 'warn' | 'err') => void;
+  /** Tamam → metin (input yoksa ''), Vazgeç → null. */
+  ask: (o: AskOptions) => Promise<string | null>;
+  /** Evet/hayır sorusu. */
+  confirm: (title: string, message?: string, danger?: boolean) => Promise<boolean>;
+  asking: AskRequest | null;
+  answer: (v: string | null) => void;
   toasts: { id: number; msg: string; kind: string }[];
 }
 
@@ -51,6 +70,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [dirty, setDirty] = useState(false);
   const [pending, setPending] = useState<PendingChange | null>(null);
   const [toasts, setToasts] = useState<{ id: number; msg: string; kind: string }[]>([]);
+  const [asking, setAsking] = useState<AskRequest | null>(null);
   const undoStack = useRef<Project[]>([]);
   const redoStack = useRef<Project[]>([]);
   const [, force] = useState(0);
@@ -146,6 +166,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     force((x) => x + 1);
   }, []);
 
+  const ask = useCallback((o: AskOptions) => new Promise<string | null>((resolve) => setAsking({ ...o, resolve })), []);
+  const confirm = useCallback(async (title: string, message?: string, danger?: boolean) => (await ask({ title, message, danger })) !== null, [ask]);
+  const answer = useCallback(
+    (v: string | null) => {
+      asking?.resolve(v);
+      setAsking(null);
+    },
+    [asking],
+  );
+
   useEffect(() => {
     api.setDirty(dirty);
   }, [dirty]);
@@ -174,9 +204,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       canUndo: undoStack.current.length > 0,
       canRedo: redoStack.current.length > 0,
       toast,
+      ask,
+      confirm,
+      asking,
+      answer,
       toasts,
     }),
-    [project, filePath, dirty, edit, pending, decide, replace, mutate, undo, redo, toast, toasts],
+    [project, filePath, dirty, edit, pending, decide, replace, mutate, undo, redo, toast, ask, confirm, asking, answer, toasts],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

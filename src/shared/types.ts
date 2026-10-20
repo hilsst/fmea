@@ -43,6 +43,8 @@ export interface BaseRow {
   rejectReason?: string;
   // v4-risk: sabit satır numarası (SCMH "Doc (Line) #"); bir kez atanır, yeniden kullanılmaz.
   lineNo?: number;
+  /** Otomatik doldurulan alanlar; elle değiştirilen alan listeden çıkar ve artık otomatik güncellenmez. */
+  autoFields?: string[];
 }
 
 export interface ProjectMeta {
@@ -213,6 +215,8 @@ export interface StructureRow extends BaseRow {
   performanceReq: string;
   constraint: string;
   interface: string;
+  /** Otomatik önerilen yapı/fonksiyon satırları "AI Proposed" gelir; mühendis onaylar veya reddeder. */
+  approval: Approval | '';
 }
 
 interface FmeaCommon extends BaseRow {
@@ -799,6 +803,14 @@ export interface Project {
   pfdItems: PfdItemRow[];
   /** Tablo başına son atanan satır numarası (azalmaz). */
   lineCounters: Partial<Record<string, number>>;
+  /** Mühendis incelemesi sonrası tablo onayı ("Tabloyu onayla"); kaldırılabilir. */
+  tableApprovals: Partial<Record<TableKey, TableApproval>>;
+}
+
+export interface TableApproval {
+  user: string;
+  at: string;
+  revision: string;
 }
 
 export type TableKey =

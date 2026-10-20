@@ -477,6 +477,7 @@ function CpTab({ go }: { go: Go }) {
 
 function PackagingTab() {
   const { p, a, upd, edit, toast, user } = useApqp();
+  const { ask } = useStore();
   const k = a.packaging;
   const setK = (field: string) => (v: unknown) => { upd('packaging', field, (x) => { (x.packaging as unknown as Record<string, unknown>)[field] = v; }, v); return Promise.resolve(true); };
   const setItem = (key: string, field: 'answer' | 'note', v: string) => upd(`packaging.${key}`, field, (x) => { x.packaging.items.find((i) => i.key === key)![field] = v as never; }, v);
@@ -519,7 +520,7 @@ function PackagingTab() {
             ))}
           </tbody>
         </table>
-        <button className="btn ghost" onClick={() => { const label = window.prompt('Yeni madde'); if (label) upd('packaging', 'items', (x) => { x.packaging.items.push({ key: `c${Date.now()}`, label, answer: '', note: '', custom: true }); }, label, 'Added'); }}>+ Şirket maddesi</button>
+        <button className="btn ghost" onClick={async () => { const label = await ask({ title: 'Yeni şirket maddesi', input: '' }); if (label) upd('packaging', 'items', (x) => { x.packaging.items.push({ key: `c${Date.now()}`, label, answer: '', note: '', custom: true }); }, label, 'Added'); }}>+ Şirket maddesi</button>
         <div className="form">
           <Field label="Ambalaj iş talimatı (doküman / dosya referansı)"><TextCell value={k.workInstructionRef} onCommit={setK('workInstructionRef')} /></Field>
           <Field label="Birim / ara ambalaj ve paketleme fotoğrafları"><TextCell value={k.packPhotoRef} onCommit={setK('packPhotoRef')} /></Field>
