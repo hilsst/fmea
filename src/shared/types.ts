@@ -101,6 +101,34 @@ export interface Settings {
   reasonFields: string[];
   /** Puanlama/önceliklendirme standardı. SCMH: RPN eşiği yok, S 9–10 her zaman incelenir. */
   scoringStandard: 'SCMH' | 'AIAG-VDA';
+  // v4-cap: capability kabul bantları, alt grup minimumu ve MSA kabul kriterleri (capDefaults.ts)
+  /** AS9145 Tablo 1: ≥accept kabul; conditional ≤ indeks < accept koşullu; < conditional ret. */
+  capAcceptance: CapAcceptance;
+  /** Kontrol limitleri için minimum alt grup sayısı (boş = 20, CAP webinar p38). */
+  minSubgroups: number | null;
+  /** MSA kabul kriterleri: GR&R limiti müşteriden gelir; boşsa VERİ YOK. */
+  msaCriteria: MsaCriteria;
+}
+
+// v4-cap
+export interface CapAcceptance {
+  accept: number;
+  conditional: number;
+  source: string;
+}
+
+// v4-cap
+export interface MsaCriteria {
+  /** Müşteri GR&R üst limiti (%); boş = VERİ YOK (MSA webinar p35–36 eşik vermez). */
+  maxGrrPct: number | null;
+  basis: '%Tolerance' | '%Study Var';
+  minNdc: number | null;
+  minKappa: number | null;
+  /** Tolerans aralığı / çözünürlük oranı alt sınırı (MSA webinar p30: 10). */
+  resolutionRatio: number;
+  /** Test belirsizlik oranı alt sınırı (MSA webinar p17–19, p31: 4). */
+  tur: number;
+  source: string;
 }
 
 export interface DocumentRow extends BaseRow {
@@ -324,6 +352,15 @@ export interface ControlPlanRow extends BaseRow {
   ppId: string;
   /** SCMH CP "Reference": resim konumu / şartname bölümü (PFD ve PFMEA ile aynı numara). */
   reference: string;
+  // v4-cap: capability sınırlama (containment) bağlantısı ve SPC kurulumu (CAP webinar p42–46)
+  capId?: string;
+  spcChart?: string;
+  spcSubgroup?: number | null;
+  spcCenter?: number | null;
+  spcUcl?: number | null;
+  spcLcl?: number | null;
+  spcBaselineCapId?: string;
+  spcLimitsFixedOn?: string;
 }
 
 export interface MsaRow extends BaseRow {
@@ -337,6 +374,34 @@ export interface MsaRow extends BaseRow {
   autoCreated: boolean;
   notes: string;
   dataType: 'Variable' | 'Attribute' | '';
+  // v4-cap: yapılandırılmış MSA (MSA webinar p11–36)
+  measType: string;
+  tolerance: number | null;
+  resolution: number | null;
+  gaugeUncertainty: number | null;
+  stabilityDrift: number | null;
+  linearity: '' | 'OK' | 'NOK';
+  calibrationRef: string;
+  calibrationDue: string;
+  calibrationVerified: boolean;
+  softwareDependent: boolean;
+  multiGauge: boolean;
+  grrParts: number | null;
+  grrOperators: number | null;
+  grrTrials: number | null;
+  pctStudyVar: number | null;
+  pctTolerance: number | null;
+  ndc: number | null;
+  kappa: number | null;
+  effectiveness: number | null;
+  custMaxGrr: number | null;
+  custBasis: '' | '%Tolerance' | '%Study Var';
+  custMinNdc: number | null;
+  custMinKappa: number | null;
+  custSource: string;
+  trigger: string;
+  refMsaId: string;
+  actionId: string;
 }
 
 export interface CapabilityRow extends BaseRow {
@@ -349,6 +414,25 @@ export interface CapabilityRow extends BaseRow {
   notes: string;
   subgroupSize: number | null;
   distribution: 'Normal' | 'Non-normal' | 'Unknown' | '';
+  // v4-cap: nitel capability, veri kaynağı ve AS9145 Tablo 1 tepkileri
+  dataKind: '' | 'Variable' | 'Attribute';
+  attrKind: '' | 'Defectives' | 'Defects';
+  defects: number | null;
+  units: number | null;
+  opportunities: number | null;
+  dataSource: '' | 'Production run' | 'Pre-launch' | 'Prototype';
+  runRef: string;
+  dateFrom: string;
+  dateTo: string;
+  operators: string;
+  samplePlan: string;
+  term: '' | 'Short-term' | 'Long-term';
+  disposition: string;
+  containmentCpId: string;
+  actionId: string;
+  customerIssueId: string;
+  customerContactRef: string;
+  customerAccepted: boolean;
 }
 
 export interface ActionRow extends BaseRow {

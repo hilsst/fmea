@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AI_ERROR_TEXT, LOW_CONF_TEXT, REVIEW_CATEGORIES } from '../../shared/aischema';
 import { appendBaseline, baselineProject, createBaseline, diffProjects, diffSummary, verifyBaseline, type RowDiff } from '../../shared/baseline';
-import { capabilityAnalysis, verdictText } from '../../shared/capability';
 import { rowLabel } from '../../shared/columns';
 import { verifySource } from '../../shared/docmodel';
 import { impactOf } from '../../shared/impact';
@@ -290,33 +289,8 @@ export function KcFactorPanel({ id }: { id?: string }) {
 
 // ───────────────────────── Capability analiz paneli ─────────────────────────
 
-export function CapabilityPanel({ id }: { id?: string }) {
-  const { project: p } = useStore();
-  const row = p.capability.find((c) => c.id === id);
-  if (!row) return <aside className="card tree"><h3>Capability doğrulama</h3><p className="muted">Analiz için bir satır seçin. Veriyi “Ölçümler” sütununa yapıştırın.</p></aside>;
-  const values = parseData(row.data);
-  const a = capabilityAnalysis(values, row.lsl, row.usl, row.target, { minSamples: p.settings.minSamples, targetCpk: p.settings.targetCpk }, row.subgroupSize, row.distribution);
-  const f = (v: number | null, n = 3) => (v == null ? '—' : v.toFixed(n));
-  return (
-    <aside className="card tree">
-      <h3>{row.id} · <span className={`badge ${a.verdict === 'VALID' ? 'b-green' : a.verdict === 'INVALID' ? 'b-red' : 'b-amber'}`}>{a.verdict}</span></h3>
-      <table className="effects small">
-        <tbody>
-          <tr><td>n / min</td><td>{a.n} / {a.minSamples}</td></tr>
-          <tr><td>Yöntem</td><td>{a.method || '—'}</td></tr>
-          <tr><td>Ortalama</td><td>{f(a.mean, 4)}</td></tr>
-          <tr><td>σ within / overall</td><td>{f(a.sigmaWithin, 4)} / {f(a.sigmaOverall, 4)}</td></tr>
-          <tr><td>Cp / Cpk</td><td>{f(a.cp)} / {f(a.cpk)}</td></tr>
-          <tr><td>Pp / Ppk</td><td>{f(a.pp)} / {f(a.ppk)}</td></tr>
-          <tr><td>Normallik (AD)</td><td>{a.ad == null ? '—' : `A²=${a.ad.toFixed(3)} p≈${f(a.adP)} → ${a.normal ? 'normal' : 'normal değil'}`}</td></tr>
-          <tr><td>Kararlılık</td><td>{a.stable == null ? '—' : a.stable ? 'kontrol altında' : `kontrol dışı nokta: ${a.outOfControl.slice(0, 10).map((i) => i + 1).join(', ')}`}</td></tr>
-        </tbody>
-      </table>
-      <p className="small">{verdictText(a, p.settings.targetCpk)}</p>
-      {a.reasons.length > 0 && <ul className="plain small">{a.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
-    </aside>
-  );
-}
+// v4-cap: panel Cap.tsx'e taşındı (AS9145 Tablo 1 bandı, SPC, PPM, veri kaynağı)
+export { CapabilityPanel } from './Cap';
 
 // ───────────────────────── Bilgi tabanı ─────────────────────────
 

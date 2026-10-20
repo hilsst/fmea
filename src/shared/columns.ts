@@ -1,9 +1,8 @@
 // Ekran tabloları ve Excel çıktısı için ortak kolon tanımları.
 import { historicalIds } from './checks';
 import { LISTS } from './model';
-import { capabilityAnalysis, verdictText } from './capability';
+import { CAP_COLUMNS, CP_SPC_COLUMNS, MSA_COLUMNS } from './capColumns'; // v4-cap
 import { apOf, RPN_WARNING, isKcCandidate, parseData, riskLevel, rpn } from './scoring';
-import type { CapabilityAnalysis } from './capability';
 import { impactOf } from './impact';
 import { evaluateKc } from './kc';
 import { PFD_STEP_TYPES } from './types';
@@ -244,46 +243,12 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('reactionPlan', 'Reaksiyon Planı', 180, { help: 'Durdur → ayır → son kabul edilen parça → etkilenen lot/seri → Kalite → NCR → karar → kök neden → FMEA ve kontrol planı güncelleme' }),
     t('responsible', 'Sorumlu', 110),
     t('record', 'Kayıt', 120, { help: 'Ölçüm sonucunun kaydedildiği form / sistem' }),
+    ...CP_SPC_COLUMNS, // v4-cap
     long('notes', 'Notlar', 150, { secondary: true }),
   ],
-  msa: [
-    { key: 'cpId', label: 'Kontrol Planı', width: 100, type: 'ref', ref: 'controlPlan' },
-    { key: 'kcId', label: 'KC', width: 90, type: 'ref', ref: 'kcs' },
-    long('characteristic', 'Karakteristik', 220, { derived: 'Kritik Karakteristikler' }),
-    t('gauge', 'Ölçüm Sistemi', 180, { derived: 'Kontrol Planı' }),
-    sel('dataType', 'Veri Tipi', LISTS.dataType, 90, { help: 'Değişken → GR&R; nitel (attribute) → Attribute Agreement' }),
-    sel('study', 'Çalışma', LISTS.msaStudy, 160),
-    sel('status', 'Durum', LISTS.msaStatus, 150),
-    t('result', 'Sonuç (%GRR, ndc ...)', 160),
-    long('notes', 'Notlar', 200),
-  ],
-  capability: [
-    { key: 'kcId', label: 'KC', width: 90, type: 'ref', ref: 'kcs' },
-    long('characteristic', 'Karakteristik', 200, { derived: 'Kritik Karakteristikler' }),
-    { key: 'lsl', label: 'LSL', width: 70, type: 'number' },
-    { key: 'usl', label: 'USL', width: 70, type: 'number' },
-    { key: 'target', label: 'Hedef', width: 70, type: 'number' },
-    long('data', 'Ölçüm Verisi', 220, { help: 'Değerleri üretim sırasıyla boşluk, satır veya ; ile ayırarak yapıştırın' }),
-    { key: 'subgroupSize', label: 'Alt Grup', width: 66, type: 'number', help: '1 veya boş = bireysel değer (I-MR); 2–10 = Xbar-R' },
-    sel('distribution', 'Dağılım', LISTS.distribution, 100),
-    ...(['n', 'mean', 'cp', 'cpk', 'pp', 'ppk'] as const).map((k) =>
-      comp(k, k === 'mean' ? 'Ort.' : k.toUpperCase().replace('CPK', 'Cpk').replace('PPK', 'Ppk').replace('CP', 'Cp').replace('PP', 'Pp'), (r, p) => {
-        const v = capOf(r, p)[k];
-        return v == null ? '' : k === 'n' ? v : Number(v.toFixed(3));
-      }, 64),
-    ),
-    comp('normality', 'Normallik', (r, p) => {
-      const a = capOf(r, p);
-      return a.adP == null ? '' : `${a.normal ? 'Normal' : 'Normal değil'} (AD p=${a.adP.toFixed(3)})`;
-    }, 140),
-    comp('stability', 'Kararlılık', (r, p) => {
-      const a = capOf(r, p);
-      return a.stable == null ? '' : a.stable ? `Kararlı (${a.method})` : `Kararsız: ${a.outOfControl.length} nokta`;
-    }, 130),
-    comp('result', 'Geçerlilik / Sonuç', (r, p) => verdictText(capOf(r, p), p.settings.targetCpk), 220),
-    comp('reasons', 'Açıklama', (r, p) => capOf(r, p).reasons.join(' '), 260),
-    long('notes', 'Notlar', 160),
-  ],
+  // v4-cap: yapılandırılmış MSA ve AS9145 Tablo 1 capability kolonları (capColumns.ts)
+  msa: MSA_COLUMNS,
+  capability: CAP_COLUMNS,
   actions: [
     { key: 'sourceId', label: 'Kaynak FMEA', width: 130, type: 'ref', ref: ['dfmea', 'pfmea'] },
     long('description', 'Aksiyon', 260),
@@ -410,17 +375,6 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('message', 'Mesaj', 220, { readonly: true }),
   ],
 };
-
-const capCache = new WeakMap<object, CapabilityAnalysis>();
-/** Satır başına analiz önbelleği (aynı render içinde 10 kolon aynı sonucu kullanır). */
-function capOf(r: AnyRow, p: Project): CapabilityAnalysis {
-  const hit = capCache.get(r);
-  if (hit) return hit;
-  const c = r as CapabilityRow;
-  const a = capabilityAnalysis(parseData(c.data), c.lsl, c.usl, c.target, p.settings, c.subgroupSize, c.distribution);
-  capCache.set(r, a);
-  return a;
-}
 
 const LONG_LABEL: Record<string, string> = { s: 'Severity (S)', o: 'Occurrence (O)', d: 'Detection (D)', severity: 'Severity (S)', newS: 'Yeni Severity', newO: 'Yeni Occurrence', newD: 'Yeni Detection' };
 
