@@ -43,6 +43,8 @@ export interface BaseRow {
   rejectReason?: string;
   // v4-risk: sabit satır numarası (SCMH "Doc (Line) #"); bir kez atanır, yeniden kullanılmaz.
   lineNo?: number;
+  /** Otomatik doldurulan alanlar; elle değiştirilen alan listeden çıkar ve artık otomatik güncellenmez. */
+  autoFields?: string[];
 }
 
 export interface ProjectMeta {

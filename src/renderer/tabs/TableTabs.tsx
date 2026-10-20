@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { findRequirementCandidates, locText, UNSUPPORTED_MSG } from '../../shared/docmodel';
-import { summarizeChanges } from '../../shared/engine';
+import { summarizeChanges, type Edit } from '../../shared/engine';
+import { reqAutoValues } from '../../shared/reqAutofill';
 import { COMPOSITE_TEMPLATE, isComposite } from '../../shared/kb';
 import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
 import { KC_LOCK_MSG, isCi, kcLocked, scmhKcDecision } from '../../shared/kcScmh'; // v4-kc
@@ -119,17 +120,41 @@ export function DocumentsTab() {
 }
 
 export function RequirementsTab() {
+  const { project, edit, toast } = useStore();
   const [paste, setPaste] = useState(false);
+  const [sel, setSel] = useState<string[]>([]);
   const ai = useAi();
+  // Boş kabul kriteri / doğrulama yöntemi / ölçü alanlarını gereksinim metninden doldurur (seçim yoksa tüm satırlar).
+  const autofill = async () => {
+    const rows = project.requirements.filter((r) => (sel.length ? sel.includes(r.id) : true) && r.text.trim());
+    const edits: Edit[] = rows.flatMap((r) => {
+      const v = reqAutoValues(r);
+      const f = Object.keys(v);
+      if (!f.length) return [];
+      return [
+        { kind: 'set' as const, table: 'requirements' as const, id: r.id, field: 'autoFields', value: [...new Set([...(r.autoFields ?? []), ...f])] },
+        ...f.map((field) => ({ kind: 'set' as const, table: 'requirements' as const, id: r.id, field, value: v[field as keyof typeof v] })),
+      ];
+    });
+    if (!edits.length) return toast('Doldurulacak boş alan yok.', 'warn');
+    if (await edit(edits, 'Gereksinimden otomatik doldurma')) toast(`${new Set(edits.map((e) => (e as { id: string }).id)).size} gereksinim dolduruldu – AI ÖNERİSİ değerleri onaylayın`);
+  };
   return (
     <>
       <Grid
         table="requirements"
+        selected={sel}
+        onSelect={setSel}
         defaults={{ approval: 'AI Proposed' } as Partial<AnyRow>}
         toolbar={
-          <button className="btn ai" onClick={() => setPaste(true)}>
-            ✦ AI: Metinden çıkar
-          </button>
+          <>
+            <button className="btn" onClick={autofill} title="Kabul kriteri, doğrulama yöntemi ve ölçü alanlarını gereksinim metninden doldurur. Yalnızca boş (veya daha önce otomatik dolmuş) alanlar değişir; kaynakta olmayan değer VERİ YOK olur.">
+              ⟳ Otomatik doldur{sel.length ? ` (${sel.length})` : ''}
+            </button>
+            <button className="btn ai" onClick={() => setPaste(true)}>
+              ✦ AI: Metinden çıkar
+            </button>
+          </>
         }
         emptyHint="Gereksinimleri elle girin, Dokümanlar ekranından AI ile çıkarın veya metin yapıştırın."
       />

@@ -3,6 +3,7 @@
 // kurallar diğer ekranlardaki bağlı alanları günceller. Ortaya çıkan tüm etkiler (Effect) kullanıcıya
 // onay için gösterilir; onaylanırsa kopya projenin yerine geçer, reddedilirse hiçbir şey değişmez.
 
+import { REQ_AUTO_FIELDS, REQ_AUTO_INPUTS, reqAutoValues } from './reqAutofill';
 import { blankRow, nextId, tableOfId } from './model';
 import { isKcCandidate } from './scoring';
 import { KC_LOCK_MSG, kcLocked, kcOnSet } from './kcScmh'; // v4-kc
@@ -326,6 +327,26 @@ function flagReassess(c: Ctx, why: string, match: (source: string) => boolean) {
       if (r.source && match(r.source)) c.set(t, r.id, 'reassess', `FMEA Reassessment Required – ${why}`, why);
 }
 
+/** Kabul kriteri, doğrulama yöntemi ve ölçü alanlarını gereksinimden doldurur (boş veya daha önce otomatik dolmuşsa). */
+function autofillRequirement(c: Ctx, id: string) {
+  const r = c.find<RequirementRow>('requirements', id);
+  if (!r || !r.text?.trim()) return;
+  const vals = reqAutoValues(r);
+  const fields = Object.keys(vals);
+  if (!fields.length) return;
+  const auto = [...new Set([...(r.autoFields ?? []), ...fields])];
+  if (!same(auto, r.autoFields ?? [])) c.set('requirements', id, 'autoFields', auto, 'Otomatik doldurulan alanlar');
+  for (const f of fields) c.set('requirements', id, f, vals[f as keyof typeof vals], `${id} gereksinim metninden otomatik dolduruldu`);
+}
+
+/** Elle girilen değer otomatik değerden farklıysa alan otomatik güncellemeden çıkar. */
+function keepOrReleaseAuto(c: Ctx, id: string, field: string, to: unknown) {
+  const r = c.find<RequirementRow>('requirements', id);
+  if (!r?.autoFields?.includes(field)) return;
+  const expect = reqAutoValues(r)[field as keyof ReturnType<typeof reqAutoValues>];
+  if (!same(expect, to) && !(to === '' || to == null)) c.set('requirements', id, 'autoFields', r.autoFields.filter((f) => f !== field), `${field} elle değiştirildi`);
+}
+
 // ---------------------------------------------------------------- kurallar
 
 function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
@@ -348,6 +369,8 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
       break;
     }
     case 'requirements': {
+      if (REQ_AUTO_INPUTS.includes(field)) autofillRequirement(c, id);
+      if ((REQ_AUTO_FIELDS as readonly string[]).includes(field)) keepOrReleaseAuto(c, id, field, e.to);
       if (field === 'text' || field === 'acceptance' || field === 'lsl' || field === 'usl' || field === 'nominal' || field === 'unit' || field === 'tolerance') {
         for (const d of c.rows<DfmeaRow>('dfmea').filter((d) => d.reqIds.includes(id))) {
           c.set('dfmea', d.id, 'requirement', requirementText(c, d.reqIds), `${id} gereksinim metni değişti`);
