@@ -16,6 +16,7 @@ import type { Project } from '../shared/types';
 import * as ai from './ai';
 import { PROVIDERS } from './ai/provider';
 import { DEFAULT_IFS, ifsConnector, type IfsSettings } from './connectors/ifs';
+import { checkForUpdates, initUpdater, installNow, type UpdateStatus } from './updater';
 
 let win: BrowserWindow | null = null;
 let dirty = false;
@@ -100,6 +101,8 @@ function addRecent(file: string) {
 function send(channel: string, ...args: unknown[]) {
   win?.webContents.send(channel, ...args);
 }
+
+const sendUpdate = (s: UpdateStatus) => send('update', s);
 
 function createWindow() {
   win = new BrowserWindow({
@@ -206,6 +209,7 @@ function buildMenu() {
       label: 'Yardım',
       submenu: [
         { label: 'Kullanım Kılavuzu', click: m('help') },
+        { label: 'Güncellemeleri Denetle', click: () => checkForUpdates(true, sendUpdate) },
         { label: 'Hakkında', click: () => dialog.showMessageBox(win!, { title: 'FMEA Studio', message: `FMEA Studio ${app.getVersion()}`, detail: 'DFMEA / PFMEA / Özel Karakteristik / Kontrol Planı / MSA / Capability / İzlenebilirlik uygulaması. AI önerileri mühendis onayı olmadan geçerli değildir.' }) },
       ],
     },
@@ -257,6 +261,8 @@ function registerIpc() {
     dirty = v;
     win?.setTitle(`FMEA Studio${v ? ' •' : ''}`);
   });
+  ipcMain.on('update:check', () => checkForUpdates(true, sendUpdate));
+  ipcMain.on('update:install', () => installNow());
   ipcMain.on('app:quit', () => {
     forceClose = true;
     win?.close();
@@ -478,6 +484,7 @@ app.whenReady().then(() => {
   registerIpc();
   buildMenu();
   createWindow();
+  win!.webContents.once('did-finish-load', () => initUpdater(sendUpdate));
   const fileArg = process.argv.find((a) => a.endsWith('.fmea'));
   if (fileArg) win!.webContents.once('did-finish-load', () => send('open-file', path.resolve(fileArg)));
   app.on('activate', () => {

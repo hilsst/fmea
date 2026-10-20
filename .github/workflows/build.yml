@@ -42,9 +42,15 @@ jobs:
           name: FMEA-Studio-Windows
           path: |
             release/*.exe
+            release/*.blockmap
+            release/latest.yml
           if-no-files-found: error
       - name: Release (yalnızca v* etiketlerinde)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.exe
+          # latest.yml + .blockmap: uygulama içi artımlı güncelleme bunları okur
+          files: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/latest.yml
