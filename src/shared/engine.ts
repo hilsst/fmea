@@ -5,12 +5,15 @@
 
 import { blankRow, nextId, tableOfId } from './model';
 import { isKcCandidate } from './scoring';
+import { crTouchesPpap, isUpdateTrigger, lessonReassessText, ppapApprovedDate } from './apqp'; // v4-apqp
 import type {
   ActionRow,
   AnyRow,
+  ChangeRequestRow, // v4-apqp
   ControlPlanRow,
   DfmeaRow,
   KcRow,
+  LessonRow, // v4-apqp
   PfmeaRow,
   ProcessParamRow,
   Project,
@@ -498,6 +501,24 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
         }
       }
       if (field === 'status' && a.status === 'Completed' && !a.completionDate) c.set('actions', id, 'completionDate', today(), 'Aksiyon tamamlandı');
+      break;
+    }
+    // v4-apqp: FMEA güncelleme tetikleyicileri (NCR, üretim koşusu, sürekli iyileştirme; SCMH 7.2.3 s.59, s.82, s.99–100)
+    // ve PPAP onayı sonrası uygulanan değişiklik → yeniden sunum (PPAP webinar s.38). Etkiler onay penceresinde listelenir.
+    case 'lessons': {
+      const l = c.find<LessonRow>('lessons', id)!;
+      if ((field === 'linkedFmeaIds' || field === 'sourceType') && isUpdateTrigger(l))
+        for (const fid of l.linkedFmeaIds) {
+          const t = tableOfId(fid);
+          const row = t === 'dfmea' || t === 'pfmea' ? c.find<DfmeaRow | PfmeaRow>(t, fid) : undefined;
+          if (row && !(row.reassess ?? '').includes(id)) c.set(t as TableKey, fid, 'reassess', lessonReassessText(l), `${id} (${l.sourceType}) FMEA satırına bağlandı`);
+        }
+      break;
+    }
+    case 'changeRequests': {
+      const cr = c.find<ChangeRequestRow>('changeRequests', id)!;
+      if (field === 'status' && cr.status === 'Implemented' && ppapApprovedDate(c.p) && crTouchesPpap(cr))
+        c.set('changeRequests', id, 'ppapResubmission', true, `${id} PPAP onayından sonra uygulandı → PPAP yeniden sunumu gerekir`);
       break;
     }
     default:

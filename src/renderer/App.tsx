@@ -19,6 +19,7 @@ import {
   AiReviewScreen, AuditScreen, BaselinesScreen, DashboardScreen, EvidenceScreen, ImpactScreen, KbScreen, ProductTypeCard, QualityScreen, RiskScreen, SettingsScreen, WorkflowScreen,
 } from './screens/Screens2';
 import { useStore } from './store';
+import { ApqpScreen, PpapScreen, apqpBadge, apqpUnapproved } from './screens/Apqp'; // v4-apqp
 import { TraceabilityTab } from './tabs/AnalysisTabs';
 import { ProjectTab } from './tabs/ProjectTab';
 import {
@@ -43,6 +44,7 @@ function screenBadge(p: Project, key: ScreenKey): Badge {
     case 'impact': { const r = [...p.requirements, ...p.dfmea, ...p.pfmea, ...p.processSteps, ...p.structure, ...p.controlPlan].filter((x) => x.reassess).length; return r ? { n: r, tone: 'amber' } : null; }
     case 'approval': { const s = currentStep(p); return s ? { n: s.replace(' Review', '').replace(' Approval', ''), tone: 'gray' } : { n: '✓', tone: 'green' }; }
     case 'baseline': return p.baselines.length ? { n: p.baselines.length } : null;
+    case 'apqp': case 'ppap': return apqpBadge(p, key); // v4-apqp
     default: return null;
   }
 }
@@ -135,6 +137,8 @@ export function App() {
     const r = await api.exportScmh(project);
     if (r.ok) {
       toast(`SCMH paketi oluşturuldu: ${r.files.length} dosya`);
+      const unapproved = apqpUnapproved(project); // v4-apqp: onaysız teslimat uyarısı (SCMH 7.2.3 s.52, s.59, s.65)
+      if (unapproved.length) toast(`Uyarı: teslimat onayı tamamlanmadan dışa aktarıldı – ${unapproved.join(', ')}`, 'warn');
       api.reveal(r.files[0]);
     } else if (r.error) toast(r.error, 'err');
   }, [project, toast]);
@@ -365,6 +369,8 @@ function ScreenView({ screen, sub, go }: { screen: ScreenKey; sub?: string; go: 
     case 'approval': return sub === 'audit' ? <AuditScreen /> : <WorkflowScreen />;
     case 'baseline': return sub === 'baselines' ? <BaselinesScreen /> : <HistoryTab />;
     case 'settings': return <SettingsScreen />;
+    case 'apqp': return <ApqpScreen sub={sub} go={go} />; // v4-apqp
+    case 'ppap': return <PpapScreen sub={sub} go={go} />; // v4-apqp
   }
 }
 

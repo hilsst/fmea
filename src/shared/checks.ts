@@ -1,6 +1,7 @@
 // Spesifikasyon §35 FMEA kalite kontrolü ve §26 izlenebilirlik matrisleri.
 import { apOf, isKcCandidate } from './scoring';
 import type { ControlPlanRow, DfmeaRow, KcRow, PfmeaRow, Project } from './types';
+import { apqpChecks } from './apqp'; // v4-apqp
 
 export interface CheckResult {
   key: string;
@@ -99,6 +100,7 @@ export function qualityChecks(p: Project): CheckResult[] {
     [...df, ...pf].filter((r) => apOf(p, r.s, r.o, r.d) === 'H' && !nonEmpty(r.recommendedAction)).map((r) => r.id),
     'AP=High satırların hepsinde aksiyon var', (n) => `${n} AP=High satırda önerilen aksiyon yok`, df.length + pf.length > 0);
 
+  out.push(...apqpChecks(p)); // v4-apqp: yalnızca APQP / ekip kaydı kullanılan projelerde
   return out;
 }
 

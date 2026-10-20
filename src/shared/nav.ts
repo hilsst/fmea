@@ -3,7 +3,8 @@ import type { TableKey } from './types';
 
 export type ScreenKey =
   | 'dashboard' | 'project' | 'documents' | 'requirements' | 'dfmea' | 'pfmea' | 'risk' | 'kcs' | 'controlPlan' | 'msa'
-  | 'capability' | 'actions' | 'lessons' | 'traceability' | 'impact' | 'quality' | 'aiReview' | 'approval' | 'baseline' | 'settings';
+  | 'capability' | 'actions' | 'lessons' | 'traceability' | 'impact' | 'quality' | 'aiReview' | 'approval' | 'baseline' | 'settings'
+  | 'apqp' | 'ppap'; // v4-apqp
 
 export interface SubTab {
   key: string;
@@ -23,6 +24,15 @@ export interface Screen {
 export const SCREENS: Screen[] = [
   { key: 'dashboard', label: 'Gösterge Paneli', group: 'Genel', stage: 'Genel bakış', hint: 'Projenin durumu, kalite skoru, bekleyen kararlar ve sıradaki onay adımı.' },
   { key: 'project', label: 'Proje', group: 'Genel', stage: 'Adım 1 · Planlama', hint: 'Kapsam, ekip, parça, ürün tipi ve revizyon bilgileri.' },
+  // v4-apqp
+  {
+    key: 'apqp', label: 'APQP', group: 'Genel', stage: 'SCMH 7.2 · APQP', hint: 'Proje tipi, eleman uygulanabilirliği (7.2.12 / 7.2.15), fazlar ve kilometre taşları, teslimat onayları, ekip, ambalaj onayı (7.2.20).',
+    subs: [
+      { key: 'elements', label: 'Elemanlar' }, { key: 'phases', label: 'Fazlar & Kilometre Taşları' }, { key: 'approvals', label: 'Teslimat Onayları' },
+      { key: 'team', label: 'Ekip & Kriterler' }, { key: 'dra', label: 'P-Diyagramı / DRA' }, { key: 'cp', label: 'KP Fazları & Başlık' },
+      { key: 'packaging', label: 'Ambalaj 7.2.20' }, { key: 'reuse', label: 'Aile & Tetikleyiciler' }, { key: 'maturity', label: 'Olgunluk 7.2.14' },
+    ],
+  },
   {
     key: 'documents', label: 'Dokümanlar', group: 'Girdi', stage: 'Document Intelligence', hint: 'Dokümanları ekleyin ve yerel olarak analiz edin. Kanıtlar ve açık konular burada tutulur.',
     subs: [{ key: 'documents', label: 'Dokümanlar', table: 'documents' }, { key: 'evidence', label: 'Kanıtlar', table: 'evidence' }, { key: 'issues', label: 'Açık Konular', table: 'issues' }],
@@ -55,6 +65,11 @@ export const SCREENS: Screen[] = [
   {
     key: 'aiReview', label: 'AI İnceleme', group: 'Doğrulama', stage: 'AI Review Engine', hint: 'Bağımsız AI denetçi önerileri. AI hiçbir kaydı onaylamaz.',
     subs: [{ key: 'review', label: 'AI İnceleme' }, { key: 'aiRuns', label: 'AI Çalıştırmaları', table: 'aiRuns' }],
+  },
+  // v4-apqp
+  {
+    key: 'ppap', label: 'PPAP', group: 'Onay', stage: 'PPAP · Faz 4', hint: '11 PPAP elemanı, hazırlık kuralları, PRR kapısı ve müşteri kararı (Full / Interim / Rejected). Yazılı onay olmadan sevkiyat yapılmaz.',
+    subs: [{ key: 'elements', label: 'PPAP Elemanları' }, { key: 'prr', label: 'PRR Kapısı' }, { key: 'submissions', label: 'Sunum & Karar' }],
   },
   {
     key: 'approval', label: 'Onay', group: 'Onay', stage: 'Engineering Approval', hint: 'AI Draft → Mühendis → Tasarım → Üretim → Kalite → Final onay → Baseline.',

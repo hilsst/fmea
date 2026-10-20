@@ -1,5 +1,6 @@
 // Engineering Approval Workflow (§36). AI hiçbir adımı onaylayamaz; her karar kullanıcı adıyla kaydedilir.
 import type { ApprovalRecord, Project, WorkflowStep } from './types';
+import { prrGateError } from './apqp'; // v4-apqp
 
 export function enabledSteps(p: Project): { step: WorkflowStep; role: string }[] {
   return p.settings.workflow.filter((w) => w.enabled);
@@ -39,6 +40,11 @@ export function decisionError(p: Project, d: DecisionInput, openCritical: number
   if (d.decision !== 'Approved' && !d.comment.trim()) return 'Ret / iade için yorum zorunludur.';
   if (d.decision === 'Approved' && (d.step === 'Final Approval' || d.step === 'Baseline') && openCritical > 0)
     return `${openCritical} kritik/emniyet/regülasyon kaydı hâlâ “AI Proposed” durumunda; önce tek tek değerlendirilmelidir.`;
+  // v4-apqp: PRR kapısı – APQP projesinde açık FMEA aksiyonları kapatılmadan/azaltılmadan final onay ve baseline yok (SCMH 7.2.3 s.78)
+  if (d.decision === 'Approved' && (d.step === 'Final Approval' || d.step === 'Baseline')) {
+    const gate = prrGateError(p);
+    if (gate) return gate;
+  }
   return '';
 }
 
