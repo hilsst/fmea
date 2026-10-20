@@ -88,7 +88,7 @@ Değişiklikler geri alınabilir (Ctrl+Z / Ctrl+Y).
 - **Excel FMEA içe aktar**: mevcut bir Excel FMEA kolon eşleme ekranıyla içe alınır; RPN/AP yeniden hesaplanır.
 - **Şirket şablonu** (`.fmeatpl`): ayarlar, KC kuralları, onay akışı ve AP tablosu.
 - **İnceleme raporu**: PDF veya HTML.
-- **STEP (.stp/.step) ve IGES (.igs/.iges)**: Dokümanlar ekranından yüklenir. Birim, sınır kutusu (mm), parça/montaj ağacı, yüzey ve delik özeti, PMI/toleranslar okunur; dosyada olmayan değer üretilmez.
+- **STEP (.stp/.step) ve IGES (.igs/.iges)**: Dokümanlar ekranından yüklenir. Birim, genel boyutlar (mm), parça/montaj ağacı, malzeme, yüzey/delik/radyüs özeti ve AP242 PMI toleransları okunur. Model geometrisi nominaldir; tolerans yalnızca PMI varsa alınır, dosyada olmayan değer üretilmez.
 - Kaydedilmemiş çalışma birkaç saniyede bir kurtarma dosyasına yazılır; uygulama beklenmedik kapanırsa açılışta geri yükleme önerilir.
 
 ## Geliştirme

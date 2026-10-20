@@ -115,6 +115,12 @@ export function cadBlocks(bl: BlockList, cad: CadInfo, opts: { reliable: boolean
       'geometry',
     );
   }
+  const fil = cad.fillets ?? [];
+  if (fil.length) {
+    const kl = { concave: 'iç', convex: 'dış', unknown: '' } as const;
+    const top = fil.slice(0, 20).map((x) => `${x.part ? `[${x.part}] ` : ''}R${fmt(x.radiusMm)} mm${kl[x.kind] ? ` ${kl[x.kind]}` : ''} × ${x.faces} yüz`);
+    tag(bl.add('note', `Kısmi silindirik yüzeyler (radyus / fillet olabilir): ${top.join(', ')}${fil.length > 20 ? ` … (+${fil.length - 20})` : ''}`, G), 'geometry');
+  }
   const circ = cad.circles ?? [];
   if (circ.length) {
     const top = circ.slice(0, 20).map((c) => `Ø${fmt(c.diameterMm)} mm × ${c.count}${c.full && c.arcs ? ` (${c.full} tam, ${c.arcs} yay)` : c.full ? ' (tam daire)' : ' (yay)'}`);

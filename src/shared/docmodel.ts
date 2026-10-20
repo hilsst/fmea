@@ -86,6 +86,15 @@ export interface CadHoleGroup {
   part?: string;
 }
 
+/** Kısmi silindirik yüzeyler (açısal kapsam < ~350°): çoğunlukla radyus / fillet. concave = iç köşe, convex = dış köşe yuvarlatma. */
+export interface CadFilletGroup {
+  radius: number;
+  radiusMm: number;
+  faces: number;
+  kind: 'concave' | 'convex' | 'unknown';
+  part?: string;
+}
+
 export interface CadCircleGroup {
   diameter: number;
   diameterMm: number;
@@ -152,6 +161,7 @@ export interface CadInfo {
   /** Yüz sayısı yüzey türüne göre (PLANE, CYLINDRICAL_SURFACE, B_SPLINE_SURFACE, ...) */
   faces?: Record<string, number>;
   holes?: CadHoleGroup[];
+  fillets?: CadFilletGroup[];
   circles?: CadCircleGroup[];
   parts?: CadPart[];
   assembly?: CadAssemblyLink[];

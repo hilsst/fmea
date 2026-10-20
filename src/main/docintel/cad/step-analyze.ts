@@ -2,7 +2,7 @@
 // malzeme, B-rep topolojisinden sınırlayıcı kutu, silindirik özellikler (delik / çıkıntı), daireler,
 // yüz türleri, sezgisel et kalınlığı ve AP242 semantik PMI (ölçü + tolerans + GD&T + datum).
 import type {
-  CadAssemblyLink, CadCircleGroup, CadHoleGroup, CadMaterial, CadPart, CadPmi, CadThickness, CadBBox, Vec3,
+  CadAssemblyLink, CadCircleGroup, CadFilletGroup, CadHoleGroup, CadMaterial, CadPart, CadPmi, CadThickness, CadBBox, Vec3,
 } from '../../../shared/docmodel';
 import { Box, anyPerp, cross, dot, fmt, len, mul, roundTo, sub, unit as unitVec, addV } from './geom';
 import { Enum, StepFile, Typed, enumV, list, num, refId, refsIn, str, type Val } from './step-graph';
@@ -19,6 +19,7 @@ export interface StepGeometry {
   surfaceModels: number;
   faces: Record<string, number>;
   holes: CadHoleGroup[];
+  fillets: CadFilletGroup[];
   circles: CadCircleGroup[];
   parts: CadPart[];
   assembly: CadAssemblyLink[];
@@ -65,7 +66,7 @@ export function analyzeStep(f: StepFile): StepGeometry {
   const warnings: string[] = [];
   const g: StepGeometry = {
     unitScaleToMm: 1, unitKnown: false, geometryUnderstood: false, solids: 0, shells: 0, surfaceModels: 0, faces: {},
-    holes: [], circles: [], parts: [], assembly: [], materials: [], pmi: [], thickness: [], warnings, presentationPmi: 0, bsplineInBox: false,
+    holes: [], fillets: [], circles: [], parts: [], assembly: [], materials: [], pmi: [], thickness: [], warnings, presentationPmi: 0, bsplineInBox: false,
   };
 
   // ───── Birimler ─────
@@ -272,14 +273,24 @@ export function analyzeStep(f: StepFile): StepGeometry {
     pointCache.set(id, ok);
     return ok;
   };
+  const dirCache = new Map<number, Vec3 | undefined>();
   const direction = (id: number | undefined): Vec3 | undefined => {
     if (id == null) return undefined;
+    if (dirCache.has(id)) return dirCache.get(id);
     const c = list(f.partArgs(id, 'DIRECTION')?.[1]);
-    if (c.length < 2) return undefined;
-    return unitVec([num(c[0]) ?? NaN, num(c[1]) ?? NaN, c.length > 2 ? (num(c[2]) ?? NaN) : 0]);
+    const d = c.length < 2 ? undefined : unitVec([num(c[0]) ?? NaN, num(c[1]) ?? NaN, c.length > 2 ? (num(c[2]) ?? NaN) : 0]);
+    dirCache.set(id, d);
+    return d;
   };
+  const plCache = new Map<number, { loc: Vec3; z: Vec3; x: Vec3 } | undefined>();
   const placement = (id: number | undefined): { loc: Vec3; z: Vec3; x: Vec3 } | undefined => {
     if (id == null) return undefined;
+    if (plCache.has(id)) return plCache.get(id);
+    const r = placementRaw(id);
+    plCache.set(id, r);
+    return r;
+  };
+  const placementRaw = (id: number): { loc: Vec3; z: Vec3; x: Vec3 } | undefined => {
     const a = f.partArgs(id, 'AXIS2_PLACEMENT_3D');
     if (!a) return undefined;
     const loc = point(refId(a[1]));
@@ -388,7 +399,7 @@ export function analyzeStep(f: StepFile): StepGeometry {
     if (t === 'COMPLEX_ENTITY') return f.parts(id).find((p) => /SURFACE|PLANE/.test(p.name))?.name ?? 'COMPLEX_SURFACE';
     return t;
   };
-  interface Cyl { body: number; r: number; loc: Vec3; z: Vec3; kind: CadHoleGroup['kind'] }
+  interface Cyl { body: number; face: number; r: number; loc: Vec3; z: Vec3; kind: CadHoleGroup['kind'] }
   interface Pl { body: number; face: number; loc: Vec3; n: Vec3 }
   const cyls: Cyl[] = [];
   const planes: Pl[] = [];
@@ -410,7 +421,7 @@ export function analyzeStep(f: StepFile): StepGeometry {
         const pl = placement(refId(sa[1]));
         if (r && r > 0 && pl) {
           const kind: CadHoleGroup['kind'] = !solidBody || outward == null ? 'cylindrical' : outward ? 'boss' : 'hole';
-          cyls.push({ body, r, loc: pl.loc, z: pl.z, kind });
+          cyls.push({ body, face: id, r, loc: pl.loc, z: pl.z, kind });
         }
       } else if (st === 'PLANE' && sid != null && f.type(sid) === 'PLANE' && solidBody && outward != null) {
         const pl = placement(refId((f.args(sid) ?? [])[1]));
@@ -494,22 +505,84 @@ export function analyzeStep(f: StepFile): StepGeometry {
     const p = sub(c.loc, mul(d, dot(c.loc, d)));
     return `${d.map((v) => roundTo(v, 1e-4).toFixed(4)).join(',')}|${p.map((v) => roundTo(v, tol).toFixed(3)).join(',')}`;
   };
-  const hg = new Map<string, { g: CadHoleGroup; axes: Set<string> }>();
-  for (const c of cyls) {
-    const dia = Math.round(c.r * 2 * 1e6) / 1e6;
-    const part = multiPart ? bodyPart(c.body) : '';
-    const key = `${part}|${c.kind}|${dia}`;
-    let e = hg.get(key);
-    if (!e) {
-      const grp: CadHoleGroup = { diameter: dia, diameterMm: Math.round(dia * scale * 1e6) / 1e6, count: 0, faces: 0, kind: c.kind };
-      if (part) grp.part = part;
-      hg.set(key, (e = { g: grp, axes: new Set() }));
+  // Yüzün eksen etrafındaki açısal kapsamı (eş eksenli CIRCLE kenarlarından): tam daire kenarı → 2π;
+  // yay kenarları → yönlü açı; dairesel kenar yoksa bilinmiyor (undefined).
+  const faceSpan = (c: Cyl): number | undefined => {
+    let best = 0, known = false;
+    const seen = new Set<number>();
+    const st = refsIn((f.args(c.face) ?? [])[1]);
+    while (st.length && seen.size < 2000) {
+      const id = st.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const t = f.type(id);
+      if (t === 'FACE_BOUND' || t === 'FACE_OUTER_BOUND' || t === 'EDGE_LOOP' || t === 'ORIENTED_EDGE') {
+        st.push(...refsIn(f.args(id)));
+        continue;
+      }
+      if (t !== 'EDGE_CURVE') continue;
+      const a = f.args(id) ?? [];
+      const ci = circleOf(baseCurve(refId(a[3])));
+      if (!ci || Math.abs(ci.r - c.r) > 1e-6 * Math.max(1, c.r) || Math.abs(dot(ci.pl.z, c.z)) < 0.9999) continue;
+      const off = sub(ci.pl.loc, c.loc);
+      if (len(sub(off, mul(c.z, dot(off, c.z)))) > 1e-4 * Math.max(1, c.r)) continue;
+      const v1 = refId(a[1]), v2 = refId(a[2]);
+      if (v1 != null && v1 === v2) return 2 * Math.PI;
+      const p1 = point(refId((f.args(v1 ?? -1) ?? [])[1]));
+      const p2 = point(refId((f.args(v2 ?? -1) ?? [])[1]));
+      if (!p1 || !p2) continue;
+      const y = cross(ci.pl.z, ci.pl.x);
+      const ang = (p: Vec3) => Math.atan2(dot(sub(p, ci.pl.loc), y), dot(sub(p, ci.pl.loc), ci.pl.x));
+      const raw = enumV(a[4]) === 'F' ? ang(p1) - ang(p2) : ang(p2) - ang(p1);
+      const span = ((raw % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      known = true;
+      if (span > best) best = span;
     }
-    e.g.faces++;
-    e.axes.add(`${c.body}|${axisKey(c)}`);
+    return known ? best : undefined;
+  };
+  // Eksen bazında grupla; açısal kapsamı ≥ ~350° olanlar tam silindir (delik / pim), diğerleri kısmi (radyus / fillet)
+  const axes = new Map<string, { cyl: Cyl[]; span: number; unknown: boolean }>();
+  for (const c of cyls) {
+    const k = `${c.body}|${c.kind}|${Math.round(c.r * 2 * 1e6) / 1e6}|${axisKey(c)}`;
+    let a = axes.get(k);
+    if (!a) axes.set(k, (a = { cyl: [], span: 0, unknown: false }));
+    a.cyl.push(c);
+    const sp = cyls.length <= 50000 ? faceSpan(c) : undefined;
+    if (sp == null) a.unknown = true;
+    else a.span += sp;
   }
+  const hg = new Map<string, CadHoleGroup>();
+  const fg = new Map<string, CadFilletGroup>();
+  for (const a of axes.values()) {
+    const c = a.cyl[0];
+    const part = multiPart ? bodyPart(c.body) : '';
+    const full = a.unknown || a.span >= 2 * Math.PI * 0.97;
+    if (full) {
+      const dia = Math.round(c.r * 2 * 1e6) / 1e6;
+      const key = `${part}|${c.kind}|${dia}`;
+      let e = hg.get(key);
+      if (!e) {
+        e = { diameter: dia, diameterMm: Math.round(dia * scale * 1e6) / 1e6, count: 0, faces: 0, kind: c.kind };
+        if (part) e.part = part;
+        hg.set(key, e);
+      }
+      e.count++;
+      e.faces += a.cyl.length;
+    } else {
+      const rad = Math.round(c.r * 1e6) / 1e6;
+      const kind: CadFilletGroup['kind'] = c.kind === 'hole' ? 'concave' : c.kind === 'boss' ? 'convex' : 'unknown';
+      const key = `${part}|${kind}|${rad}`;
+      let e = fg.get(key);
+      if (!e) {
+        e = { radius: rad, radiusMm: Math.round(rad * scale * 1e6) / 1e6, faces: 0, kind };
+        if (part) e.part = part;
+        fg.set(key, e);
+      }
+      e.faces += a.cyl.length;
+    }
+  }
+  g.fillets = [...fg.values()].sort((a, b) => (a.part ?? '').localeCompare(b.part ?? '') || a.radius - b.radius);
   g.holes = [...hg.values()]
-    .map((e) => ({ ...e.g, count: e.axes.size }))
     .sort((a, b) => (a.part ?? '').localeCompare(b.part ?? '') || kindOrder(a.kind) - kindOrder(b.kind) || a.diameter - b.diameter);
 
   // ───── Daireler (CIRCLE geometrili kenarlar) ─────

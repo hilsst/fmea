@@ -44,9 +44,33 @@ const isLetter = (c: number) => (c >= 65 && c <= 90) || (c >= 97 && c <= 122) ||
 const isIdent = (c: number) => isLetter(c) || (c >= 48 && c <= 57);
 const isDigit = (c: number) => c >= 48 && c <= 57;
 
-export interface StepScan {
-  header: string;
-  warnings: string[];
+/** #id → varlık indeksi. Yoğun numaralar için büyüyen Int32Array, çok büyük numaralar için Map. */
+export class IdIndex {
+  private arr = new Int32Array(1024).fill(-1);
+  private map?: Map<number, number>;
+  private static readonly LIMIT = 1 << 24;
+  get(id: number): number | undefined {
+    if (id < this.arr.length) {
+      const v = this.arr[id];
+      return v < 0 ? undefined : v;
+    }
+    return this.map?.get(id);
+  }
+  has(id: number) {
+    return this.get(id) !== undefined;
+  }
+  set(id: number, v: number) {
+    if (id < IdIndex.LIMIT) {
+      if (id >= this.arr.length) {
+        let n = this.arr.length;
+        while (n <= id) n *= 2;
+        const a = new Int32Array(Math.min(n, IdIndex.LIMIT)).fill(-1);
+        a.set(this.arr);
+        this.arr = a;
+      }
+      this.arr[id] = v;
+    } else (this.map ??= new Map()).set(id, v);
+  }
 }
 
 export class StepFile {
@@ -54,11 +78,12 @@ export class StepFile {
   readonly types: string[] = [];
   private starts: number[] = [];
   private ends: number[] = [];
-  readonly index = new Map<number, number>();
+  readonly index = new IdIndex();
   readonly counts: Record<string, number> = {};
   readonly warnings: string[] = [];
   headerText = '';
-  private cache = new Map<number, Val[]>();
+  private cache: (Val[] | undefined)[] = [];
+  private names = new Map<string, string>();
   private byTypeIdx?: Map<string, number[]>;
   private complexParts?: Map<string, number[]>;
 
@@ -79,14 +104,16 @@ export class StepFile {
   args(id: number): Val[] | undefined {
     const i = this.index.get(id);
     if (i == null) return undefined;
-    let a = this.cache.get(id);
+    let a = this.cache[i];
     if (a) return a;
     try {
       a = parseList(this.text, this.starts[i], this.ends[i], 0)[0];
     } catch {
       a = [];
     }
-    this.cache.set(id, a);
+    // Noktalar / yönler analizde ayrıca vektör olarak önbelleklenir; burada tutulmaz (bellek / GC)
+    const ty = this.types[i];
+    if (ty !== 'CARTESIAN_POINT' && ty !== 'DIRECTION') this.cache[i] = a;
     return a;
   }
 
@@ -166,6 +193,7 @@ export class StepFile {
     let garbage = 0;
     let truncated = false;
     let dup = 0;
+    let unterminated = false;
     const dataRe = /\bDATA\b\s*[;(]/g;
     for (;;) {
       dataRe.lastIndex = pos;
@@ -179,6 +207,7 @@ export class StepFile {
         i = semi < 0 ? n : semi + 1;
       }
       // DATA bölümü gövdesi
+      let closed = false;
       while (i < n) {
         const c = t.charCodeAt(i);
         if (c <= 32) {
@@ -207,7 +236,10 @@ export class StepFile {
           if (isLetter(c2)) {
             const ns = j;
             while (j < n && isIdent(t.charCodeAt(j))) j++;
-            name = t.slice(ns, j).toUpperCase();
+            const raw = t.slice(ns, j);
+            let nm = this.names.get(raw);
+            if (nm === undefined) this.names.set(raw, (nm = raw.toUpperCase()));
+            name = nm;
             j = skipWs(t, j);
             if (t.charCodeAt(j) !== 40) {
               garbage++;
@@ -245,6 +277,7 @@ export class StepFile {
           const w = t.slice(i, j).toUpperCase();
           if (w === 'ENDSEC') {
             i = j;
+            closed = true;
             break;
           }
         }
@@ -252,9 +285,10 @@ export class StepFile {
         i = nextSemi(t, i);
       }
       pos = i;
+      if (!closed) unterminated = true;
       if (i >= n) break;
     }
-    if (truncated) this.warnings.push('STEP dosyası kesik görünüyor: son varlık tamamlanmamış (dosya eksik kopyalanmış olabilir).');
+    if (truncated || (unterminated && this.ids.length)) this.warnings.push('STEP dosyası kesik görünüyor: son varlık veya DATA bölümü (ENDSEC) tamamlanmamış; dosya eksik kopyalanmış olabilir.');
     if (garbage) this.warnings.push(`DATA bölümünde ${garbage} çözümlenemeyen kayıt atlandı.`);
     if (dup) this.warnings.push(`${dup} yinelenen varlık numarası (#id) yok sayıldı.`);
   }
@@ -408,7 +442,7 @@ export function parseList(t: string, pos: number, end: number, depth: number): [
         if (isDigit(d) || d === 46 || d === 69 || d === 101 || ((d === 45 || d === 43) && (t.charCodeAt(j - 1) | 32) === 101)) j++;
         else break;
       }
-      const v = Number(t.slice(i, j));
+      const v = fastNum(t, i, j);
       out.push(Number.isFinite(v) ? v : null);
       i = j;
       continue;
@@ -437,6 +471,64 @@ export function parseList(t: string, pos: number, end: number, depth: number): [
     i++; // tanınmayan karakter
   }
   return [out, end];
+}
+
+const POW10 = [1, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22];
+
+/**
+ * Dize kopyalamadan sayı çözer. Mantis ≤ 15 hane ve |üs| ≤ 22 iken tek bir doğru yuvarlanmış
+ * çarpma / bölme yapıldığından sonuç Number() ile birebir aynıdır; aksi halde Number()'a düşer.
+ */
+function fastNum(t: string, i: number, j: number): number {
+  let k = i;
+  let neg = false;
+  let c = t.charCodeAt(k);
+  if (c === 45 || c === 43) {
+    neg = c === 45;
+    k++;
+  }
+  let m = 0, digits = 0, frac = 0, seenDot = false, any = false;
+  for (; k < j; k++) {
+    c = t.charCodeAt(k);
+    if (c >= 48 && c <= 57) {
+      any = true;
+      if (m === 0 && c === 48 && !seenDot) continue;
+      if (digits < 15) {
+        m = m * 10 + (c - 48);
+        if (m !== 0) digits++;
+        if (seenDot) frac++;
+      } else return Number(t.slice(i, j));
+    } else if (c === 46 && !seenDot) seenDot = true;
+    else break;
+  }
+  if (!any) return NaN;
+  let e = 0;
+  if (k < j) {
+    if ((c | 32) !== 101) return Number(t.slice(i, j));
+    k++;
+    let eneg = false;
+    c = t.charCodeAt(k);
+    if (c === 45 || c === 43) {
+      eneg = c === 45;
+      k++;
+    }
+    let ed = 0;
+    for (; k < j; k++) {
+      c = t.charCodeAt(k);
+      if (c < 48 || c > 57) return Number(t.slice(i, j));
+      e = e * 10 + (c - 48);
+      ed++;
+    }
+    if (!ed) return Number(t.slice(i, j));
+    if (eneg) e = -e;
+  }
+  const p = e - frac;
+  let v: number;
+  if (m === 0) v = 0;
+  else if (p >= 0 && p <= 22) v = m * POW10[p];
+  else if (p < 0 && p >= -22) v = m / POW10[-p];
+  else return Number(t.slice(i, j));
+  return neg ? -v : v;
 }
 
 // ───────── Değer erişim yardımcıları ─────────

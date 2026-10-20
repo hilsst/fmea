@@ -110,6 +110,7 @@ export const parseStep: Parser = async (_name, data) => {
     cad.shells = geo.shells;
     if (Object.keys(geo.faces).length) cad.faces = geo.faces;
     if (geo.holes.length) cad.holes = geo.holes;
+    if (geo.fillets.length) cad.fillets = geo.fillets;
     if (geo.circles.length) cad.circles = geo.circles;
     if (geo.parts.length) cad.parts = geo.parts;
     if (geo.assembly.length) cad.assembly = geo.assembly;

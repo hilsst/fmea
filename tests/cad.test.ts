@@ -84,6 +84,37 @@ describe('STEP geometri', () => {
     expect(rc.map((c) => c.nominal)).toEqual([120, 80, 10, 6, 10]);
   });
 
+  it('silindir açısal kapsamı: tam / ikiye bölünmüş delik → delik, çeyrek yay → kısmi silindir (fillet)', async () => {
+    const src = `ISO-10303-21;
+HEADER;ENDSEC;
+DATA;
+#1=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));
+#10=CARTESIAN_POINT('',(0.,0.,0.));#11=DIRECTION('',(0.,0.,1.));#12=DIRECTION('',(1.,0.,0.));
+#13=AXIS2_PLACEMENT_3D('',#10,#11,#12);#14=CYLINDRICAL_SURFACE('',#13,3.);#15=CARTESIAN_POINT('',(3.,0.,0.));
+#16=VERTEX_POINT('',#15);#17=CIRCLE('',#13,3.);#18=EDGE_CURVE('',#16,#16,#17,.T.);#19=ORIENTED_EDGE('',*,*,#18,.T.);
+#20=EDGE_LOOP('',(#19));#21=FACE_BOUND('',#20,.T.);#22=ADVANCED_FACE('',(#21),#14,.F.);
+#30=CARTESIAN_POINT('',(20.,0.,0.));#31=AXIS2_PLACEMENT_3D('',#30,#11,#12);#32=CYLINDRICAL_SURFACE('',#31,2.);
+#33=CIRCLE('',#31,2.);#34=CARTESIAN_POINT('',(22.,0.,0.));#35=VERTEX_POINT('',#34);#36=CARTESIAN_POINT('',(18.,0.,0.));
+#37=VERTEX_POINT('',#36);#38=EDGE_CURVE('',#35,#37,#33,.T.);#39=EDGE_CURVE('',#37,#35,#33,.T.);
+#40=ORIENTED_EDGE('',*,*,#38,.T.);#41=EDGE_LOOP('',(#40));#42=FACE_BOUND('',#41,.T.);#43=ADVANCED_FACE('',(#42),#32,.F.);
+#44=ORIENTED_EDGE('',*,*,#39,.T.);#45=EDGE_LOOP('',(#44));#46=FACE_BOUND('',#45,.T.);#47=ADVANCED_FACE('',(#46),#32,.F.);
+#50=CARTESIAN_POINT('',(40.,0.,0.));#51=AXIS2_PLACEMENT_3D('',#50,#11,#12);#52=CYLINDRICAL_SURFACE('',#51,1.);
+#53=CIRCLE('',#51,1.);#54=CARTESIAN_POINT('',(41.,0.,0.));#55=VERTEX_POINT('',#54);#56=CARTESIAN_POINT('',(40.,1.,0.));
+#57=VERTEX_POINT('',#56);#58=EDGE_CURVE('',#55,#57,#53,.T.);#59=ORIENTED_EDGE('',*,*,#58,.T.);#60=EDGE_LOOP('',(#59));
+#61=FACE_BOUND('',#60,.T.);#62=ADVANCED_FACE('',(#61),#52,.T.);
+#70=CLOSED_SHELL('',(#22,#43,#47,#62));#71=MANIFOLD_SOLID_BREP('',#70);
+ENDSEC;
+END-ISO-10303-21;`;
+    const d = await extractDocument('cyl.step', Buffer.from(src));
+    expect(d.status).toBe('ok');
+    expect(d.cad!.holes).toEqual([
+      { diameter: 4, diameterMm: 4, count: 1, faces: 2, kind: 'hole' },
+      { diameter: 6, diameterMm: 6, count: 1, faces: 1, kind: 'hole' },
+    ]);
+    expect(d.cad!.fillets).toEqual([{ radius: 1, radiusMm: 1, faces: 1, kind: 'convex' }]);
+    expect(d.blocks.map((b) => b.text)).toContain('Kısmi silindirik yüzeyler (radyus / fillet olabilir): R1.00 mm dış × 1 yüz');
+  });
+
   it('inç birimi → mm dönüşümü (CONVERSION_BASED_UNIT)', async () => {
     const d = await extractDocument('inch.step', fx('inch.step'));
     expect(d.status).toBe('ok');
