@@ -5,6 +5,7 @@
 
 import { blankRow, nextId, tableOfId } from './model';
 import { isKcCandidate } from './scoring';
+import { capOnDelete, capOnSet } from './capEngine'; // v4-cap
 import type {
   ActionRow,
   AnyRow,
@@ -327,6 +328,7 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
     if (field === 'kcSeverityThreshold' || field === 'autoKcCandidates') syncAllKcCandidates(c);
     return;
   }
+  capOnSet(c, table, id, field, e.from, e.to); // v4-cap: capability bandı, MSA yeniden çalışma ve kapsam kuralları
 
   switch (table) {
     case 'documents': {
@@ -525,6 +527,7 @@ function onAdd(c: Ctx, e: Extract<Event, { type: 'add' }>) {
 function onDelete(c: Ctx, e: Extract<Event, { type: 'delete' }>) {
   const { table, id } = e;
   const why = `${id} silindi`;
+  capOnDelete(c, table, id); // v4-cap
   switch (table) {
     case 'requirements':
       for (const d of c.rows<DfmeaRow>('dfmea').filter((d) => d.reqIds.includes(id)))

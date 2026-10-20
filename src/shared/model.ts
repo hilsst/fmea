@@ -8,6 +8,7 @@ import type {
 } from './types';
 import { WORKFLOW_STEPS } from './types';
 import { SCMH_SCORING } from './scmhScoring';
+import { CAP_SETTINGS_DEFAULTS, CAP_V4_DEFAULTS, MSA_V4_DEFAULTS, capNormalize } from './capDefaults'; // v4-cap
 
 export const SCHEMA_VERSION = 2;
 export const APP_VERSION = '3.0.0';
@@ -126,9 +127,9 @@ export function blankRow(table: TableKey, id: string): AnyRow {
     case 'controlPlan':
       return { id, stepId: '', opNo: '', processName: '', machine: '', tool: '', pfId: '', kcId: '', productChar: '', processChar: '', kcClass: '', specification: '', method: '', gauge: '', sampleSize: '', frequency: '', controlMethod: '', reactionPlan: '', responsible: '', autoCreated: false, notes: '', charType: '', tolerance: '', record: '', ppId: '', reference: '' };
     case 'msa':
-      return { id, cpId: '', kcId: '', characteristic: '', gauge: '', study: '', status: 'Planned', result: '', autoCreated: false, notes: '', dataType: '' };
+      return { id, cpId: '', kcId: '', characteristic: '', gauge: '', study: '', status: 'Planned', result: '', autoCreated: false, notes: '', dataType: '', ...MSA_V4_DEFAULTS }; // v4-cap
     case 'capability':
-      return { id, kcId: '', characteristic: '', lsl: null, usl: null, target: null, data: '', notes: '', subgroupSize: null, distribution: '' };
+      return { id, kcId: '', characteristic: '', lsl: null, usl: null, target: null, data: '', notes: '', subgroupSize: null, distribution: '', ...CAP_V4_DEFAULTS }; // v4-cap
     case 'actions':
       return { id, sourceId: '', description: '', actionType: '', owner: '', dueDate: '', status: 'Open', actionTaken: '', completionDate: '', newS: null, newO: null, newD: null, verification: '', notes: '' };
     case 'issues':
@@ -203,6 +204,7 @@ export const DEFAULT_SETTINGS: Settings = {
   workflow: WORKFLOW_STEPS.map((step) => ({ step, enabled: true, role: DEFAULT_STEP_ROLE[step] })),
   reasonFields: ['s', 'o', 'd', 'kcs.status', 'kcs.category', 'kcs.kcClass', 'approval'],
   scoringStandard: 'SCMH',
+  ...CAP_SETTINGS_DEFAULTS, // v4-cap
 };
 
 // AIAG-VDA (2019) yapısına dayalı özet kriterler. Kurum/müşteri tablosu varsa "Puanlama" sekmesinden değiştirilir.
@@ -365,6 +367,7 @@ export function normalizeProject(raw: Partial<Project>, report?: MigrationReport
     const rows = (raw[t] as AnyRow[] | undefined) ?? (t === 'history' ? base.history : []);
     (p as unknown as Record<string, AnyRow[]>)[t] = rows.map((r) => ({ ...blankRow(t, r.id), ...r }) as AnyRow);
   }
+  capNormalize(p, raw.settings, notes); // v4-cap
   if (from < 2) {
     notes.push(`Dosya şema ${from || 'sürümsüz'} → ${SCHEMA_VERSION} güncellendi; mevcut veriler korundu, yeni alanlar boş eklendi.`);
     // v1 kayıtları: kaynağı elle/AI olarak işaretle (AI Proposed olanlar AI kökenli kabul edilir)

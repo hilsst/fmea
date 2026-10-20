@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { findRequirementCandidates, locText, UNSUPPORTED_MSG } from '../../shared/docmodel';
-import { suggestMsaStudy, summarizeChanges } from '../../shared/engine';
+import { summarizeChanges } from '../../shared/engine';
 import { COMPOSITE_TEMPLATE, isComposite } from '../../shared/kb';
 import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
 import { COMPOSITE_CHECKLIST, blankRow, nextId } from '../../shared/model';
@@ -9,7 +9,8 @@ import { api, isDesktop } from '../api';
 import { PasteTextDialog, useAi } from '../components/AiDialogs';
 import { Grid } from '../components/Grid';
 import { Modal } from '../components/Modal';
-import { CapabilityPanel, KcFactorPanel } from '../screens/Screens2';
+import { KcFactorPanel } from '../screens/Screens2';
+import { CapabilityScreen, MsaScreen } from '../screens/Cap'; // v4-cap
 import { useStore } from '../store';
 
 type AddEdit = { kind: 'add'; table: TableKey; row: AnyRow };
@@ -540,39 +541,13 @@ export function ControlPlanTab() {
   );
 }
 
+// v4-cap: MSA ve Capability ekranları screens/Cap.tsx içinde
 export function MsaTab() {
-  const { project, edit, toast } = useStore();
-  const fromCp = async () => {
-    const b = batch(project);
-    for (const c of project.controlPlan.filter((c) => c.method && !project.msa.some((m) => m.cpId === c.id)))
-      b.add('msa', { cpId: c.id, kcId: c.kcId, characteristic: c.productChar || c.processChar, gauge: c.gauge || c.method, ...suggestMsaStudy(c.method || c.gauge), status: 'Planned', notes: 'Çalışma tipi ölçüm yöntemine göre önerildi (AI SUGGESTION); mühendis doğrulamalı.' } as Partial<AnyRow>);
-    if (!b.edits.length) return toast('Yeni MSA ihtiyacı bulunamadı.', 'warn');
-    await edit(b.edits, 'Kontrol planından MSA');
-  };
-  return <Grid table="msa" toolbar={<button className="btn" onClick={fromCp}>Kontrol planından oluştur</button>} emptyHint="Boyutsal, tork, kalınlık, sıcaklık, basınç, ağırlık, bondline ölçümleri için MSA planlayın." />;
+  return <MsaScreen />;
 }
 
 export function CapabilityTab() {
-  const { project, edit, toast } = useStore();
-  const fromKc = async () => {
-    const b = batch(project);
-    for (const k of project.kcs.filter((k) => k.status !== 'Rejected' && !project.capability.some((c) => c.kcId === k.id))) b.add('capability', { kcId: k.id, characteristic: k.characteristic } as Partial<AnyRow>);
-    if (!b.edits.length) return toast('Tüm KC’lerin capability kaydı var.', 'warn');
-    await edit(b.edits, 'KC’lerden capability');
-  };
-  const [sel, setSel] = useState<string[]>([]);
-  return (
-    <div className="split">
-      <Grid
-        table="capability"
-        selected={sel}
-        onSelect={setSel}
-        toolbar={<button className="btn" onClick={fromKc}>KC’lerden oluştur</button>}
-        emptyHint="Veri yoksa: “Capability calculation cannot be performed – production data required.”"
-      />
-      <CapabilityPanel id={sel[0]} />
-    </div>
-  );
+  return <CapabilityScreen />;
 }
 
 export function ActionsTab() {
