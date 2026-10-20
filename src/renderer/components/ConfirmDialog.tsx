@@ -3,6 +3,7 @@ import { fieldLabel, rowLabel } from '../../shared/columns';
 import type { Effect } from '../../shared/engine';
 import { SCREENS, screenLabel, screenOfTable } from '../../shared/nav';
 import { useStore } from '../store';
+import { Modal } from './Modal';
 
 const SETTINGS_LABEL: Record<string, string> = {
   kcSeverityThreshold: 'KC Severity eşiği',
@@ -21,6 +22,9 @@ function fmt(v: unknown): string {
 }
 
 const screenName = screenLabel;
+/** Tek tıkla seçilen hazır nedenler (yazmak zorunlu değil). */
+const QUICK_REASONS = ['Mühendis incelemesi', 'Tasarım incelemesi kararı', 'Müşteri talebi', 'Doküman revizyonu', 'Hatalı giriş düzeltmesi'];
+
 const order = (t: string) => SCREENS.findIndex((s) => s.key === screenOfTable(t)?.screen);
 
 export function ConfirmDialog() {
@@ -124,7 +128,14 @@ export function ConfirmDialog() {
             <div className="form">
               <label className="wide">
                 <span>Değişiklik nedeni{pending.needReason ? ' (zorunlu)' : ' (isteğe bağlı)'}</span>
-                <input className="cell-input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Örn. müşteri resmi Rev C, NCR-0042 sonucu, tasarım incelemesi kararı…" />
+                <div className="quick-reasons">
+                  {QUICK_REASONS.map((q) => (
+                    <button key={q} type="button" className={`chip-btn ${reason === q ? 'on' : ''}`} onClick={() => setReason(q)}>
+                      {q}
+                    </button>
+                  ))}
+                </div>
+                <input className="cell-input" autoFocus={pending.needReason} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Örn. müşteri resmi Rev C, NCR-0042 sonucu, tasarım incelemesi kararı…" />
               </label>
               <label className="wide">
                 <span>Yorum</span>
@@ -150,5 +161,33 @@ export function ConfirmDialog() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** store.ask / store.confirm penceresi. */
+export function AskDialog() {
+  const { asking, answer } = useStore();
+  const [text, setText] = useState('');
+  useEffect(() => setText(asking?.input ?? ''), [asking]);
+  if (!asking) return null;
+  const hasInput = asking.input !== undefined;
+  const ok = () => (!hasInput || text.trim()) && answer(hasInput ? text.trim() : '');
+  return (
+    <Modal
+      title={asking.title}
+      icon={asking.danger ? '⚠' : '?'}
+      onClose={() => answer(null)}
+      foot={
+        <>
+          <button className="btn" onClick={() => answer(null)}>Vazgeç</button>
+          <button className={`btn ${asking.danger ? 'danger' : 'primary'}`} autoFocus={!hasInput} disabled={hasInput && !text.trim()} onClick={ok}>
+            {asking.okLabel ?? 'Tamam'}
+          </button>
+        </>
+      }
+    >
+      {asking.message && <p className="ask-msg">{asking.message}</p>}
+      {hasInput && <input className="cell-input ask-input" autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && ok()} />}
+    </Modal>
   );
 }

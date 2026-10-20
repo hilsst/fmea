@@ -799,6 +799,14 @@ export interface Project {
   pfdItems: PfdItemRow[];
   /** Tablo başına son atanan satır numarası (azalmaz). */
   lineCounters: Partial<Record<string, number>>;
+  /** Mühendis incelemesi sonrası tablo onayı ("Tabloyu onayla"); kaldırılabilir. */
+  tableApprovals: Partial<Record<TableKey, TableApproval>>;
+}
+
+export interface TableApproval {
+  user: string;
+  at: string;
+  revision: string;
 }
 
 export type TableKey =

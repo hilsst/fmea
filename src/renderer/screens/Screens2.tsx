@@ -146,13 +146,13 @@ export function ProductTypeCard() {
 const LEVELS = ['H', 'M', 'L'] as const;
 
 export function RiskScreen() {
-  const { project: p, mutate } = useStore();
+  const { project: p, mutate, confirm } = useStore();
   const custom = !!p.scoring.apTable;
   const table = p.scoring.apTable ?? AIAG_VDA_AP;
   // AP hesaplanan bir değerdir; tablo değişince AP'si değişecek satırlar kaydetmeden önce gösterilir.
-  const setTable = (next: Record<string, string> | null, title: string) => {
+  const setTable = async (next: Record<string, string> | null, title: string) => {
     const changed = [...p.dfmea, ...p.pfmea].filter((r) => apOf(p, r.s, r.o, r.d) !== apOf({ scoring: { apTable: next } }, r.s, r.o, r.d));
-    if (changed.length && !window.confirm(`${title}\n\nBu değişiklik ${changed.length} FMEA satırının AP değerini değiştiriyor:\n${changed.slice(0, 15).map((r) => `${r.id}: ${apOf(p, r.s, r.o, r.d)} → ${apOf({ scoring: { apTable: next } }, r.s, r.o, r.d)}`).join('\n')}${changed.length > 15 ? '\n…' : ''}\n\nOnaylıyor musunuz?`)) return;
+    if (changed.length && !(await confirm(title, `Bu değişiklik ${changed.length} FMEA satırının AP değerini değiştiriyor:\n${changed.slice(0, 15).map((r) => `${r.id}: ${apOf(p, r.s, r.o, r.d)} → ${apOf({ scoring: { apTable: next } }, r.s, r.o, r.d)}`).join('\n')}${changed.length > 15 ? '\n…' : ''}\n\nOnaylıyor musunuz?`))) return;
     mutate((d) => {
       d.scoring.apTable = next;
     }, { kind: 'Modified', table: 'scoring', id: 'apTable', field: 'apTable', comment: `${title} · ${changed.length} satırın AP değeri değişti` });
@@ -165,10 +165,10 @@ export function RiskScreen() {
     setTable(base, `AP tablosu: S${key.split(',')[0]} O${key.split(',')[1]} D bandı ${D_BANDS[di]} → ${v}`);
   };
   const scmh = isScmh(p);
-  const setStandard = (std: 'SCMH' | 'AIAG-VDA') => {
+  const setStandard = async (std: 'SCMH' | 'AIAG-VDA') => {
     if (std === p.settings.scoringStandard) return;
     const tables = std === 'SCMH' ? SCMH_SCORING : DEFAULT_SCORING;
-    if (!window.confirm(`Puanlama standardı ${std === 'SCMH' ? 'IAQG SCMH' : 'AIAG-VDA 2019'} olacak.\n\nS/O/D kriter metinleri bu standardın tablolarıyla değiştirilir. Satırlardaki mevcut S/O/D puanları DEĞİŞMEZ; yeni kriterlere göre yeniden değerlendirilmeleri gerekir.\n\nOnaylıyor musunuz?`)) return;
+    if (!(await confirm(`Puanlama standardı ${std === 'SCMH' ? 'IAQG SCMH' : 'AIAG-VDA 2019'} olacak`, `S/O/D kriter metinleri bu standardın tablolarıyla değiştirilir. Satırlardaki mevcut S/O/D puanları DEĞİŞMEZ; yeni kriterlere göre yeniden değerlendirilmeleri gerekir.\n\nOnaylıyor musunuz?`))) return;
     mutate((d) => {
       d.settings.scoringStandard = std;
       d.scoring.severity = structuredClone(tables.severity);
@@ -799,7 +799,7 @@ const KC_RULE_LABEL: Record<keyof KcRules, string> = {
 } as Record<keyof KcRules, string>;
 
 export function SettingsScreen() {
-  const { project: p, edit, mutate, toast } = useStore();
+  const { project: p, edit, mutate, toast, ask } = useStore();
   const s = p.settings;
   const set = (field: keyof Settings, value: unknown, title = 'Ayar değişikliği') => edit({ kind: 'settings', field, value }, title);
   const [ai, setAi] = useState<Awaited<ReturnType<typeof api.aiStatus>> | null>(null);
@@ -819,7 +819,7 @@ export function SettingsScreen() {
     toast(r.stored === 'secure' ? 'API anahtarı işletim sistemi şifrelemesiyle kaydedildi' : r.stored === 'session' ? 'Güvenli depolama yok: anahtar yalnızca bu oturum için bellekte tutuluyor' : 'API anahtarı silindi', r.stored === 'session' ? 'warn' : 'ok');
   };
   const saveTemplate = async () => {
-    const name = window.prompt('Şablon adı', p.meta.customer ? `${p.meta.customer} FMEA şablonu` : 'Şirket FMEA şablonu');
+    const name = await ask({ title: 'Şablon adı', input: p.meta.customer ? `${p.meta.customer} FMEA şablonu` : 'Şirket FMEA şablonu' });
     if (!name) return;
     const out = await api.saveTemplate(makeTemplate(p, name));
     if (out) toast('Şirket şablonu kaydedildi');

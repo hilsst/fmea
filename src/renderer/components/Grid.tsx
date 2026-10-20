@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { cellText, COLUMNS, type Col } from '../../shared/columns';
 import { blankRow, nextId } from '../../shared/model';
 import { riskLevelOf } from '../../shared/risk'; // v4-risk
+import { changesSinceApproval, moveRows, moveRowsTo, TABLE_APPROVE_LABEL } from '../../shared/rowOrder';
 import type { AnyRow, TableKey } from '../../shared/types';
 import { useStore } from '../store';
 import { badgeClass, MultiCell, RefCell, ScoreCell, SelectCell, TextCell } from './Cells';
@@ -22,7 +23,8 @@ interface GridProps {
 }
 
 export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: selProp, onSelect, canDelete }: GridProps) {
-  const { project, edit, toast } = useStore();
+  const { project, edit, toast, confirm, mutate } = useStore();
+  const [dragId, setDragId] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [all, setAll] = useState(false);
   const [selLocal, setSelLocal] = useState<string[]>([]);
@@ -67,7 +69,7 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
     if (!selected.length) return;
     const blocked = canDelete?.(selected); // v4-kc
     if (blocked) return toast(blocked, 'warn');
-    if (!window.confirm(`${selected.length} satır silinsin mi?\n${selected.join(', ')}`)) return;
+    if (!(await confirm(`${selected.length} satır silinsin mi?`, selected.join(', '), true))) return;
     const ok = await edit(selected.map((id) => ({ kind: 'delete' as const, table, id })), `${selected.length} satır silme`);
     if (ok) {
       setSelected([]);
@@ -89,6 +91,37 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
     await edit(adds, 'Satır kopyalama');
   };
 
+  // Satır sırası: dizideki sıra ekran ve çıktı sırasıdır. Kolon sıralaması açıkken taşıma kapalı.
+  const reorder = (next: AnyRow[] | null, ids: string[]) => {
+    if (!next) return;
+    mutate((d) => {
+      (d as unknown as Record<string, AnyRow[]>)[table] = next;
+    }, { kind: 'Modified', table, id: ids.join(', '), field: 'sıra', comment: 'Satır sırası değişti' });
+  };
+  const move = (dir: -1 | 1) => reorder(moveRows(rows, visible.map((r) => r.id), selected, dir), selected);
+  const dropOn = (targetId: string) => {
+    if (!dragId || sort) return;
+    const moving = selected.includes(dragId) ? selected : [dragId];
+    reorder(moveRowsTo(rows, visible.map((r) => r.id), moving, targetId), moving);
+    setDragId(null);
+  };
+
+  // Mühendis incelemesi sonrası tablo onayı; geri alınabilir.
+  const approval = project.tableApprovals?.[table];
+  const since = changesSinceApproval(project, table, approval);
+  const toggleApproval = async (on: boolean) => {
+    if (on) {
+      const ai = rows.filter((r) => (r as { approval?: string }).approval === 'AI Proposed').length;
+      if (ai && !(await confirm('Tablo onaylansın mı?', `${ai} satır hâlâ “AI Proposed” durumunda. Bu satırlar incelenmeden tablo onaylanacak.`))) return;
+    }
+    mutate((d) => {
+      if (!d.tableApprovals) d.tableApprovals = {};
+      if (on) d.tableApprovals[table] = { user: d.settings.userName || '(kullanıcı adı girilmemiş)', at: new Date().toISOString(), revision: d.meta.fmeaRevision };
+      else delete d.tableApprovals[table];
+    }, { kind: 'Approval', table, id: table, field: 'tableApproval', from: on ? '' : 'Onaylı', to: on ? 'Onaylı' : 'Onay kaldırıldı' });
+    toast(on ? 'Tablo onaylandı' : 'Tablo onayı kaldırıldı', on ? 'ok' : 'warn');
+  };
+
   const isFmea = table === 'dfmea' || table === 'pfmea';
   const shown = visible.length > limit ? visible.slice(0, limit) : visible;
   const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -108,12 +141,22 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
         <button className="btn danger" disabled={!selected.length} onClick={removeSelected}>
           Sil{selected.length ? ` (${selected.length})` : ''}
         </button>
+        <button className="btn" disabled={!selected.length || !!sort} onClick={() => move(-1)} title={sort ? 'Kolon sıralamasını kapatınca taşınabilir' : 'Seçili satırları bir yukarı taşı (satırı ID hücresinden sürükleyerek de taşıyabilirsiniz)'}>
+          ▲
+        </button>
+        <button className="btn" disabled={!selected.length || !!sort} onClick={() => move(1)} title={sort ? 'Kolon sıralamasını kapatınca taşınabilir' : 'Seçili satırları bir aşağı taşı'}>
+          ▼
+        </button>
         <span className="sep" />
         {toolbar}
         <button className="btn" disabled={selected.length !== 1} onClick={() => window.dispatchEvent(new CustomEvent('why', { detail: selected[0] }))} title="Kaydın kaynağı, kanıtı, bağlantı zinciri ve değişiklik geçmişi">
           Neden burada?
         </button>
         <span className="grow" />
+        <label className={`check table-approval ${approval ? (since ? 'stale' : 'on') : ''}`} title={approval ? `${approval.user} · ${new Date(approval.at).toLocaleString('tr-TR')} · Rev ${approval.revision}${since ? `\nOnaydan sonra ${since} değişiklik yapıldı – yeniden inceleyin` : ''}\nİşareti kaldırarak onayı geri alabilirsiniz.` : 'Mühendis incelemesi tamamlandığında işaretleyin; onay daha sonra kaldırılabilir.'}>
+          <input type="checkbox" checked={!!approval} onChange={(e) => toggleApproval(e.target.checked)} /> {TABLE_APPROVE_LABEL[table] ?? 'Tabloyu onayla'}
+          {approval && since > 0 && <span className="badge b-amber">onaydan sonra {since} değişiklik</span>}
+        </label>
         <label className="check">
           <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Tüm kolonlar
         </label>
@@ -153,11 +196,26 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
             {shown.map((r) => {
               const risk = isFmea ? riskLevelOf(project, r as never) : '';
               return (
-                <tr key={r.id} data-row={r.id} className={`${selected.includes(r.id) ? 'selected' : ''} ${risk ? 'risk-' + risk.toLowerCase() : ''} ${r.reassess ? 'reassess' : ''}`}>
+                <tr
+                  key={r.id}
+                  data-row={r.id}
+                  className={`${selected.includes(r.id) ? 'selected' : ''} ${risk ? 'risk-' + risk.toLowerCase() : ''} ${r.reassess ? 'reassess' : ''} ${dragId && dragId !== r.id ? 'drop-ok' : ''}`}
+                  onDragOver={(e) => dragId && !sort && e.preventDefault()}
+                  onDrop={() => dropOn(r.id)}
+                >
                   <td className="sticky-col sel">
                     <input type="checkbox" checked={selected.includes(r.id)} onChange={(e) => setSelected(e.target.checked ? [...selected, r.id] : selected.filter((x) => x !== r.id))} />
                   </td>
-                  <td className="sticky-col id" title={r.reassess || undefined}>
+                  <td
+                    className="sticky-col id"
+                    title={r.reassess || (sort ? undefined : 'Sürükleyerek taşıyın')}
+                    draggable={!sort}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move';
+                      setDragId(r.id);
+                    }}
+                    onDragEnd={() => setDragId(null)}
+                  >
                     {r.id}
                     {r.reassess && <span className="flag" title={r.reassess}>⚠</span>}
                   </td>
