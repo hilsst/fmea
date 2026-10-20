@@ -14,19 +14,19 @@ export const REQ_AUTO_INPUTS = ['text', 'reqType', 'characteristic', 'nominal', 
 
 const CHAR_WORDS: [RegExp, string][] = [
   [/(Ø|⌀|çap|diameter|delik|hole)/i, 'Çap'],
-  [/(kalınlık|thickness|bondline)/i, 'Kalınlık'],
-  [/(düzlemsellik|flatness)/i, 'Düzlemsellik'],
+  [/(kalınl|thickness|bondline)/i, 'Kalınlık'],
+  [/(düzlemsell|flatness)/i, 'Düzlemsellik'],
   [/(pozisyon|position)/i, 'Pozisyon'],
   [/(uzunluk|length)/i, 'Uzunluk'],
   [/(genişlik|width)/i, 'Genişlik'],
-  [/(pürüzlülük|roughness|\bRa\b)/i, 'Pürüzlülük'],
-  [/(sıcaklık|temperature|°C)/i, 'Sıcaklık'],
+  [/(pürüzlül|roughness|\bRa\b)/i, 'Pürüzlülük'],
+  [/(sıcakl|temperature|°C)/i, 'Sıcaklık'],
   [/(basınç|pressure|bar\b|psi)/i, 'Basınç'],
   [/(vakum|vacuum)/i, 'Vakum'],
   [/(tork|torque)/i, 'Tork'],
   [/(ağırlık|weight|kütle|mass)/i, 'Ağırlık'],
   [/(dayanım|strength|mukavemet)/i, 'Dayanım'],
-  [/(gözeneklilik|porosity|void)/i, 'Gözeneklilik'],
+  [/(gözenekl|porosity|void)/i, 'Gözeneklilik'],
   [/(süre|time|dk\b|min\b)/i, 'Süre'],
 ];
 
@@ -50,13 +50,13 @@ export function acceptanceOf(r: Pick<RequirementRow, 'nominal' | 'lsl' | 'usl' |
 
 const VERIFY: [RegExp, string][] = [
   [/(Ø|⌀|çap|delik|hole)/i, 'Tapa mastar / CMM'],
-  [/(düzlemsellik|flatness|pozisyon|position|profil|profile)/i, 'CMM ölçümü'],
-  [/(kalınlık|thickness)/i, 'Kalınlık ölçümü (mikrometre / ultrasonik kalınlık)'],
-  [/(pürüzlülük|roughness|\bRa\b)/i, 'Yüzey pürüzlülük ölçümü (profilometre)'],
+  [/(düzlemsell|flatness|pozisyon|position|profil|profile)/i, 'CMM ölçümü'],
+  [/(kalınl|thickness)/i, 'Kalınlık ölçümü (mikrometre / ultrasonik kalınlık)'],
+  [/(pürüzlül|roughness|\bRa\b)/i, 'Yüzey pürüzlülük ölçümü (profilometre)'],
   [/(kür|cure|otoklav|autoclave)/i, 'Kür kaydı (otoklav/fırın çıktısı, termokupl verisi)'],
   [/(vakum|vacuum)/i, 'Vakum kaçak testi / proses kaydı'],
   [/(tork|torque)/i, 'Tork anahtarı ile kontrol / tork kaydı'],
-  [/(gözeneklilik|porosity|void|delaminasyon|disbond|ndt|ultrason)/i, 'NDT (yöntem ve kabul seviyesi kaynakta belirtilmeli)'],
+  [/(gözenekl|porosity|void|delaminasyon|disbond|ndt|ultrason)/i, 'NDT (yöntem ve kabul seviyesi kaynakta belirtilmeli)'],
 ];
 
 const VERIFY_BY_TYPE: Record<string, string> = {

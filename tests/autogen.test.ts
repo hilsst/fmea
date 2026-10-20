@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { elementName, generate } from '../src/shared/autogen';
+import { fillBlanksEdits } from '../src/shared/fmeaFill';
 import { planEdits } from '../src/shared/engine';
 import { blankRow, newProject } from '../src/shared/model';
 import type { Edit } from '../src/shared/engine';
@@ -43,8 +44,21 @@ describe('otomatik öneri motoru', () => {
     expect([d.approval, d.confidence, d.basis]).toEqual(['AI Proposed', 'Low', 'ENGINEERING KNOWLEDGE']);
     expect(d.s).toBeGreaterThan(0);
     expect(d.detection).toMatch(/Tapa mastar/);
+    expect(d.system).toBe('Sandviç Panel');
+    expect(d.component).toBe('Delik');
+    expect(d.localEffect && d.higherEffect && d.verification).toBeTruthy();
+    expect(d.riskCategory).toEqual(['Manufacturability']);
+    expect(d.noiseFactor).toEqual(['Piece-to-piece']);
     // ikinci çalıştırma tekrar üretmez
     expect(generate(p, ['structure', 'dfmea']).edits).toHaveLength(0);
+  });
+  it('mevcut satırların boş alanları doldurulur, dolu alanlar korunur', () => {
+    let p = withReqs();
+    p = apply(p, generate(p, ['structure']).edits);
+    p = apply(p, [{ kind: 'add', table: 'dfmea', row: { ...blankRow('dfmea', 'DF-001'), id: 'DF-001', functionId: p.structure.find((s) => s.level === 'Feature')!.id, reqIds: ['REQ-001'], failureMode: 'Delik büyük', localEffect: 'Elle' } }]);
+    const e = fillBlanksEdits(p, 'dfmea');
+    expect(e.some((x) => x.field === 'localEffect')).toBe(false);
+    expect(e.some((x) => x.field === 'component')).toBe(true);
   });
   it('PFMEA: adım kütüphanesi + özel proses parametresi bağlantısı', () => {
     let p = newProject();
@@ -58,6 +72,18 @@ describe('otomatik öneri motoru', () => {
     expect(rows.length).toBeGreaterThanOrEqual(5);
     expect(rows.every((r) => r.failureMode && r.effect && r.cause && r.rootCause && r.prevention && r.detection && r.s && r.o && r.d)).toBe(true);
     expect(p.processParams[0].pfIds.length).toBe(2);
+    for (const r of rows) {
+      expect(r.processFunction).toMatch(/kür/i);
+      expect(r.measurement && r.reactionPlan && r.processElement).toBeTruthy();
+      expect(r.specialChar).toBe('Process');
+    }
+    const prmRow = rows.find((r) => r.failureMode === 'Kür sıcaklığı alt limitin altında')!;
+    expect(prmRow.processRequirement).toMatch(/Kür sıcaklığı: VERİ YOK/);
+    const s9 = rows.find((r) => (r.s ?? 0) >= 9)!;
+    expect(s9.sDisposition).toBeTruthy();
+    expect(s9.recommendedAction).toMatch(/AI ÖNERİSİ/);
+    // tekrar doldurma dolu alanlara dokunmaz
+    expect(fillBlanksEdits(p, 'pfmea').filter((e) => e.field !== 'dfIds')).toHaveLength(0);
     expect(rows.find((r) => r.failureMode === 'Kür sıcaklığı alt limitin altında')!.source).toMatch(/limit VERİ YOK/);
   });
 });

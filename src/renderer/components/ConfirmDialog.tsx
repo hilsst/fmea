@@ -23,7 +23,7 @@ function fmt(v: unknown): string {
 
 const screenName = screenLabel;
 /** Tek tıkla seçilen hazır nedenler (yazmak zorunlu değil). */
-const QUICK_REASONS = ['Mühendis incelemesi', 'Tasarım incelemesi kararı', 'Müşteri talebi', 'Doküman revizyonu', 'Hatalı giriş düzeltmesi'];
+const QUICK_REASONS = ['Onaylandı', 'Mühendis incelemesi', 'Tasarım incelemesi kararı', 'Müşteri talebi', 'Doküman revizyonu', 'Hatalı giriş düzeltmesi'];
 
 const order = (t: string) => SCREENS.findIndex((s) => s.key === screenOfTable(t)?.screen);
 

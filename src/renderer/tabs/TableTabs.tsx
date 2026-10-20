@@ -11,7 +11,7 @@ import { COMPOSITE_CHECKLIST, blankRow, nextId } from '../../shared/model';
 import type { AnyRow, KcRow, Project, TableKey } from '../../shared/types';
 import { api, isDesktop } from '../api';
 import { PasteTextDialog, useAi } from '../components/AiDialogs';
-import { useAutogen } from '../components/Autogen';
+import { useAutogen, useFillBlanks } from '../components/Autogen';
 import { Grid } from '../components/Grid';
 import { Modal } from '../components/Modal';
 import { CapabilityScreen, MsaScreen } from '../screens/Cap'; // v4-cap
@@ -305,6 +305,7 @@ export function DfmeaTab() {
   const [sel, setSel] = useState<string[]>([]);
   const ai = useAi();
   const gen = useAutogen();
+  const fillBlanks = useFillBlanks('dfmea');
   const fromFunctions = async () => {
     const b = batch(project);
     for (const s of project.structure.filter((s) => s.function && !project.dfmea.some((d) => d.functionId === s.id)))
@@ -325,6 +326,9 @@ export function DfmeaTab() {
             </button>
             <button className="btn" onClick={() => gen(['dfmea'], 'Hata kütüphanesinden DFMEA')} title="DFMEA satırı olmayan her fonksiyon için gereksinim tipine göre hazır hata modu, etki, neden, önleme/tespit kontrolü ve başlangıç S/O/D önerir">
               ⟳ Kütüphaneden öner
+            </button>
+            <button className="btn" onClick={() => fillBlanks(sel)} title="Seçili (seçim yoksa tüm) satırların boş alanlarını yapı ağacı ve gereksinimlerden doldurur: sistem/komponent, lokal/üst etki, doğrulama, risk kategorisi, gürültü faktörü, özel karakteristik, S 9–10 kararı ve aksiyon önerisi. Dolu alanlar değişmez.">
+              ⟳ Boşları doldur{sel.length ? ` (${sel.length})` : ''}
             </button>
             <button className="btn" onClick={() => gen(['structure', 'dfmea'], 'Gereksinim → yapı → DFMEA')} title="Önce eksik yapı/fonksiyonları, sonra DFMEA satırlarını önerir">
               ⟳ Gereksinimlerden tümü
@@ -417,6 +421,7 @@ export function PfmeaTab() {
   const [checklist, setChecklist] = useState(false);
   const ai = useAi();
   const gen = useAutogen();
+  const fillBlanks = useFillBlanks('pfmea');
   return (
     <>
       <Grid
@@ -435,6 +440,9 @@ export function PfmeaTab() {
             </button>
             <button className="btn" onClick={() => gen(['pfmea'], 'Hata kütüphanesinden PFMEA')} title="PFMEA satırı olmayan her proses adımı için hazır hata modu, etki, neden (4M), kök neden, önleme/tespit, hata önleme ve başlangıç S/O/D önerir; özel proses parametreleri için limit dışı hata modlarını ekler">
               ⟳ Kütüphaneden öner
+            </button>
+            <button className="btn" onClick={() => fillBlanks(sel)} title="Seçili (seçim yoksa tüm) satırların boş alanlarını proses adımı, parametreler, gereksinimler ve DFMEA'dan doldurur: proses fonksiyonu, ürün/proses gereksinimi, bağlı DFMEA, proses elemanı, ölçüm yöntemi, reaksiyon planı, özel karakteristik, S 9–10 kararı ve aksiyon önerisi. Dolu alanlar değişmez.">
+              ⟳ Boşları doldur{sel.length ? ` (${sel.length})` : ''}
             </button>
             <button className="btn ai" onClick={() => ai.suggestPfmea([])}>
               ✦ AI: PFMEA öner

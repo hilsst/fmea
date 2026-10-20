@@ -3,6 +3,7 @@
 // Kaynakta olmayan değer uydurulmaz (VERİ YOK); kütüphane içeriği ENGINEERING KNOWLEDGE olarak işaretlenir.
 import { findRequirementCandidates, locText } from './docmodel';
 import { DFMEA_LIB, PFMEA_LIB, paramTemplates, pfmeaAreaOf, type FailureTemplate } from './failureLib';
+import { dfmeaFillValues, pfmeaFillValues } from './fmeaFill';
 import { blankRow, nextId } from './model';
 import { NO_DATA, characteristicOf, reqAutoValues } from './reqAutofill';
 import type { AnyRow, PfmeaRow, ProcessParamRow, ProcessStepRow, Project, RequirementRow, StructureRow, TableKey } from './types';
@@ -24,6 +25,10 @@ export class Gen {
     this.edits.push({ kind: 'add', table, row });
     this.counts[table] = (this.counts[table] ?? 0) + 1;
     return id;
+  }
+  /** Henüz uygulanmamış (bu çalıştırmada eklenen) satırı yerinde tamamlar. */
+  fill(row: AnyRow, vals: Record<string, unknown>) {
+    Object.assign(row, vals);
   }
   set(table: TableKey, id: string, field: string, value: unknown) {
     this.p = { ...this.p, [table]: (this.p[table] as AnyRow[]).map((r) => (r.id === id ? { ...r, [field]: value } : r)) };
@@ -159,7 +164,7 @@ export function genDfmea(g: Gen, fnIds?: string[]) {
     const x = reqs[0]?.characteristic || fn.element || fn.id;
     const verification = reqs.map((r) => r.verification).find((v) => v && !v.includes(NO_DATA));
     for (const t of lib) {
-      g.add('dfmea', {
+      const id = g.add('dfmea', {
         functionId: fn.id,
         function: fn.function,
         reqIds: [...fn.reqIds],
@@ -176,6 +181,8 @@ export function genDfmea(g: Gen, fnIds?: string[]) {
         approval: 'AI Proposed',
         origin: 'template',
       } as Partial<AnyRow>);
+      const row = g.p.dfmea.find((d) => d.id === id)!;
+      g.fill(row, dfmeaFillValues(g.p, row));
     }
   }
 }
@@ -218,6 +225,8 @@ export function genPfmea(g: Gen, stepIds?: string[]) {
       );
       g.set('processParams', prm.id, 'pfIds', [...prm.pfIds, ...ids]);
     }
+    // Boş kalan alanlar (proses fonksiyonu, gereksinimler, bağlı DFMEA, ölçüm, reaksiyon ...) ilişkili veriden.
+    for (const r of g.p.pfmea.filter((x) => x.stepId === step.id)) g.fill(r, pfmeaFillValues(g.p, r));
   }
 }
 
