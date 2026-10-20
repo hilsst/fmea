@@ -7,9 +7,10 @@ import type {
   TableKey,
 } from './types';
 import { WORKFLOW_STEPS } from './types';
+import { SCMH_SCORING } from './scmhScoring';
 
 export const SCHEMA_VERSION = 2;
-export const APP_VERSION = '2.0.0';
+export const APP_VERSION = '3.0.0';
 
 export const ID_PREFIX: Record<TableKey, string> = {
   documents: 'DOC',
@@ -117,13 +118,13 @@ export function blankRow(table: TableKey, id: string): AnyRow {
     case 'dfmea':
       return { id, ...fmeaCommon, system: '', subsystem: '', component: '', functionId: '', function: '', reqIds: [], requirement: '', localEffect: '', higherEffect: '', verification: '' };
     case 'processSteps':
-      return { id, opNo: '', name: '', description: '', machine: '', tool: '', specialProcess: false, productChars: '', processChars: '', source: '', notes: '' };
+      return { id, opNo: '', name: '', description: '', machine: '', tool: '', specialProcess: false, productChars: '', processChars: '', source: '', notes: '', stepType: [], stepTypeOther: '', classification: '' };
     case 'pfmea':
       return { id, ...fmeaCommon, stepId: '', opNo: '', stepName: '', processFunction: '', requirement: '', dfIds: [], errorProofing: '', measurement: '', reactionPlan: '', processElement: '', cause4M: '', why1: '', why2: '', why3: '', why4: '', why5: '', rootCause: '' };
     case 'kcs':
       return { id, sourceId: '', characteristic: '', kcClass: '', specification: '', severity: null, rationale: '', status: 'AI Proposed', autoCreated: false, notes: '', category: '', fSafety: false, fRegulatory: false, fCustomer: false, fSpecialProcess: false, fTolerance: false, fCapability: false, fHistorical: false, fDetection: false };
     case 'controlPlan':
-      return { id, stepId: '', opNo: '', processName: '', machine: '', tool: '', pfId: '', kcId: '', productChar: '', processChar: '', kcClass: '', specification: '', method: '', gauge: '', sampleSize: '', frequency: '', controlMethod: '', reactionPlan: '', responsible: '', autoCreated: false, notes: '', charType: '', tolerance: '', record: '', ppId: '' };
+      return { id, stepId: '', opNo: '', processName: '', machine: '', tool: '', pfId: '', kcId: '', productChar: '', processChar: '', kcClass: '', specification: '', method: '', gauge: '', sampleSize: '', frequency: '', controlMethod: '', reactionPlan: '', responsible: '', autoCreated: false, notes: '', charType: '', tolerance: '', record: '', ppId: '', reference: '' };
     case 'msa':
       return { id, cpId: '', kcId: '', characteristic: '', gauge: '', study: '', status: 'Planned', result: '', autoCreated: false, notes: '', dataType: '' };
     case 'capability':
@@ -164,6 +165,14 @@ export const DEFAULT_META: ProjectMeta = {
   supplier: '',
   location: '',
   confidentiality: '',
+  organization: '',
+  exportControl: '',
+  otherRestrictions: '',
+  productOwner: '',
+  processOwner: '',
+  facilitator: '',
+  dfmeaLevel: '',
+  scmhPhase: '',
 };
 
 const DEFAULT_STEP_ROLE: Record<string, string> = {
@@ -193,6 +202,7 @@ export const DEFAULT_SETTINGS: Settings = {
   kcClasses: ['Normal', 'Significant', 'Critical', 'Key Characteristic', 'Safety Characteristic', 'Regulatory Characteristic'],
   workflow: WORKFLOW_STEPS.map((step) => ({ step, enabled: true, role: DEFAULT_STEP_ROLE[step] })),
   reasonFields: ['s', 'o', 'd', 'kcs.status', 'kcs.category', 'kcs.kcClass', 'approval'],
+  scoringStandard: 'SCMH',
 };
 
 // AIAG-VDA (2019) yapısına dayalı özet kriterler. Kurum/müşteri tablosu varsa "Puanlama" sekmesinden değiştirilir.
@@ -285,7 +295,8 @@ export function newProject(): Project {
     schemaVersion: SCHEMA_VERSION,
     meta: { ...DEFAULT_META, startDate: today, revisionDate: today },
     settings: { ...DEFAULT_SETTINGS },
-    scoring: structuredClone(DEFAULT_SCORING),
+    // Yeni projeler IAQG SCMH puanlama tablolarıyla başlar (settings.scoringStandard = 'SCMH').
+    scoring: structuredClone(SCMH_SCORING),
     documents: [],
     requirements: [],
     structure: [],
@@ -338,13 +349,18 @@ export function normalizeProject(raw: Partial<Project>, report?: MigrationReport
       ...(raw.settings ?? {}),
       kcRules: { ...base.settings.kcRules, ...(raw.settings?.kcRules ?? {}) },
     },
-    scoring: raw.scoring ?? base.scoring,
+    scoring: raw.scoring ?? (!raw.settings?.scoringStandard ? structuredClone(DEFAULT_SCORING) : base.scoring),
     changeLog: raw.changeLog ?? [],
     baselines: raw.baselines ?? [],
     approvals: raw.approvals ?? [],
     auditLog: raw.auditLog ?? [],
     docIndex: raw.docIndex ?? {},
   } as Project;
+  // scoringStandard alanı olmayan (SCMH öncesi) dosyalar AIAG-VDA olarak kalır; mevcut projeler sessizce değişmez.
+  if (!raw.settings?.scoringStandard) {
+    p.settings.scoringStandard = 'AIAG-VDA';
+    notes.push('Puanlama standardı alanı yoktu: AIAG-VDA olarak işaretlendi (SCMH için Ayarlar’dan değiştirin).');
+  }
   for (const t of Object.keys(ID_PREFIX) as TableKey[]) {
     const rows = (raw[t] as AnyRow[] | undefined) ?? (t === 'history' ? base.history : []);
     (p as unknown as Record<string, AnyRow[]>)[t] = rows.map((r) => ({ ...blankRow(t, r.id), ...r }) as AnyRow);

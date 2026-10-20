@@ -1,6 +1,6 @@
 import { completenessScore, qualityChecks } from '../../shared/checks';
 import { apOf } from '../../shared/scoring';
-import type { ProjectMeta, Settings } from '../../shared/types';
+import { SCMH_DFMEA_LEVELS, SCMH_PHASES, type ProjectMeta, type Settings } from '../../shared/types';
 import { TextCell } from '../components/Cells';
 import { useStore } from '../store';
 import type { TabKey } from '../../shared/tabs';
@@ -22,6 +22,13 @@ const META_FIELDS: [keyof ProjectMeta, string, boolean?][] = [
   ['location', 'Lokasyon'],
   ['confidentiality', 'Gizlilik seviyesi'],
   ['scope', 'Kapsam / Sınırlar (dahil olan – olmayan)', true],
+  // SCMH form başlıkları
+  ['organization', 'Şirket / Organizasyon adı (SCMH)'],
+  ['exportControl', 'Export Control Classification'],
+  ['otherRestrictions', 'Diğer kısıtlamalar'],
+  ['productOwner', 'Ürün sahibi ve e-posta (DFMEA)'],
+  ['processOwner', 'Proses sahibi ve e-posta (PFMEA/PFD/CP)'],
+  ['facilitator', 'FMEA facilitator ve e-posta'],
 ];
 
 export function ProjectTab({ go }: { go: (t: TabKey) => void }) {
@@ -78,6 +85,20 @@ export function ProjectTab({ go }: { go: (t: TabKey) => void }) {
                 <TextCell value={p.meta[k]} onCommit={setMeta(k)} multiline={multi} type={k.endsWith('Date') ? 'date' : 'text'} />
               </label>
             ))}
+            <label>
+              <span>DFMEA seviyesi (SCMH)</span>
+              <select className="cell-select" value={p.meta.dfmeaLevel} onChange={(e) => setMeta('dfmeaLevel')(e.target.value)}>
+                <option value="">—</option>
+                {SCMH_DFMEA_LEVELS.map((x) => <option key={x}>{x}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>PFMEA / Kontrol Planı aşaması (SCMH)</span>
+              <select className="cell-select" value={p.meta.scmhPhase} onChange={(e) => setMeta('scmhPhase')(e.target.value)}>
+                <option value="">—</option>
+                {SCMH_PHASES.map((x) => <option key={x}>{x}</option>)}
+              </select>
+            </label>
           </div>
         </section>
 

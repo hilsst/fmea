@@ -9,11 +9,12 @@ import { verifySource } from '../../shared/docmodel';
 import { impactOf } from '../../shared/impact';
 import { COMPOSITE_KB, PRODUCT_TYPES, PRODUCT_TYPE_HINTS, isComposite } from '../../shared/kb';
 import { evaluateKc } from '../../shared/kc';
-import { DEFAULT_SETTINGS, TABLE_LABEL, nextId, tableOfId } from '../../shared/model';
+import { DEFAULT_SCORING, DEFAULT_SETTINGS, TABLE_LABEL, nextId, tableOfId } from '../../shared/model';
 import { failedRunEdit } from '../../shared/proposals';
 import { QUALITY_SCORE_NOTE, qualityReport, whatDidIMiss } from '../../shared/quality';
 import { buildReviewReportHtml, type AiReview } from '../../shared/report';
 import { AIAG_VDA_AP, D_BANDS, O_BANDS, RPN_WARNING, S_BANDS, apOf, parseData } from '../../shared/scoring';
+import { SCMH_SCORING, isScmh, scmhPriority, scmhSort } from '../../shared/scmhScoring';
 import { searchLessons } from '../../shared/similarity';
 import { applyTemplate, makeTemplate, validateTemplate, type CompanyTemplate } from '../../shared/template';
 import { ROLES, WORKFLOW_STEPS, type AnyRow, type ApprovalRecord, type EvidenceRow, type KcRules, type Project, type Settings } from '../../shared/types';
@@ -54,7 +55,9 @@ export function DashboardScreen({ go }: { go: Go }) {
     { label: 'Gereksinim', value: p.requirements.length, go: ['requirements'] },
     { label: 'DFMEA satırı', value: p.dfmea.length, go: ['dfmea', 'dfmea'] },
     { label: 'PFMEA satırı', value: p.pfmea.length, go: ['pfmea', 'pfmea'] },
-    { label: 'AP = High', value: apH, go: ['risk'], tone: apH ? 'red' : '' },
+    isScmh(p)
+      ? { label: 'S 9–10 (RPN’den bağımsız incelenmeli)', value: fm.filter((r) => scmhPriority(r).review).length, go: ['risk'], tone: fm.some((r) => scmhPriority(r).review) ? 'red' : '' }
+      : { label: 'AP = High', value: apH, go: ['risk'], tone: apH ? 'red' : '' },
     { label: 'AI önerisi (karar bekliyor)', value: aiPending, go: ['aiReview', 'aiRuns'], tone: aiPending ? 'amber' : '' },
     { label: 'Mantık hatası', value: errors, go: ['quality'], tone: errors ? 'red' : '' },
     { label: 'Doğrulanmamış kanıt', value: unverified, go: ['documents', 'evidence'], tone: unverified ? 'amber' : '' },
@@ -160,9 +163,20 @@ export function RiskScreen() {
     base[key] = row.join('');
     setTable(base, `AP tablosu: S${key.split(',')[0]} O${key.split(',')[1]} D bandı ${D_BANDS[di]} → ${v}`);
   };
-  return (
-    <div className="page">
-      <div className="callout warn"><b>{RPN_WARNING}</b> Öncelik: emniyet/regülasyon → yüksek severity → KC → AP → RPN.</div>
+  const scmh = isScmh(p);
+  const setStandard = (std: 'SCMH' | 'AIAG-VDA') => {
+    if (std === p.settings.scoringStandard) return;
+    const tables = std === 'SCMH' ? SCMH_SCORING : DEFAULT_SCORING;
+    if (!window.confirm(`Puanlama standardı ${std === 'SCMH' ? 'IAQG SCMH' : 'AIAG-VDA 2019'} olacak.\n\nS/O/D kriter metinleri bu standardın tablolarıyla değiştirilir. Satırlardaki mevcut S/O/D puanları DEĞİŞMEZ; yeni kriterlere göre yeniden değerlendirilmeleri gerekir.\n\nOnaylıyor musunuz?`)) return;
+    mutate((d) => {
+      d.settings.scoringStandard = std;
+      d.scoring.severity = structuredClone(tables.severity);
+      d.scoring.occurrence = structuredClone(tables.occurrence);
+      d.scoring.detection = structuredClone(tables.detection);
+    }, { kind: 'Modified', table: 'settings', id: 'scoringStandard', field: 'scoringStandard', from: p.settings.scoringStandard, to: std, comment: 'Puanlama standardı ve S/O/D kriter tabloları değiştirildi' });
+  };
+  const ranked = scmh ? scmhSort([...p.dfmea, ...p.pfmea].filter((r) => r.failureMode)).slice(0, 40) : [];
+  const apSection = (
       <section className="card">
         <h3>Action Priority (AP) tablosu {custom ? <span className="badge b-purple">{p.scoring.apName || 'Şirket tablosu'}</span> : <span className="badge b-gray">AIAG-VDA 2019</span>}</h3>
         <p className="muted">Hücreye tıklayarak H/M/L değiştirin. Değişiklik bütün DFMEA/PFMEA satırlarının AP değerini etkiler; kaydetmeden önce etkilenen satırlar gösterilir.</p>
@@ -203,6 +217,45 @@ export function RiskScreen() {
           </tbody>
         </table>
       </section>
+  );
+  return (
+    <div className="page">
+      <section className="card">
+        <h3>Puanlama standardı</h3>
+        <div className="row-btns">
+          <label className="check-row"><input type="radio" checked={scmh} onChange={() => setStandard('SCMH')} /> <b>IAQG SCMH</b> (DFMEA 7.2.10 / PFMEA 7.2.11 D/P-SEV, OCC, DET tabloları)</label>
+          <label className="check-row"><input type="radio" checked={!scmh} onChange={() => setStandard('AIAG-VDA')} /> <b>AIAG-VDA 2019</b> (Action Priority)</label>
+        </div>
+        {scmh
+          ? <div className="callout">SCMH kuralı: RPN eşiği yoktur. S 9–10 olan her satır RPN’den bağımsız incelenir; ardından RPN ve S×O’ya göre önceliklendirilir.</div>
+          : <div className="callout warn"><b>{RPN_WARNING}</b> Öncelik: emniyet/regülasyon → yüksek severity → KC → AP → RPN.</div>}
+      </section>
+      {scmh && (
+        <section className="card">
+          <h3>SCMH öncelik sırası (ilk {ranked.length})</h3>
+          {ranked.length === 0 && <p className="muted">Puanlanmış hata modu yok.</p>}
+          <table className="effects">
+            <thead><tr><th>#</th><th>ID</th><th>Hata modu</th><th>S</th><th>O</th><th>D</th><th>RPN</th><th>S×O</th><th>Neden</th></tr></thead>
+            <tbody>
+              {ranked.map((r, i) => {
+                const pr = scmhPriority(r);
+                return (
+                  <tr key={r.id} className="click" onClick={() => window.dispatchEvent(new CustomEvent('why', { detail: r.id }))}>
+                    <td>{i + 1}</td>
+                    <td className="rid">{r.id}{pr.review && <span className="badge b-red"> S≥9</span>}</td>
+                    <td>{r.failureMode}</td>
+                    <td>{r.s ?? '–'}</td><td>{r.o ?? '–'}</td><td>{r.d ?? '–'}</td>
+                    <td>{r.s && r.o && r.d ? r.s * r.o * r.d : '–'}</td>
+                    <td>{r.s && r.o ? r.s * r.o : '–'}</td>
+                    <td className="small">{pr.reason}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      )}
+      {scmh ? <details className="card"><summary><b>AIAG-VDA Action Priority tablosu (yalnızca referans)</b></summary>{apSection}</details> : apSection}
       <ScoringTab />
     </div>
   );
@@ -899,7 +952,8 @@ export function SettingsScreen() {
         </section>
 
         <section className="card">
-          <h3>KC kuralları</h3>
+          <ScmhDirSetting />
+          <h3 className="mt">KC kuralları</h3>
           <div className="form">
             <label>
               <span>KC Severity eşiği</span>
@@ -973,5 +1027,21 @@ export function SettingsScreen() {
         </Modal>
       )}
     </div>
+  );
+}
+
+function ScmhDirSetting() {
+  const [st, setSt] = useState<{ dir: string; missing: string[] } | null>(null);
+  useEffect(() => {
+    if (isDesktop) api.scmhGetDir().then(setSt);
+  }, []);
+  if (!isDesktop) return null;
+  return (
+    <>
+      <h3>IAQG SCMH şablonları</h3>
+      <p className="muted small">SCMH paketi resmi IAQG şablonlarına doldurulur (PFD 7.2.9, DFMEA 7.2.10, PFMEA 7.2.11, Kontrol Planı 7.2.13). Şablonlar © IAQG olduğu için uygulamayla dağıtılmaz; scmh.iaqg.org’dan indirip bir klasöre koyun.</p>
+      <p className="small">{st?.dir ? <>Klasör: <b>{st.dir}</b></> : 'Klasör seçilmedi.'} {st && st.missing.length > 0 && <span className="warn-text">Eksik: {st.missing.join(', ')}</span>}{st?.dir && st.missing.length === 0 && <span className="ok-text"> ✓ 4 şablon bulundu</span>}</p>
+      <button className="btn" onClick={async () => { const r = await api.scmhPickDir(); if (r) setSt(r); }}>Klasör seç…</button>
+    </>
   );
 }

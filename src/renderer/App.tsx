@@ -5,6 +5,7 @@ import { SCREENS, SCREEN_BY_KEY, screenOfTable, type ScreenKey } from '../shared
 import { buildReviewReportHtml } from '../shared/report';
 import { sampleProject } from '../shared/sample';
 import { apOf } from '../shared/scoring';
+import { isScmh } from '../shared/scmhScoring';
 import type { TabKey } from '../shared/tabs';
 import { applyTemplate, makeTemplate, validateTemplate, type CompanyTemplate } from '../shared/template';
 import type { Project } from '../shared/types';
@@ -27,12 +28,12 @@ import {
 type Badge = { n: number | string; tone?: string } | null;
 
 function screenBadge(p: Project, key: ScreenKey): Badge {
-  const hi = (rows: { s: number | null; o: number | null; d: number | null }[]) => rows.filter((r) => apOf(p, r.s, r.o, r.d) === 'H').length;
+  const hi = (rows: { s: number | null; o: number | null; d: number | null }[]) => rows.filter((r) => (isScmh(p) ? (r.s ?? 0) >= 9 : apOf(p, r.s, r.o, r.d) === 'H')).length;
   switch (key) {
     case 'documents': return { n: p.documents.length };
     case 'requirements': return { n: p.requirements.length };
-    case 'dfmea': { const h = hi(p.dfmea); return h ? { n: `${h} H`, tone: 'red' } : { n: p.dfmea.length }; }
-    case 'pfmea': { const h = hi(p.pfmea); return h ? { n: `${h} H`, tone: 'red' } : { n: p.pfmea.length }; }
+    case 'dfmea': { const h = hi(p.dfmea); return h ? { n: isScmh(p) ? `${h} S≥9` : `${h} H`, tone: 'red' } : { n: p.dfmea.length }; }
+    case 'pfmea': { const h = hi(p.pfmea); return h ? { n: isScmh(p) ? `${h} S≥9` : `${h} H`, tone: 'red' } : { n: p.pfmea.length }; }
     case 'kcs': { const w = p.kcs.filter((k) => k.status === 'AI Proposed').length; return w ? { n: `${w} bekliyor`, tone: 'amber' } : { n: p.kcs.length }; }
     case 'controlPlan': return { n: p.controlPlan.length };
     case 'msa': return { n: p.msa.length };
@@ -129,6 +130,15 @@ export function App() {
     } else if (!isDesktop) toast('Excel çıktısı masaüstü uygulamasında çalışır.', 'warn');
   }, [project, toast]);
 
+  const exportScmh = useCallback(async () => {
+    if (!isDesktop) return toast('SCMH paketi masaüstü uygulamasında oluşturulur.', 'warn');
+    const r = await api.exportScmh(project);
+    if (r.ok) {
+      toast(`SCMH paketi oluşturuldu: ${r.files.length} dosya`);
+      api.reveal(r.files[0]);
+    } else if (r.error) toast(r.error, 'err');
+  }, [project, toast]);
+
   const report = useCallback(async () => {
     if (!isDesktop) return toast('Rapor çıktısı masaüstü uygulamasında çalışır.', 'warn');
     const out = await api.exportReport({ html: buildReviewReportHtml(project), format: 'pdf', name: `${project.meta.partNumber || 'FMEA'}_inceleme` });
@@ -162,6 +172,7 @@ export function App() {
         else if (id === 'saveAs') save(true);
         else if (id === 'export2') exportExcel(true);
         else if (id === 'export') exportExcel(false);
+        else if (id === 'scmh') exportScmh();
         else if (id === 'import') setImporting(true);
         else if (id === 'report') report();
         else if (id === 'saveTemplate') saveTemplate();
@@ -178,7 +189,7 @@ export function App() {
           if (await save()) api.quit();
         }
       }),
-    [open, save, exportExcel, report, saveTemplate, openTemplate, undo, redo], // eslint-disable-line react-hooks/exhaustive-deps
+    [open, save, exportExcel, exportScmh, report, saveTemplate, openTemplate, undo, redo], // eslint-disable-line react-hooks/exhaustive-deps
   );
   useEffect(() => api.onOpenFile((p) => open(p)), [open]);
 
@@ -222,7 +233,8 @@ export function App() {
           <button className="btn ghost" disabled={!canUndo} onClick={undo} title="Geri al (Ctrl+Z)">↶</button>
           <button className="btn ghost" disabled={!canRedo} onClick={redo} title="Yinele (Ctrl+Y)">↷</button>
           <button className="btn ghost" onClick={() => setImporting(true)} disabled={!isDesktop} title="Mevcut bir Excel FMEA’yı kolon eşleyerek içe aktarır">Excel içe aktar</button>
-          <button className="btn primary" onClick={() => exportExcel(true)}>Excel’e aktar</button>
+          <button className="btn primary" onClick={exportScmh} title="IAQG SCMH şablonlarına: PFD 7.2.9, DFMEA 7.2.10, PFMEA 7.2.11, Kontrol Planı 7.2.13">SCMH paketi</button>
+          <button className="btn ghost" onClick={() => exportExcel(true)} title="14 sayfalık FMEA Studio çalışma kitabı">Excel’e aktar</button>
           <button className="btn ghost" onClick={() => go('settings')} title="Ayarlar">⚙</button>
           <button className="btn ghost" onClick={() => setHelp(true)} title="Yardım">?</button>
         </div>
@@ -363,7 +375,7 @@ function Welcome({ recent, onNew, onOpen, onSample }: { recent: string[]; onNew:
         <div className="w-head">
           <span className="logo big">F</span>
           <div>
-            <h1>FMEA Studio 2.0</h1>
+            <h1>FMEA Studio 3.0</h1>
             <p>Doküman → Gereksinim → DFMEA → PFMEA → Risk → KC → Kontrol Planı → MSA → Capability → Kalite → Onay</p>
           </div>
         </div>

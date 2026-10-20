@@ -1,6 +1,6 @@
 {
   "name": "fmea-studio",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "DFMEA / PFMEA / KC / Kontrol Planı / İzlenebilirlik masaüstü uygulaması",
   "main": "dist/main/main.js",
   "scripts": {
@@ -29,6 +29,7 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
+    "@xmldom/xmldom": "^0.9.8",
     "concurrently": "^10.0.6",
     "cross-env": "^10.1.0",
     "dxf-parser": "1.1.2",

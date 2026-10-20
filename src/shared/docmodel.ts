@@ -7,6 +7,9 @@ export type ExtractStatus = 'ok' | 'partial' | 'unsupported' | 'error';
 
 export const UNSUPPORTED_MSG = 'Bu dosya formatı analiz için desteklenmiyor.';
 export const CAD_PARTIAL_MSG = 'CAD geometry imported but this feature is not automatically interpreted.';
+/** CAD geometrisi yorumlandığında: değerler nominal model geometrisidir, PMI dışında tolerans içermez. */
+export const CAD_NOMINAL_MSG =
+  'CAD geometrisi yorumlandı: değerler nominal model geometrisidir ve tolerans içermez (PMI hariç) – teknik resimden doğrulanmalı.';
 
 export const EXT_PARSER: Record<string, ParserId> = {
   pdf: 'pdf', docx: 'docx', xlsx: 'xlsx', xlsm: 'xlsx', csv: 'csv', pptx: 'pptx', txt: 'txt', md: 'txt',
@@ -39,6 +42,11 @@ export interface DocBlock {
   text: string;
   loc: DocLoc;
   level?: number;
+  /**
+   * CAD ayrıştırıcısından gelen blok: 'geometry' = nominal model geometrisi (tolerans yok),
+   * 'pmi' = modelde tanımlı ölçü/tolerans (AP242 PMI), 'heuristic' = sezgisel çıkarım. Gereksinim adayı güvenini belirler.
+   */
+  cadSource?: 'geometry' | 'pmi' | 'heuristic';
 }
 
 export interface ExtractMessage {
@@ -55,6 +63,80 @@ export interface EmailInfo {
   attachments: { name: string; size: number; mime: string }[];
 }
 
+export type Vec3 = [number, number, number];
+
+/** Sınırlayıcı kutu. min/max/size dosya biriminde, sizeMm milimetre. */
+export interface CadBBox {
+  min: Vec3;
+  max: Vec3;
+  size: Vec3;
+  sizeMm: Vec3;
+  /** Kutunun hangi noktalardan hesaplandığı: B-rep köşeleri (güvenilir) … tüm noktalar (güvenilmez). */
+  source: 'brep' | 'vertices' | 'tessellation' | 'all-points' | 'iges-geometry';
+}
+
+/** Aynı çaptaki silindirik özellik grubu. count = ayrı eksen (özellik) sayısı, faces = yüz sayısı. */
+export interface CadHoleGroup {
+  diameter: number;
+  diameterMm: number;
+  count: number;
+  faces: number;
+  /** hole = iç (içbükey) silindir, boss = dış (dışbükey) silindir; yön belirlenemezse cylindrical. Geçiş / kör ayrımı yapılmaz. */
+  kind: 'hole' | 'boss' | 'cylindrical';
+  part?: string;
+}
+
+export interface CadCircleGroup {
+  diameter: number;
+  diameterMm: number;
+  count: number;
+  full: number;
+  arcs: number;
+}
+
+export interface CadPart {
+  id: string;
+  name: string;
+  description?: string;
+  revision?: string;
+  solids?: number;
+  bbox?: CadBBox;
+}
+
+export interface CadAssemblyLink {
+  parent: string;
+  child: string;
+  quantity: number;
+}
+
+export interface CadMaterial {
+  name: string;
+  part?: string;
+  /** Kaynak varlık (MATERIAL_DESIGNATION, DESCRIPTIVE_REPRESENTATION_ITEM, ...) */
+  source: string;
+  density?: string;
+}
+
+/** Modelde tanımlı ölçü / tolerans (AP242 semantik PMI). Değerler mm (açılar °). */
+export interface CadPmi {
+  kind: string;
+  name?: string;
+  value?: number;
+  unit?: string;
+  tolerance?: string;
+  upper?: number;
+  lower?: number;
+  datum?: string;
+  text: string;
+}
+
+/** Sezgisel et kalınlığı adayı: zıt yönlü iki büyük paralel düzlem arası mesafe. */
+export interface CadThickness {
+  value: number;
+  valueMm: number;
+  part?: string;
+}
+
 export interface CadInfo {
   format: 'DXF' | 'STEP' | 'IGES';
   units?: string;
@@ -62,6 +144,21 @@ export interface CadInfo {
   entityCounts: Record<string, number>;
   /** STEP header: FILE_NAME, FILE_SCHEMA vb. */
   header?: Record<string, string>;
+  /** 1 dosya birimi kaç mm */
+  unitScaleToMm?: number;
+  bbox?: CadBBox;
+  solids?: number;
+  shells?: number;
+  /** Yüz sayısı yüzey türüne göre (PLANE, CYLINDRICAL_SURFACE, B_SPLINE_SURFACE, ...) */
+  faces?: Record<string, number>;
+  holes?: CadHoleGroup[];
+  circles?: CadCircleGroup[];
+  parts?: CadPart[];
+  assembly?: CadAssemblyLink[];
+  materials?: CadMaterial[];
+  pmi?: CadPmi[];
+  thickness?: CadThickness[];
+  warnings?: string[];
 }
 
 export interface ExtractedDoc {
@@ -204,6 +301,14 @@ export function findRequirementCandidates(doc: ExtractedDoc): RequirementCandida
       // Güven: tetik + değer + konum net ise High; yalnızca tetik ise Medium; alıntı / belirsiz ise Low
       let confidence: RequirementCandidate['confidence'] = trig && spec ? 'High' : trig || isDim ? 'Medium' : 'Low';
       if (b.kind === 'quoted') confidence = 'Low';
+      let trigger = trig ? trig[0] : isDim ? 'drawing dimension' : 'numeric limit';
+      // CAD: yalnızca ölçü blokları aday olur. PMI toleranslı → High; nominal geometri → Medium; sezgisel → Low.
+      if (b.cadSource) {
+        if (!isDim) continue;
+        const limited = !!spec && (spec.lsl != null || spec.usl != null);
+        confidence = b.cadSource === 'pmi' ? (limited ? 'High' : 'Medium') : b.cadSource === 'geometry' ? 'Medium' : 'Low';
+        trigger = b.cadSource === 'pmi' ? 'CAD PMI' : b.cadSource === 'geometry' ? 'CAD nominal geometry' : 'CAD heuristic';
+      }
       out.push({
         text,
         characteristic: ch ? ch[1] : '',
@@ -217,7 +322,7 @@ export function findRequirementCandidates(doc: ExtractedDoc): RequirementCandida
         loc: b.loc,
         blockId: b.id,
         confidence,
-        trigger: trig ? trig[0] : isDim ? 'drawing dimension' : 'numeric limit',
+        trigger,
       });
     }
   }
