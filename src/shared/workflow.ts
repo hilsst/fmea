@@ -1,5 +1,6 @@
 // Engineering Approval Workflow (§36). AI hiçbir adımı onaylayamaz; her karar kullanıcı adıyla kaydedilir.
 import type { ApprovalRecord, Project, WorkflowStep } from './types';
+import { riskApprovalBlockers } from './risk'; // v4-risk
 
 export function enabledSteps(p: Project): { step: WorkflowStep; role: string }[] {
   return p.settings.workflow.filter((w) => w.enabled);
@@ -39,6 +40,11 @@ export function decisionError(p: Project, d: DecisionInput, openCritical: number
   if (d.decision !== 'Approved' && !d.comment.trim()) return 'Ret / iade için yorum zorunludur.';
   if (d.decision === 'Approved' && (d.step === 'Final Approval' || d.step === 'Baseline') && openCritical > 0)
     return `${openCritical} kritik/emniyet/regülasyon kaydı hâlâ “AI Proposed” durumunda; önce tek tek değerlendirilmelidir.`;
+  // v4-risk: SCMH S 9–10 satırlarında severity kararı zorunlu (Q&A Q21); eksikse Final onay / baseline engellenir.
+  if (d.decision === 'Approved' && (d.step === 'Final Approval' || d.step === 'Baseline')) {
+    const b = riskApprovalBlockers(p);
+    if (b.length) return `${b.length} S 9–10 satırda severity kararı eksik veya geçersiz: ${b.slice(0, 10).join(', ')}${b.length > 10 ? ' …' : ''}.`;
+  }
   return '';
 }
 

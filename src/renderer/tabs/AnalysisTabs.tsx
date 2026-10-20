@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { traceability } from '../../shared/checks';
 import { rowLabel } from '../../shared/columns';
-import { apOf, riskLevel } from '../../shared/scoring';
+import { apOf } from '../../shared/scoring';
+import { riskLevelOf } from '../../shared/risk'; // v4-risk
 import type { ScoringEntry } from '../../shared/types';
 import { TextCell } from '../components/Cells';
 import { useStore } from '../store';
@@ -81,7 +82,7 @@ export function TraceabilityTab() {
                   const cps = project.controlPlan.filter((c) => kcs.some((k) => k.id === c.kcId) || pfs.some((p) => p.id === c.pfId));
                   return (
                     <div key={d.id} className="row">
-                      <div className={`node df ${riskLevel(d, project.settings, project.scoring.apTable).toLowerCase()}`}>{d.id}<small>{d.failureMode.slice(0, 50)} · AP {apOf(project, d.s, d.o, d.d) || '–'}</small></div>
+                      <div className={`node df ${riskLevelOf(project, d).toLowerCase()}`}>{d.id}<small>{d.failureMode.slice(0, 50)} · AP {apOf(project, d.s, d.o, d.d) || '–'}</small></div>
                       <span className="arr">→</span>
                       <div className="node pf">{pfs.length ? pfs.map((p) => p.id).join(', ') : <span className="gap-t">PFMEA yok</span>}</div>
                       <span className="arr">→</span>
