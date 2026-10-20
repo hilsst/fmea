@@ -13,8 +13,8 @@ import { defaultApqp, normalizeApqp } from './apqpModel'; // v4-apqp
 import { CAP_SETTINGS_DEFAULTS, CAP_V4_DEFAULTS, MSA_V4_DEFAULTS, capNormalize } from './capDefaults'; // v4-cap
 import { normalizeRisk } from './riskModel'; // v4-risk
 
-export const SCHEMA_VERSION = 2;
-export const APP_VERSION = '3.0.0';
+export const SCHEMA_VERSION = 3;
+export const APP_VERSION = '4.0.0';
 
 export const ID_PREFIX: Record<TableKey, string> = {
   documents: 'DOC',
@@ -413,6 +413,7 @@ export function normalizeProject(raw: Partial<Project>, report?: MigrationReport
     (p as unknown as Record<string, AnyRow[]>)[t] = rows.map((r) => ({ ...blankRow(t, r.id), ...r }) as AnyRow);
   }
   capNormalize(p, raw.settings, notes); // v4-cap
+  if (from === 2) notes.push('Dosya şema 2 → 3 (FMEA Studio 4.0) güncellendi: APQP/PPAP, KC yaşam döngüsü, MSA/capability ve PFD girdi/çıktı alanları boş eklendi; mevcut veriler değişmedi.');
   if (from < 2) {
     notes.push(`Dosya şema ${from || 'sürümsüz'} → ${SCHEMA_VERSION} güncellendi; mevcut veriler korundu, yeni alanlar boş eklendi.`);
     // v1 kayıtları: kaynağı elle/AI olarak işaretle (AI Proposed olanlar AI kökenli kabul edilir)

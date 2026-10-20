@@ -383,7 +383,7 @@ function Welcome({ recent, onNew, onOpen, onSample }: { recent: string[]; onNew:
         <div className="w-head">
           <span className="logo big">F</span>
           <div>
-            <h1>FMEA Studio 3.0</h1>
+            <h1>FMEA Studio 4.0</h1>
             <p>Doküman → Gereksinim → DFMEA → PFMEA → Risk → KC → Kontrol Planı → MSA → Capability → Kalite → Onay</p>
           </div>
         </div>
