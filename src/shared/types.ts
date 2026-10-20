@@ -18,7 +18,8 @@ export type Origin = 'manual' | 'ai' | 'import' | 'extraction' | 'template' | 's
 export type Basis = 'SOURCE DATA' | 'ENGINEERING KNOWLEDGE' | 'AI INFERENCE' | '';
 export type Cause4M = 'Man' | 'Machine' | 'Material' | 'Method' | 'Measurement' | 'Environment' | '';
 export type KcCategory = 'Normal' | 'Significant' | 'Critical' | 'Key Characteristic' | 'Safety Characteristic' | 'Regulatory Characteristic' | '';
-export type CharType = 'Product Characteristic' | 'Process Characteristic' | 'Process Parameter' | '';
+// v4-apqp: + bakım ve yazılım konfigürasyonu KP kalemleri (CP Q&A Q6, Q8); ürün bağlantısı gerektirmez.
+export type CharType = 'Product Characteristic' | 'Process Characteristic' | 'Process Parameter' | 'Maintenance / Equipment' | 'Software configuration' | '';
 export type Verification = 'VERIFIED' | 'VERIFIED – farklı konum' | 'SOURCE NOT VERIFIED' | 'MANUAL VERIFICATION REQUIRED' | '';
 export type ActionStatus = 'Open' | 'In Progress' | 'Completed' | 'Cancelled' | '';
 export type IssueStatus = 'Open' | 'Under Review' | 'Waiting Customer' | 'Resolved' | 'Closed' | '';
@@ -312,6 +313,8 @@ export interface PfmeaRow extends FmeaCommon {
   why4: string;
   why5: string;
   rootCause: string;
+  // v4-apqp: ön PFMEA (DRA ile eşzamanlı, SCMH 7.2.3 s.36) / yayımlanmış
+  stage?: 'Preliminary' | 'Released' | '';
   // v4-risk: SCMH 7.2.11 Rev A ürün / proses gereksinimi; KP kapsamı; DFMEA'ya tasarım talebi; PFD girdi/çıktı bağı
   productRequirement: string;
   processRequirement: string;
@@ -408,6 +411,8 @@ export interface ControlPlanRow extends BaseRow {
   ppId: string;
   /** SCMH CP "Reference": resim konumu / şartname bölümü (PFD ve PFMEA ile aynı numara). */
   reference: string;
+  // v4-apqp: KP fazları (Prototype / Pre-launch / Production); boş = tüm fazlar
+  phases?: import('./apqpModel').CpPhase[];
   // v4-cap: capability sınırlama (containment) bağlantısı ve SPC kurulumu (CAP webinar p42–46)
   capId?: string;
   spcChart?: string;
@@ -578,6 +583,8 @@ export interface ChangeRequestRow extends BaseRow {
   requestedBy: string;
   date: string;
   decision: string;
+  // v4-apqp: PPAP onayından sonra uygulanan ürün/proses değişikliği → yeniden sunum gerekir
+  ppapResubmission?: boolean;
 }
 
 /** 2.0 AI çalıştırma kaydı (§37, §64). */
@@ -725,6 +732,8 @@ export interface Project {
   auditLog: AuditEntry[];
   /** Doküman analiz çıktısı (yerel ayrıştırma); kaynak doğrulama için dosyada saklanır. */
   docIndex: Record<string, import('./docmodel').ExtractedDoc>;
+  // v4-apqp: APQP/PPAP proje kaydı (7.2.12, 7.2.14, 7.2.15, 7.2.20, PPAP)
+  apqp: import('./apqpModel').ApqpData;
   // v4-risk
   pfdItems: PfdItemRow[];
   /** Tablo başına son atanan satır numarası (azalmaz). */

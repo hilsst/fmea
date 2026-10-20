@@ -4,6 +4,7 @@ import { apOf, isKcCandidate } from './scoring';
 import { actionAddressed, needsAction, riskChecks } from './risk'; // v4-risk
 import { isScmh } from './scmhScoring'; // v4-risk
 import type { ControlPlanRow, DfmeaRow, KcRow, PfmeaRow, Project } from './types';
+import { apqpChecks } from './apqp'; // v4-apqp
 
 export interface CheckResult {
   key: string;
@@ -105,6 +106,7 @@ export function qualityChecks(p: Project): CheckResult[] {
     sc ? 'İnceleme listesindeki satırların hepsinde aksiyon veya karar var' : 'AP=High satırların hepsinde aksiyon var', (n) => sc ? `${n} inceleme satırında aksiyon/karar yok` : `${n} AP=High satırda önerilen aksiyon yok`, df.length + pf.length > 0);
   out.push(...riskChecks(p)); // v4-risk
 
+  out.push(...apqpChecks(p)); // v4-apqp: yalnızca APQP / ekip kaydı kullanılan projelerde
   out.push(...capChecks(p)); // v4-cap
   return out;
 }

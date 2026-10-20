@@ -8,6 +8,8 @@ import type { ExtractedDoc } from '../shared/docmodel';
 import { buildWorkbook } from '../shared/excel';
 import { buildWorkbookV2 } from '../shared/excel2';
 import { buildScmhPackage, scmhFileName, SCMH_TEMPLATE_FILES, type ScmhKind } from '../shared/scmh';
+import { cpPhaseVariants } from '../shared/apqp'; // v4-apqp
+import { apqpFileName, fillApqpApplicability, fillMaturityEvidence, fillPackagingForm, findApqpTemplate, type ApqpTemplateKind } from '../shared/apqpExport'; // v4-apqp
 import type { SheetGrid } from '../shared/importmap';
 import type { Project } from '../shared/types';
 import * as ai from './ai';
@@ -352,9 +354,28 @@ function registerIpc() {
       const t = Object.fromEntries(await Promise.all(KINDS.map(async (k) => [k, new Uint8Array(await fs.readFile(path.join(dir, SCMH_TEMPLATE_FILES[k])))]))) as Record<ScmhKind, Uint8Array>;
       const pkg = await buildScmhPackage(data, t);
       const files: string[] = [];
+      // v4-apqp: kontrol planı satırlarına faz atanmışsa her faz için ayrı KP dosyası (Prototype → Pre-Production kutusu)
+      const variants = cpPhaseVariants(data);
       for (const k of KINDS) {
+        if (k === 'cp' && variants.length) continue;
         const f = path.join(out.filePaths[0], scmhFileName(k, data));
         await fs.writeFile(f, pkg[k]);
+        files.push(f);
+      }
+      for (const v of variants) {
+        const f = path.join(out.filePaths[0], scmhFileName('cp', data).replace(/\.xlsx$/, `_${v.phase}.xlsx`));
+        await fs.writeFile(f, (await buildScmhPackage(v.project, t)).cp);
+        files.push(f);
+      }
+      // v4-apqp: opsiyonel şablonlar (7.2.12, 7.2.14, 7.2.20) klasörde varsa pakete eklenir
+      const present = fssync.readdirSync(dir);
+      const fillers: Record<ApqpTemplateKind, (p: Project, tpl: Uint8Array) => Promise<{ data: Buffer }>> = { apqp: fillApqpApplicability, maturity: fillMaturityEvidence, packaging: fillPackagingForm };
+      for (const kind of Object.keys(fillers) as ApqpTemplateKind[]) {
+        const tf = findApqpTemplate(present, kind);
+        if (!tf) continue;
+        const r = await fillers[kind](data, new Uint8Array(await fs.readFile(path.join(dir, tf))));
+        const f = path.join(out.filePaths[0], apqpFileName(kind, data));
+        await fs.writeFile(f, r.data);
         files.push(f);
       }
       return { ok: true, files, dir: out.filePaths[0] };

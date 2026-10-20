@@ -8,6 +8,7 @@ import type { CapabilityAnalysis } from './capability';
 import { impactOf } from './impact';
 import { evaluateKc } from './kc';
 import { PFD_STEP_TYPES } from './types';
+import { CP_PHASES as LISTS_CP_PHASES } from './apqpModel'; // v4-apqp
 import { RISK_COLS } from './riskColumns'; // v4-risk
 import type { AnyRow, CapabilityRow, ChangeRequestRow, DfmeaRow, KcRow, PfmeaRow, Project, TableKey } from './types';
 
@@ -201,6 +202,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     ...scoreReasons(),
     t('measurement', 'Ölçüm Yöntemi', 150, { help: 'Kontrol Planı ölçüm yöntemine aktarılır' }),
     long('reactionPlan', 'Reaksiyon Planı', 170),
+    sel('stage', 'PFMEA Olgunluğu', ['Preliminary', 'Released'], 110, { secondary: true, help: 'Ön PFMEA DRA ile eşzamanlı geliştirilir (SCMH 7.2.3 s.36); PRR/PPAP öncesi Released olmalı' }), // v4-apqp
     ...RISK_COLS.pf, // v4-risk
     ...fmeaTail(),
   ],
@@ -251,6 +253,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('reactionPlan', 'Reaksiyon Planı', 180, { help: 'Durdur → ayır → son kabul edilen parça → etkilenen lot/seri → Kalite → NCR → karar → kök neden → FMEA ve kontrol planı güncelleme' }),
     t('responsible', 'Sorumlu', 110),
     t('record', 'Kayıt', 120, { help: 'Ölçüm sonucunun kaydedildiği form / sistem' }),
+    { key: 'phases', label: 'KP Fazı', width: 140, type: 'multi', options: LISTS_CP_PHASES, help: 'Prototype / Pre-launch / Production. Boş = tüm fazlar. SCMH paketi faz başına ayrı KP üretir' }, // v4-apqp
     ...CP_SPC_COLUMNS, // v4-cap
     ...RISK_COLS.cp, // v4-risk
     long('notes', 'Notlar', 150, { secondary: true }),
@@ -365,6 +368,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     t('requestedBy', 'Talep Eden', 120),
     { key: 'date', label: 'Tarih', width: 120, type: 'date' },
     long('decision', 'Karar', 180),
+    { key: 'ppapResubmission', label: 'PPAP Yeniden Sunum', width: 100, type: 'bool', help: 'PPAP onayından sonra uygulanan ürün/proses değişikliğinde otomatik işaretlenir (PPAP webinar s.38)' }, // v4-apqp
   ],
   aiRuns: [
     t('at', 'Zaman', 150, { readonly: true }),
