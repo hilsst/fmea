@@ -3,6 +3,7 @@ import type { AiResult } from '../shared/aischema';
 import type { ExtractedDoc } from '../shared/docmodel';
 import type { SheetGrid } from '../shared/importmap';
 import type { Project } from '../shared/types';
+import type { UpdateStatus } from './updater';
 
 // Arayüzün erişebildiği tek yüzey (beyaz liste). Node API'leri arayüze açılmaz (§62).
 type Ok<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -53,6 +54,15 @@ const api = {
     ipcRenderer.on('menu', h);
     return () => {
       ipcRenderer.removeListener('menu', h);
+    };
+  },
+  checkUpdates: () => ipcRenderer.send('update:check'),
+  installUpdate: () => ipcRenderer.send('update:install'),
+  onUpdate: (cb: (s: UpdateStatus) => void) => {
+    const h = (_e: unknown, s: UpdateStatus) => cb(s);
+    ipcRenderer.on('update', h);
+    return () => {
+      ipcRenderer.removeListener('update', h);
     };
   },
   onOpenFile: (cb: (p: string) => void) => {
