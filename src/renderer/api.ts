@@ -39,6 +39,9 @@ function browserFallback(): Api {
     aiReview: fail,
     onMenu: noop,
     onOpenFile: noop,
+    checkUpdates: () => undefined,
+    installUpdate: () => undefined,
+    onUpdate: noop,
   } as unknown as Api;
 }
 

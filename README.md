@@ -9,7 +9,8 @@ Doküman → Gereksinim → DFMEA → PFMEA → Risk → Özel Karakteristik →
 1. GitHub’da **Actions → Build** sayfasından son başarılı çalışmayı açın ve **FMEA-Studio-Windows** dosyasını indirin.
    `v1.0.0` gibi bir etiket (tag) atıldığında aynı dosyalar **Releases** sayfasına da eklenir.
 2. `FMEA-Studio-Kurulum-….exe` kurulum sihirbazıdır, `FMEA-Studio-Tasinabilir-….exe` kurulum gerektirmeden çalışır.
-3. Uygulama kod imzalı olmadığı için Windows SmartScreen “Bilinmeyen yayımcı” uyarısı gösterebilir: **Ek bilgi → Yine de çalıştır**.
+3. **Otomatik güncelleme:** Kurulum sihirbazıyla kurulan sürüm açılışta GitHub Releases'te yeni sürüm olup olmadığına bakar ve yalnızca değişen blokları indirir (180 MB'ın tamamı değil). İndirme bitince “Şimdi yeniden başlat” denebilir ya da güncelleme uygulama kapanırken kurulur. Elle denetim: **Yardım → Güncellemeleri Denetle**. Taşınabilir sürüm otomatik güncellenmez. Güncelleme yalnızca bir `v*` etiketiyle Releases'e yayın açıldığında gelir; ilk kez artımlı güncelleme alabilmek için bu özelliği içeren sürüm bir kez tam olarak kurulmalıdır.
+4. Uygulama kod imzalı olmadığı için Windows SmartScreen “Bilinmeyen yayımcı” uyarısı gösterebilir: **Ek bilgi → Yine de çalıştır**.
 
 ## Ekranlar (sol menü, çalışma sırasına göre)
 
