@@ -11,14 +11,12 @@ import {
   isCi,
   isInactive,
   isListed,
-  kcCandidates,
   kcDisplayNo,
-  kcTriggers,
   kcTypeOf,
-  processKcCandidates,
   scmhKcDecision,
   type ScmhKcDecision,
 } from '../../shared/kcScmh';
+import { kcCandidates, kcTriggers, processKcCandidates } from '../../shared/kcTriggers';
 import { kcTraceRows, pfRowsOfKc, stepsOfKc, cpRowsOfKc, dfRowsOfKc } from '../../shared/kcTrace';
 import { nextId } from '../../shared/model';
 import type { Edit } from '../../shared/engine';
@@ -150,7 +148,7 @@ export function KcFlowScreen() {
   const { project: p, edit, toast } = useStore();
   const cands = kcCandidates(p);
   const proc = processKcCandidates(p);
-  const setSetting = (field: keyof Settings) => (v: unknown) => edit({ kind: 'settings', field, value: v === '' || v == null ? null : Number(v) }, 'KC tetik eşiği');
+  const setSetting = (field: keyof Settings) => (v: unknown) => edit({ kind: 'settings', field, value: v === '' || v == null ? null : Number(v) }, 'SCMH inceleme listesi');
   const setText = (field: keyof Settings) => (v: unknown) => edit({ kind: 'settings', field, value: String(v ?? '') }, 'KC numaralandırma');
 
   const addKc = async (data: Partial<KcRow>, title: string) => {
@@ -177,7 +175,7 @@ export function KcFlowScreen() {
     <div className="page">
       <section className="card">
         <h3>KC aday tetikleyicileri</h3>
-        <p className="muted small">Severity, emniyet, S×O, S×D, O×D, RPN (ekip eşiği), müşteri ve Special Requirement. Liste adaydır; KC kararı karar akışıyla verilir (RPN veya severity tek başına karar değildir).</p>
+        <p className="muted small">Severity, emniyet, S×O, S×D, O×D, RPN (Top-N inceleme listesi), müşteri ve Special Requirement. Liste adaydır; KC kararı karar akışıyla verilir (RPN veya severity tek başına karar değildir).</p>
         {cands.length === 0 ? <p className="muted">Tetikleyicisi olan satır yok.</p> : (
           <table className="effects small">
             <thead><tr><th>Satır</th><th>Tetikleyiciler</th><th>KC kaydı</th><th /></tr></thead>
@@ -229,12 +227,10 @@ export function KcFlowScreen() {
       </section>
 
       <section className="card">
-        <h3>Ekip eşikleri ve numaralandırma</h3>
-        <p className="muted small">SCMH S×O / S×D / O×D / RPN için sayısal eşik vermez (DFMEA Guidance O19: RPN eşiği karar kriteri olarak kullanılmaz). Eşikler yalnızca aday listesini besler; ekip kararıyla girilir, boş = tetik kapalı.</p>
+        <h3>İnceleme listesi ve numaralandırma</h3>
+        <p className="muted small">SCMH S×O / S×D / O×D / RPN için sayısal eşik vermez (DFMEA Guidance O19). S×O, S×D, O×D ve RPN tetikleyicileri ekibin “Top-N” inceleme listesini kullanır (Risk ekranıyla aynı ayar); boş = yalnızca sıralama.</p>
         <div className="form">
-          {([['kcTriggerSO', 'S×O eşiği'], ['kcTriggerSD', 'S×D eşiği'], ['kcTriggerOD', 'O×D eşiği'], ['kcTriggerRPN', 'RPN eşiği']] as [keyof Settings, string][]).map(([k, l]) => (
-            <label key={k}><span>{l}</span><TextCell type="number" value={p.settings[k] as number | null} onCommit={setSetting(k)} /></label>
-          ))}
+          <label><span>İnceleme listesi (ilk N satır)</span><TextCell type="number" value={p.settings.scmhReviewTopN} onCommit={setSetting('scmhReviewTopN')} /></label>
           <label><span>KC numarası ({'{PN}'}, {'{nnn}'})</span><TextCell value={p.settings.kcNumbering} onCommit={setText('kcNumbering')} /></label>
           <label><span>CI numarası</span><TextCell value={p.settings.ciNumbering} onCommit={setText('ciNumbering')} /></label>
         </div>

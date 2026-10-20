@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { cellText, COLUMNS, type Col } from '../../shared/columns';
 import { blankRow, nextId } from '../../shared/model';
-import { riskLevel } from '../../shared/scoring';
+import { riskLevelOf } from '../../shared/risk'; // v4-risk
 import type { AnyRow, TableKey } from '../../shared/types';
 import { useStore } from '../store';
 import { badgeClass, MultiCell, RefCell, ScoreCell, SelectCell, TextCell } from './Cells';
@@ -151,7 +151,7 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
           </thead>
           <tbody>
             {shown.map((r) => {
-              const risk = isFmea ? riskLevel(r as never, project.settings, project.scoring.apTable) : '';
+              const risk = isFmea ? riskLevelOf(project, r as never) : '';
               return (
                 <tr key={r.id} data-row={r.id} className={`${selected.includes(r.id) ? 'selected' : ''} ${risk ? 'risk-' + risk.toLowerCase() : ''} ${r.reassess ? 'reassess' : ''}`}>
                   <td className="sticky-col sel">

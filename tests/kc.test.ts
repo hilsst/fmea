@@ -6,8 +6,10 @@ import { planEdits, type Edit } from '../src/shared/engine';
 import { qualityChecks } from '../src/shared/checks';
 import { blankRow, newProject, nextId, normalizeProject } from '../src/shared/model';
 import { buildKcForm, kcFormFileName, kcFormRows, KC_FORM_LAYOUT } from '../src/shared/kcForm';
-import { formatKcNo, hasKcControl, issueKcNo, kcCandidates, kcTriggers, processKcCandidates, scmhKcDecision } from '../src/shared/kcScmh';
-import { cpClassification, kcChecks, rowClassification, stepClassification } from '../src/shared/kcTrace';
+import { formatKcNo, hasKcControl, issueKcNo, scmhKcDecision } from '../src/shared/kcScmh';
+import { kcCandidates, kcTriggers, processKcCandidates } from '../src/shared/kcTriggers';
+import { kcChecks } from '../src/shared/kcChecks';
+import { cpClassification, rowClassification, stepClassification } from '../src/shared/kcTrace';
 import { buildScmhPackage, SCMH_LAYOUT, type ScmhKind } from '../src/shared/scmh';
 import { ScmhBook } from '../src/shared/scmhfill';
 import { COLUMNS } from '../src/shared/columns';
@@ -44,7 +46,7 @@ describe('v4-kc migration', () => {
   it('a 3.0 project without KC/CI fields opens with defaults', () => {
     const v3 = JSON.parse(JSON.stringify(seed())) as Record<string, unknown> & Project;
     delete (v3 as Partial<Project>).kcRegistry;
-    for (const k of ['kcNumbering', 'ciNumbering', 'kcTriggerSO', 'kcTriggerSD', 'kcTriggerOD', 'kcTriggerRPN']) delete (v3.settings as unknown as Record<string, unknown>)[k];
+    for (const k of ['kcNumbering', 'ciNumbering']) delete (v3.settings as unknown as Record<string, unknown>)[k];
     for (const k of ['kcFormRevision', 'kcFormDate', 'kcContacts', 'kcListAgreedBy', 'kcListAgreedDate', 'kcListAgreementRef']) delete (v3.meta as unknown as Record<string, unknown>)[k];
     v3.kcs = [{ id: 'KC-001', sourceId: 'DF-001', characteristic: 'Fit', status: 'Approved' } as KcRow];
     delete (v3.pfmea[0] as Partial<PfmeaRow>).designActionFeasible;
@@ -52,7 +54,6 @@ describe('v4-kc migration', () => {
     const p = normalizeProject(v3);
     expect(p.kcRegistry).toEqual({ kc: 0, ci: 0 });
     expect(p.settings.kcNumbering).toBe('{PN}-KC-{nnn}');
-    expect(p.settings.kcTriggerSO).toBeNull();
     expect(p.meta.kcFormRevision).toBe('');
     expect(p.kcs[0]).toMatchObject({ lifecycle: '', kcNo: '', itemType: '', linkedIds: [], impact: [], customerAgreed: false, characteristic: 'Fit', status: 'Approved' });
     expect(p.pfmea[0].designActionFeasible).toBe('');
@@ -129,20 +130,22 @@ describe('SCMH KC decision flow (CAP p54)', () => {
 });
 
 describe('KC triggers beyond severity', () => {
-  it('S×O / S×D / RPN trigger only with a team threshold; safety, customer and SR always', () => {
+  it('S×O / S×D / O×D / RPN trigger only via the team Top-N review list; safety, customer and SR always', () => {
     const p = seed();
     const t = (id: string) => Object.fromEntries(kcTriggers(p, [...p.dfmea, ...p.pfmea].find((r) => r.id === id)!).map((x) => [x.key, x.on]));
     expect(t('PF-002')).toMatchObject({ S: false, SO: false, SD: false, RPN: false });
-    expect(kcTriggers(p, p.pfmea[1]).find((x) => x.key === 'SD')!.reason).toMatch(/ekip eşiği tanımlı değil/);
-    p.settings.kcTriggerSD = 40;
-    expect(t('PF-002').SD).toBe(true); // 5×8 = 40
+    expect(kcTriggers(p, p.pfmea[1]).find((x) => x.key === 'SD')!.reason).toMatch(/Top-N tanımlı değil/);
+    p.settings.scmhReviewTopN = 1;
+    expect(t('PF-002')).toMatchObject({ SD: false, OD: false }); // S×D 5×8=40 < PF-001 9×7=63
+    expect(t('PF-001')).toMatchObject({ SD: true, OD: true, RPN: true, SO: true });
+    p.settings.scmhReviewTopN = null;
     p.requirements[0].specialRequirement = true;
     p.requirements[0].reqType = 'Customer-specific';
     expect(t('DF-001')).toMatchObject({ S: true, SR: true, Customer: true });
     p.dfmea[1].effect = 'Operator injury hazard';
     expect(t('DF-002').Safety).toBe(true);
-    expect(kcCandidates(p).map((c) => c.row.id)).toEqual(['DF-001', 'DF-002', 'PF-001', 'PF-002']);
-    expect(kcChecks(p).find((c) => c.key === 'kc-trigger')!.ids).toHaveLength(4);
+    expect(kcCandidates(p).map((c) => c.row.id)).toEqual(['DF-001', 'DF-002', 'PF-001']);
+    expect(kcChecks(p).find((c) => c.key === 'kc-trigger')!.ids).toHaveLength(3);
   });
   it('process KC rule (7.2.3 p63): high-risk PFMEA row not reducible by design', () => {
     const p = seed();

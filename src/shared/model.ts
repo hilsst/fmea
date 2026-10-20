@@ -9,6 +9,8 @@ import type {
 import { WORKFLOW_STEPS } from './types';
 import { SCMH_SCORING } from './scmhScoring';
 import { DEFAULT_CI_NUMBERING, DEFAULT_KC_NUMBERING, kcRowDefaults } from './kcScmh'; // v4-kc
+import { CAP_SETTINGS_DEFAULTS, CAP_V4_DEFAULTS, MSA_V4_DEFAULTS, capNormalize } from './capDefaults'; // v4-cap
+import { normalizeRisk } from './riskModel'; // v4-risk
 
 export const SCHEMA_VERSION = 2;
 export const APP_VERSION = '3.0.0';
@@ -32,6 +34,7 @@ export const ID_PREFIX: Record<TableKey, string> = {
   evidence: 'EV',
   changeRequests: 'CR',
   aiRuns: 'AIR',
+  pfdItems: 'IO', // v4-risk
 };
 
 export const TABLE_LABEL: Record<TableKey, string> = {
@@ -53,6 +56,7 @@ export const TABLE_LABEL: Record<TableKey, string> = {
   evidence: 'Kanıtlar',
   changeRequests: 'Değişiklik Talepleri',
   aiRuns: 'AI Çalıştırmaları',
+  pfdItems: 'PFD Girdi / Çıktı', // v4-risk
 };
 
 /** Bir ID'nin hangi tabloya ait olduğunu prefix'ten bulur. */
@@ -112,6 +116,13 @@ const fmeaCommon = {
   dEvidence: '',
   dConf: '' as const,
   basis: '' as const,
+  // v4-risk
+  riskDecision: '' as const,
+  riskDecisionReason: '',
+  riskDecisionBy: '',
+  resultBasis: '' as const,
+  sDisposition: '',
+  sDispositionReason: '',
 };
 
 // v4-kc: 4.0 ek alanları (KC/CI modeli, SR, proses KC sorusu) kcScmh.ts'teki varsayılanlarla eklenir.
@@ -128,19 +139,19 @@ function blankRowV3(table: TableKey, id: string): { id: string } & Record<string
     case 'structure':
       return { id, level: '', parentId: '', element: '', function: '', functionType: '', reqIds: [], source: '', notes: '', performanceReq: '', constraint: '', interface: '' };
     case 'dfmea':
-      return { id, ...fmeaCommon, system: '', subsystem: '', component: '', functionId: '', function: '', reqIds: [], requirement: '', localEffect: '', higherEffect: '', verification: '' };
+      return { id, ...fmeaCommon, system: '', subsystem: '', component: '', functionId: '', function: '', reqIds: [], requirement: '', localEffect: '', higherEffect: '', verification: '', causeFromIds: [], localEffectS: null, higherEffectS: null, riskCategory: [], noiseFactor: [] }; // v4-risk: son 5 alan
     case 'processSteps':
-      return { id, opNo: '', name: '', description: '', machine: '', tool: '', specialProcess: false, productChars: '', processChars: '', source: '', notes: '', stepType: [], stepTypeOther: '', classification: '' };
+      return { id, opNo: '', name: '', description: '', machine: '', tool: '', specialProcess: false, productChars: '', processChars: '', source: '', notes: '', stepType: [], stepTypeOther: '', classification: '', external: false, externalSupplier: '', alternateOf: '', returnTo: '' }; // v4-risk: son 4 alan
     case 'pfmea':
-      return { id, ...fmeaCommon, stepId: '', opNo: '', stepName: '', processFunction: '', requirement: '', dfIds: [], errorProofing: '', measurement: '', reactionPlan: '', processElement: '', cause4M: '', why1: '', why2: '', why3: '', why4: '', why5: '', rootCause: '' };
+      return { id, ...fmeaCommon, stepId: '', opNo: '', stepName: '', processFunction: '', requirement: '', dfIds: [], errorProofing: '', measurement: '', reactionPlan: '', processElement: '', cause4M: '', why1: '', why2: '', why3: '', why4: '', why5: '', rootCause: '', productRequirement: '', processRequirement: '', cpDecision: '', cpExclusionReason: '', significantRisk: false, designActionRequest: false, outputId: '', causeInputIds: [] }; // v4-risk: son 8 alan
     case 'kcs':
       return { id, sourceId: '', characteristic: '', kcClass: '', specification: '', severity: null, rationale: '', status: 'AI Proposed', autoCreated: false, notes: '', category: '', fSafety: false, fRegulatory: false, fCustomer: false, fSpecialProcess: false, fTolerance: false, fCapability: false, fHistorical: false, fDetection: false };
     case 'controlPlan':
-      return { id, stepId: '', opNo: '', processName: '', machine: '', tool: '', pfId: '', kcId: '', productChar: '', processChar: '', kcClass: '', specification: '', method: '', gauge: '', sampleSize: '', frequency: '', controlMethod: '', reactionPlan: '', responsible: '', autoCreated: false, notes: '', charType: '', tolerance: '', record: '', ppId: '', reference: '' };
+      return { id, stepId: '', opNo: '', processName: '', machine: '', tool: '', pfId: '', kcId: '', productChar: '', processChar: '', kcClass: '', specification: '', method: '', gauge: '', sampleSize: '', frequency: '', controlMethod: '', reactionPlan: '', responsible: '', autoCreated: false, notes: '', charType: '', tolerance: '', record: '', ppId: '', reference: '', controlKind: '', epDevice: '', epVerification: '', charId: '', controlsCpIds: [], noPairReason: '', wiDocId: '', wiSection: '', reactionSegregate: false, reactionCorrection: '', reactionContact: '' }; // v4-risk: son 11 alan
     case 'msa':
-      return { id, cpId: '', kcId: '', characteristic: '', gauge: '', study: '', status: 'Planned', result: '', autoCreated: false, notes: '', dataType: '' };
+      return { id, cpId: '', kcId: '', characteristic: '', gauge: '', study: '', status: 'Planned', result: '', autoCreated: false, notes: '', dataType: '', ...MSA_V4_DEFAULTS }; // v4-cap
     case 'capability':
-      return { id, kcId: '', characteristic: '', lsl: null, usl: null, target: null, data: '', notes: '', subgroupSize: null, distribution: '' };
+      return { id, kcId: '', characteristic: '', lsl: null, usl: null, target: null, data: '', notes: '', subgroupSize: null, distribution: '', ...CAP_V4_DEFAULTS }; // v4-cap
     case 'actions':
       return { id, sourceId: '', description: '', actionType: '', owner: '', dueDate: '', status: 'Open', actionTaken: '', completionDate: '', newS: null, newO: null, newD: null, verification: '', notes: '' };
     case 'issues':
@@ -157,6 +168,8 @@ function blankRowV3(table: TableKey, id: string): { id: string } & Record<string
       return { id, title: '', trigger: '', description: '', impactedIds: [], status: 'Open', requestedBy: '', date: '', decision: '' };
     case 'aiRuns':
       return { id, role: '', provider: '', model: '', at: '', inputs: '', mode: '', status: '', errorKind: '', message: '', items: 0, accepted: 0, rejected: 0, tokensIn: 0, tokensOut: 0, cached: false };
+    case 'pfdItems': // v4-risk
+      return { id, stepId: '', kind: '', text: '', cat4M: '', charId: '', reqId: '', kcId: '', control: '', mistakeProofing: '', sourceOfVariation: false, source: '', notes: '' };
   }
 }
 
@@ -220,15 +233,15 @@ export const DEFAULT_SETTINGS: Settings = {
   kcRules: { safety: true, regulatory: true, customer: true, specialProcess: true, tolerance: true, capability: true, historical: true, detection: true },
   kcClasses: ['Normal', 'Significant', 'Critical', 'Key Characteristic', 'Safety Characteristic', 'Regulatory Characteristic'],
   workflow: WORKFLOW_STEPS.map((step) => ({ step, enabled: true, role: DEFAULT_STEP_ROLE[step] })),
-  reasonFields: ['s', 'o', 'd', 'kcs.status', 'kcs.category', 'kcs.kcClass', 'approval'],
+  reasonFields: ['s', 'o', 'd', 'kcs.status', 'kcs.category', 'kcs.kcClass', 'approval', 'riskDecision', 'sDisposition'], // v4-risk: son 2
   scoringStandard: 'SCMH',
-  // v4-kc: SCMH 7.2.17 §1.2.1 numaralandırma; tetik eşikleri ekip kararıdır (SCMH sayısal eşik vermez).
+  // v4-kc: SCMH 7.2.17 §1.2.1 numaralandırma
   kcNumbering: DEFAULT_KC_NUMBERING,
   ciNumbering: DEFAULT_CI_NUMBERING,
-  kcTriggerSO: null,
-  kcTriggerSD: null,
-  kcTriggerOD: null,
-  kcTriggerRPN: null,
+  ...CAP_SETTINGS_DEFAULTS, // v4-cap
+  scmhReviewTopN: null, // v4-risk
+  scmhInlineRanks: false, // v4-risk
+  scmhCommentsColumn: false, // v4-risk
 };
 
 // AIAG-VDA (2019) yapısına dayalı özet kriterler. Kurum/müşteri tablosu varsa "Puanlama" sekmesinden değiştirilir.
@@ -349,6 +362,8 @@ export function newProject(): Project {
     auditLog: [],
     docIndex: {},
     kcRegistry: { kc: 0, ci: 0 }, // v4-kc
+    pfdItems: [], // v4-risk
+    lineCounters: {}, // v4-risk
   };
 }
 
@@ -383,6 +398,7 @@ export function normalizeProject(raw: Partial<Project>, report?: MigrationReport
     auditLog: raw.auditLog ?? [],
     docIndex: raw.docIndex ?? {},
     kcRegistry: { kc: 0, ci: 0, ...(raw.kcRegistry ?? {}) }, // v4-kc
+    lineCounters: { ...(raw.lineCounters ?? {}) }, // v4-risk
   } as Project;
   // scoringStandard alanı olmayan (SCMH öncesi) dosyalar AIAG-VDA olarak kalır; mevcut projeler sessizce değişmez.
   if (!raw.settings?.scoringStandard) {
@@ -393,6 +409,7 @@ export function normalizeProject(raw: Partial<Project>, report?: MigrationReport
     const rows = (raw[t] as AnyRow[] | undefined) ?? (t === 'history' ? base.history : []);
     (p as unknown as Record<string, AnyRow[]>)[t] = rows.map((r) => ({ ...blankRow(t, r.id), ...r }) as AnyRow);
   }
+  capNormalize(p, raw.settings, notes); // v4-cap
   if (from < 2) {
     notes.push(`Dosya şema ${from || 'sürümsüz'} → ${SCHEMA_VERSION} güncellendi; mevcut veriler korundu, yeni alanlar boş eklendi.`);
     // v1 kayıtları: kaynağı elle/AI olarak işaretle (AI Proposed olanlar AI kökenli kabul edilir)
@@ -402,6 +419,7 @@ export function normalizeProject(raw: Partial<Project>, report?: MigrationReport
         if (!rr.origin) rr.origin = (rr.approval ?? rr.status) === 'AI Proposed' ? 'ai' : 'manual';
       }
   }
+  normalizeRisk(p); // v4-risk: PFMEA gereksinim ayrımı, sabit satır numaraları
   if (report) Object.assign(report, { from, to: SCHEMA_VERSION, notes });
   return p;
 }

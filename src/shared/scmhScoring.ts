@@ -122,6 +122,11 @@ export interface ScmhPriority {
   /** Sıralama anahtarı: büyük olan önce. S 9–10 satırları her zaman diğerlerinin önündedir. */
   rank: number;
   reason: string;
+  // v4-risk: SCMH 7.2.3 p59 / Q&A Q21: RPN, SO ve SD ile önceliklendirme; p63 O×D de anılır. Eşik yoktur.
+  rpn: number | null;
+  so: number | null;
+  sd: number | null;
+  od: number | null;
 }
 
 export function scmhRpn(s: Score, o: Score, d: Score): number | null {
@@ -130,6 +135,33 @@ export function scmhRpn(s: Score, o: Score, d: Score): number | null {
 
 export function scmhCriticality(s: Score, o: Score): number | null {
   return valid(s) && valid(o) ? s * o : null;
+}
+
+/** v4-risk: Severity × Detection (SD), SCMH 7.2.3 p59 "Severity Detection (SD)". */
+export function scmhSeverityDetection(s: Score, d: Score): number | null {
+  return valid(s) && valid(d) ? s * d : null;
+}
+
+/** v4-risk: Occurrence × Detection, SCMH 7.2.3 p63 "Detection x Occurrence". */
+export function scmhOccDetection(o: Score, d: Score): number | null {
+  return valid(o) && valid(d) ? o * d : null;
+}
+
+/** v4-risk: SCMH sıralama ölçütleri. */
+export type ScmhMeasure = 'rpn' | 'so' | 'sd';
+export const SCMH_MEASURES: { key: ScmhMeasure; label: string }[] = [
+  { key: 'rpn', label: 'RPN' },
+  { key: 'so', label: 'S×O' },
+  { key: 'sd', label: 'S×D' },
+];
+
+/** v4-risk: seçilen ölçüte göre sıralama (S 9–10 bandı her zaman önde; eşitlikte RPN, sonra ID). */
+export function scmhSortBy<T extends Sod & { id: string }>(rows: T[], m: ScmhMeasure): T[] {
+  const key = (r: T) => {
+    const p = scmhPriority(r);
+    return (p.review ? 1_000_000 : 0) + (p[m] ?? 0) * 1000 + (m === 'rpn' ? (p.so ?? 0) : (p.rpn ?? 0) / 1000);
+  };
+  return [...rows].sort((a, b) => key(b) - key(a) || a.id.localeCompare(b.id));
 }
 
 /** SCMH önceliği. rank = review bandı × 10^6 + RPN × 10^3 + S×O (puan eksikse yalnızca mevcut kısım). */
@@ -143,7 +175,9 @@ export function scmhPriority(row: Sod): ScmhPriority {
   if (r != null) parts.push(`RPN ${r}`);
   if (so != null) parts.push(`S×O ${so}`);
   if (!valid(row.s) || !valid(row.o) || !valid(row.d)) parts.push('S/O/D eksik – puanlanmalı');
-  return { review, rank, reason: parts.join('; ') };
+  const sd = scmhSeverityDetection(row.s, row.d); // v4-risk
+  if (sd != null) parts.push(`S×D ${sd}`); // v4-risk
+  return { review, rank, reason: parts.join('; '), rpn: r, so, sd, od: scmhOccDetection(row.o, row.d) };
 }
 
 /** Satırları SCMH önceliğine göre sıralar (kopya döndürür; S 9–10 → RPN → S×O, eşitlikte ID). */
@@ -199,4 +233,5 @@ export const SCMH_PRIORITY = {
   sort: scmhSort,
   rpn: scmhRpn,
   criticality: scmhCriticality,
+  severityDetection: scmhSeverityDetection, // v4-risk
 } as const;

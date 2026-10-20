@@ -1,7 +1,8 @@
 // v4-kc: KC / CI, SR ve proses KC sorusu için ek tablo kolonları. `mode` verilmiş kolon yalnızca o puanlama
 // standardındaki projelerde gösterilir (SCMH: 9145 terimleri; AIAG-VDA: mevcut otomotiv sınıfları).
 import type { Col } from './columns';
-import { KC_ELIMINATED_BY, KC_IMPACTS, KC_ITEM_TYPES, KC_LIFECYCLES, KC_ORIGINS, KC_TYPES, YES_NO, kcTriggers, kcTypeOf, scmhKcDecision } from './kcScmh';
+import { KC_ELIMINATED_BY, KC_IMPACTS, KC_ITEM_TYPES, KC_LIFECYCLES, KC_ORIGINS, KC_TYPES, YES_NO, kcTypeOf, scmhKcDecision } from './kcScmh';
+import { kcTriggers } from './kcTriggers';
 import { kcTraceRows } from './kcTrace';
 import type { KcRow, Project } from './types';
 
@@ -30,7 +31,7 @@ export function kcExtraColumns(): { first: Col[]; rest: Col[]; hideInScmh: strin
       { key: 'designatedBy', label: 'Belirleyen', width: 110, type: 'select', options: ['Customer', 'Organization'], ...SCMH },
       {
         key: 'kcTriggers', label: 'Aday Tetikleyicileri', width: 170, type: 'computed', readonly: true, ...SCMH,
-        help: 'S, Emniyet, S×O, S×D, O×D, RPN (ekip eşiği), Müşteri, SR – yalnızca aday; karar değildir',
+        help: 'S, Emniyet, S×O, S×D, O×D, RPN (Top-N inceleme listesi), Müşteri, SR – yalnızca aday; karar değildir',
         compute: (r, p) => {
           const k = r as KcRow;
           const src = p.dfmea.find((d) => d.id === k.sourceId) ?? p.pfmea.find((x) => x.id === k.sourceId);
