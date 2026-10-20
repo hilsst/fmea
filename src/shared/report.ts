@@ -2,7 +2,8 @@
 import { verifyBaseline } from './baseline';
 import { evaluateKc } from './kc';
 import { QUALITY_SCORE_NOTE, qualityReport, whatDidIMiss } from './quality';
-import { apOf, RPN_WARNING, riskLevel, rpn, type RiskLevel } from './scoring';
+import { apOf, RPN_WARNING, rpn, type RiskLevel } from './scoring';
+import { riskLevelOf } from './risk'; // v4-risk
 import type { DfmeaRow, PfmeaRow, Project } from './types';
 import { currentStep } from './workflow';
 
@@ -99,8 +100,9 @@ export function buildReviewReportHtml(p: Project, opts: { aiReview?: AiReview } 
 
   // En yüksek riskler
   const fm: (DfmeaRow | PfmeaRow)[] = [...p.dfmea, ...p.pfmea].filter((r) => has(r.failureMode));
+  const isScmhP = p.settings.scoringStandard === 'SCMH'; // v4-risk: SCMH'de AP gösterilmez
   const risks = fm
-    .map((r) => ({ r, lvl: riskLevel(r, p.settings, p.scoring.apTable), ap: apOf(p, r.s, r.o, r.d), rpn: rpn(r.s, r.o, r.d) }))
+    .map((r) => ({ r, lvl: riskLevelOf(p, r), ap: isScmhP ? '' as const : apOf(p, r.s, r.o, r.d), rpn: rpn(r.s, r.o, r.d) }))
     .filter((x) => x.lvl)
     .sort((a, b) => RISK_ORDER[a.lvl] - RISK_ORDER[b.lvl] || (b.r.s ?? 0) - (a.r.s ?? 0) || (b.rpn ?? 0) - (a.rpn ?? 0))
     .slice(0, 20);

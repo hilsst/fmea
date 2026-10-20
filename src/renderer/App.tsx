@@ -4,11 +4,11 @@ import { newProject } from '../shared/model';
 import { SCREENS, SCREEN_BY_KEY, screenOfTable, type ScreenKey } from '../shared/nav';
 import { buildReviewReportHtml } from '../shared/report';
 import { sampleProject } from '../shared/sample';
-import { apOf } from '../shared/scoring';
+import { actionAddressed, needsAction } from '../shared/risk'; // v4-risk
 import { isScmh } from '../shared/scmhScoring';
 import type { TabKey } from '../shared/tabs';
 import { applyTemplate, makeTemplate, validateTemplate, type CompanyTemplate } from '../shared/template';
-import type { Project } from '../shared/types';
+import type { DfmeaRow, PfmeaRow, Project } from '../shared/types';
 import { currentStep } from '../shared/workflow';
 import { api, isDesktop } from './api';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -28,12 +28,13 @@ import {
 type Badge = { n: number | string; tone?: string } | null;
 
 function screenBadge(p: Project, key: ScreenKey): Badge {
-  const hi = (rows: { s: number | null; o: number | null; d: number | null }[]) => rows.filter((r) => (isScmh(p) ? (r.s ?? 0) >= 9 : apOf(p, r.s, r.o, r.d) === 'H')).length;
+  // v4-risk: tek yüklem (SCMH: S≥9 / Top-N / KC-CI; AIAG-VDA: AP=H)
+  const hi = (rows: (DfmeaRow | PfmeaRow)[]) => rows.filter((r) => needsAction(p, r).need && !actionAddressed(r)).length;
   switch (key) {
     case 'documents': return { n: p.documents.length };
     case 'requirements': return { n: p.requirements.length };
-    case 'dfmea': { const h = hi(p.dfmea); return h ? { n: isScmh(p) ? `${h} S≥9` : `${h} H`, tone: 'red' } : { n: p.dfmea.length }; }
-    case 'pfmea': { const h = hi(p.pfmea); return h ? { n: isScmh(p) ? `${h} S≥9` : `${h} H`, tone: 'red' } : { n: p.pfmea.length }; }
+    case 'dfmea': { const h = hi(p.dfmea); return h ? { n: isScmh(p) ? `${h} SCMH` : `${h} H`, tone: 'red' } : { n: p.dfmea.length }; }
+    case 'pfmea': { const h = hi(p.pfmea); return h ? { n: isScmh(p) ? `${h} SCMH` : `${h} H`, tone: 'red' } : { n: p.pfmea.length }; }
     case 'kcs': { const w = p.kcs.filter((k) => k.status === 'AI Proposed').length; return w ? { n: `${w} bekliyor`, tone: 'amber' } : { n: p.kcs.length }; }
     case 'controlPlan': return { n: p.controlPlan.length };
     case 'msa': return { n: p.msa.length };
@@ -350,7 +351,7 @@ function ScreenView({ screen, sub, go }: { screen: ScreenKey; sub?: string; go: 
     case 'documents': return sub === 'evidence' ? <EvidenceScreen /> : sub === 'issues' ? <IssuesTab /> : <DocumentsTab />;
     case 'requirements': return <RequirementsTab />;
     case 'dfmea': return sub === 'structure' ? <StructureTab /> : <DfmeaTab />;
-    case 'pfmea': return sub === 'processSteps' ? <ProcessTab /> : sub === 'processParams' ? <Grid table="processParams" emptyHint="Özel proses parametreleri (kür sıcaklığı, basınç, vakum, süre…). Limitler kaynak spesifikasyondan girilir; yoksa VERİ YOK." /> : <PfmeaTab />;
+    case 'pfmea': return sub === 'processSteps' ? <ProcessTab /> : sub === 'pfdItems' ? <Grid table="pfdItems" emptyHint="Her PFD adımının çıktıları (→ PFMEA hata modu) ve girdileri / değişkenlik kaynakları (→ PFMEA nedeni). Çıktı eklendiğinde hata modu taslakları önerilir (PF webinar p20, p22)." /> /* v4-risk */ : sub === 'processParams' ? <Grid table="processParams" emptyHint="Özel proses parametreleri (kür sıcaklığı, basınç, vakum, süre…). Limitler kaynak spesifikasyondan girilir; yoksa VERİ YOK." /> : <PfmeaTab />;
     case 'risk': return <RiskScreen />;
     case 'kcs': return <KcTab />;
     case 'controlPlan': return <ControlPlanTab />;

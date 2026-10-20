@@ -14,11 +14,13 @@ import { failedRunEdit } from '../../shared/proposals';
 import { QUALITY_SCORE_NOTE, qualityReport, whatDidIMiss } from '../../shared/quality';
 import { buildReviewReportHtml, type AiReview } from '../../shared/report';
 import { AIAG_VDA_AP, D_BANDS, O_BANDS, RPN_WARNING, S_BANDS, apOf, parseData } from '../../shared/scoring';
-import { SCMH_SCORING, isScmh, scmhPriority, scmhSort } from '../../shared/scmhScoring';
+import { SCMH_SCORING, isScmh } from '../../shared/scmhScoring'; // v4-risk: öncelik tablosu Risk.tsx'e taşındı
 import { searchLessons } from '../../shared/similarity';
 import { applyTemplate, makeTemplate, validateTemplate, type CompanyTemplate } from '../../shared/template';
 import { ROLES, WORKFLOW_STEPS, type AnyRow, type ApprovalRecord, type EvidenceRow, type KcRules, type Project, type Settings } from '../../shared/types';
 import { approvedSteps, currentStep, decisionError, enabledSteps, openCriticalAi, recordDecision } from '../../shared/workflow';
+import { unaddressed } from '../../shared/risk'; // v4-risk
+import { ScmhPriorityPanel } from './Risk'; // v4-risk
 import type { ScreenKey } from '../../shared/nav';
 import { api, isDesktop } from '../api';
 import { projectContext } from '../components/AiDialogs';
@@ -56,7 +58,7 @@ export function DashboardScreen({ go }: { go: Go }) {
     { label: 'DFMEA satırı', value: p.dfmea.length, go: ['dfmea', 'dfmea'] },
     { label: 'PFMEA satırı', value: p.pfmea.length, go: ['pfmea', 'pfmea'] },
     isScmh(p)
-      ? { label: 'S 9–10 (RPN’den bağımsız incelenmeli)', value: fm.filter((r) => scmhPriority(r).review).length, go: ['risk'], tone: fm.some((r) => scmhPriority(r).review) ? 'red' : '' }
+      ? { label: 'SCMH inceleme: aksiyon/karar bekleyen (S≥9 / Top-N / KC)', value: unaddressed(p).length, go: ['risk'], tone: unaddressed(p).length ? 'red' : '' } // v4-risk
       : { label: 'AP = High', value: apH, go: ['risk'], tone: apH ? 'red' : '' },
     { label: 'AI önerisi (karar bekliyor)', value: aiPending, go: ['aiReview', 'aiRuns'], tone: aiPending ? 'amber' : '' },
     { label: 'Mantık hatası', value: errors, go: ['quality'], tone: errors ? 'red' : '' },
@@ -175,7 +177,6 @@ export function RiskScreen() {
       d.scoring.detection = structuredClone(tables.detection);
     }, { kind: 'Modified', table: 'settings', id: 'scoringStandard', field: 'scoringStandard', from: p.settings.scoringStandard, to: std, comment: 'Puanlama standardı ve S/O/D kriter tabloları değiştirildi' });
   };
-  const ranked = scmh ? scmhSort([...p.dfmea, ...p.pfmea].filter((r) => r.failureMode)).slice(0, 40) : [];
   const apSection = (
       <section className="card">
         <h3>Action Priority (AP) tablosu {custom ? <span className="badge b-purple">{p.scoring.apName || 'Şirket tablosu'}</span> : <span className="badge b-gray">AIAG-VDA 2019</span>}</h3>
@@ -230,31 +231,7 @@ export function RiskScreen() {
           ? <div className="callout">SCMH kuralı: RPN eşiği yoktur. S 9–10 olan her satır RPN’den bağımsız incelenir; ardından RPN ve S×O’ya göre önceliklendirilir.</div>
           : <div className="callout warn"><b>{RPN_WARNING}</b> Öncelik: emniyet/regülasyon → yüksek severity → KC → AP → RPN.</div>}
       </section>
-      {scmh && (
-        <section className="card">
-          <h3>SCMH öncelik sırası (ilk {ranked.length})</h3>
-          {ranked.length === 0 && <p className="muted">Puanlanmış hata modu yok.</p>}
-          <table className="effects">
-            <thead><tr><th>#</th><th>ID</th><th>Hata modu</th><th>S</th><th>O</th><th>D</th><th>RPN</th><th>S×O</th><th>Neden</th></tr></thead>
-            <tbody>
-              {ranked.map((r, i) => {
-                const pr = scmhPriority(r);
-                return (
-                  <tr key={r.id} className="click" onClick={() => window.dispatchEvent(new CustomEvent('why', { detail: r.id }))}>
-                    <td>{i + 1}</td>
-                    <td className="rid">{r.id}{pr.review && <span className="badge b-red"> S≥9</span>}</td>
-                    <td>{r.failureMode}</td>
-                    <td>{r.s ?? '–'}</td><td>{r.o ?? '–'}</td><td>{r.d ?? '–'}</td>
-                    <td>{r.s && r.o && r.d ? r.s * r.o * r.d : '–'}</td>
-                    <td>{r.s && r.o ? r.s * r.o : '–'}</td>
-                    <td className="small">{pr.reason}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </section>
-      )}
+      {scmh && <ScmhPriorityPanel />}{/* v4-risk: RPN / S×O / S×D sıralaması, Top-N, çıktı seçenekleri */}
       {scmh ? <details className="card"><summary><b>AIAG-VDA Action Priority tablosu (yalnızca referans)</b></summary>{apSection}</details> : apSection}
       <ScoringTab />
     </div>

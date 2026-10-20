@@ -2,11 +2,12 @@
 import { historicalIds } from './checks';
 import { LISTS } from './model';
 import { capabilityAnalysis, verdictText } from './capability';
-import { apOf, RPN_WARNING, isKcCandidate, parseData, riskLevel, rpn } from './scoring';
+import { apOf, RPN_WARNING, isKcCandidate, parseData, rpn } from './scoring';
 import type { CapabilityAnalysis } from './capability';
 import { impactOf } from './impact';
 import { evaluateKc } from './kc';
 import { PFD_STEP_TYPES } from './types';
+import { RISK_COLS } from './riskColumns'; // v4-risk
 import type { AnyRow, CapabilityRow, ChangeRequestRow, DfmeaRow, KcRow, PfmeaRow, Project, TableKey } from './types';
 
 export type ColType = 'text' | 'long' | 'score' | 'select' | 'multi' | 'ref' | 'bool' | 'date' | 'number' | 'computed';
@@ -42,7 +43,8 @@ const fmeaScores = (): Col[] => [
   score('d', 'D', 'Detection 1–10'),
   comp('ap', 'AP', (r, p) => apOf(p, (r as DfmeaRow).s, (r as DfmeaRow).o, (r as DfmeaRow).d), 46, 'Action Priority (AIAG-VDA veya şirket AP tablosu, Risk ekranı)'),
   comp('rpn', 'RPN', (r) => rpn((r as DfmeaRow).s, (r as DfmeaRow).o, (r as DfmeaRow).d), 52, `S×O×D – ${RPN_WARNING}`),
-  comp('risk', 'Risk', (r, p) => riskLevel(r as DfmeaRow, p.settings, p.scoring.apTable), 82, 'Öncelik: Emniyet/regülasyon > yüksek S > KC > AP > RPN'),
+  RISK_COLS.risk, // v4-risk: SCMH'de AP yerine needsAction (eski: riskLevel)
+  ...RISK_COLS.scores, // v4-risk
   sel('specialChar', 'Özel Kar.', LISTS.specialChar, 100),
   comp('kcFlag', 'KC', (r, p) => {
     const k = p.kcs.find((k) => k.sourceId === r.id);
@@ -70,6 +72,7 @@ const fmeaTail = (): Col[] => [
   score('newO', 'Yeni O', 'Aksiyon sonrası', { secondary: true }),
   score('newD', 'Yeni D', 'Aksiyon sonrası', { secondary: true }),
   comp('newAp', 'Yeni AP', (r, p) => apOf(p, (r as DfmeaRow).newS, (r as DfmeaRow).newO, (r as DfmeaRow).newD), 60),
+  ...RISK_COLS.decision, // v4-risk
   t('source', 'Kaynak', 150, { help: 'Örn. REQ-023, DRW-001 / Sayfa 4 / Ölçü 35, EMAIL-003' }),
   sel('confidence', 'AI Güven', LISTS.confidence, 80, { secondary: true }),
   sel('dataStatus', 'Veri Durumu', LISTS.dataStatus, 170, { secondary: true }),
@@ -152,6 +155,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     ...fmeaScores(),
     ...scoreReasons(),
     long('verification', 'Doğrulama', 160, { secondary: true }),
+    ...RISK_COLS.df, // v4-risk
     ...fmeaTail(),
   ],
   processSteps: [
@@ -167,6 +171,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('productChars', 'Ürün Karakteristikleri', 180),
     long('processChars', 'Proses Karakteristikleri', 180),
     comp('pfCount', 'PFMEA', (r, p) => p.pfmea.filter((x) => x.stepId === r.id).length || '', 60),
+    ...RISK_COLS.step, // v4-risk
     t('source', 'Kaynak', 140),
     long('notes', 'Notlar', 160),
   ],
@@ -175,7 +180,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     t('opNo', 'Op. No', 60, { readonly: true, derived: 'Proses Akışı' }),
     t('stepName', 'Proses Adımı', 140, { readonly: true, derived: 'Proses Akışı' }),
     long('processFunction', 'Proses Fonksiyonu', 180),
-    long('requirement', 'Gereksinim / Karakteristik', 180),
+    ...RISK_COLS.pfReq, // v4-risk: tek 'requirement' kolonu yerine ürün / proses gereksinimi
     t('processElement', 'Proses Elemanı', 130, { secondary: true, help: 'Man / Machine / Material / Method / Measurement / Environment elemanı' }),
     { key: 'dfIds', label: 'Bağlı DFMEA', width: 120, type: 'multi', ref: 'dfmea', help: 'Bağlıysa Severity DFMEA ile otomatik eşitlenir' },
     long('failureMode', 'Hata Modu', 190),
@@ -195,6 +200,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     ...scoreReasons(),
     t('measurement', 'Ölçüm Yöntemi', 150, { help: 'Kontrol Planı ölçüm yöntemine aktarılır' }),
     long('reactionPlan', 'Reaksiyon Planı', 170),
+    ...RISK_COLS.pf, // v4-risk
     ...fmeaTail(),
   ],
   kcs: [
@@ -244,6 +250,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('reactionPlan', 'Reaksiyon Planı', 180, { help: 'Durdur → ayır → son kabul edilen parça → etkilenen lot/seri → Kalite → NCR → karar → kök neden → FMEA ve kontrol planı güncelleme' }),
     t('responsible', 'Sorumlu', 110),
     t('record', 'Kayıt', 120, { help: 'Ölçüm sonucunun kaydedildiği form / sistem' }),
+    ...RISK_COLS.cp, // v4-risk
     long('notes', 'Notlar', 150, { secondary: true }),
   ],
   msa: [
@@ -409,6 +416,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     { key: 'cached', label: 'Önbellek', width: 70, type: 'bool', readonly: true },
     long('message', 'Mesaj', 220, { readonly: true }),
   ],
+  pfdItems: RISK_COLS.pfdItems, // v4-risk
 };
 
 const capCache = new WeakMap<object, CapabilityAnalysis>();

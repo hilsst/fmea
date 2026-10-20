@@ -1,5 +1,7 @@
 // Spesifikasyon §35 FMEA kalite kontrolü ve §26 izlenebilirlik matrisleri.
-import { apOf, isKcCandidate } from './scoring';
+import { isKcCandidate } from './scoring';
+import { actionAddressed, needsAction, riskChecks } from './risk'; // v4-risk
+import { isScmh } from './scmhScoring'; // v4-risk
 import type { ControlPlanRow, DfmeaRow, KcRow, PfmeaRow, Project } from './types';
 
 export interface CheckResult {
@@ -95,9 +97,12 @@ export function qualityChecks(p: Project): CheckResult[] {
     [...df, ...pf].filter((r) => r.s == null || r.o == null || r.d == null).map((r) => r.id),
     'Tüm satırlar puanlanmış', (n) => `${n} satırda S/O/D eksik`, df.length + pf.length > 0);
 
-  add('ap-high', 'AP=High satırlar için aksiyon tanımlanmış mı?', 8,
-    [...df, ...pf].filter((r) => apOf(p, r.s, r.o, r.d) === 'H' && !nonEmpty(r.recommendedAction)).map((r) => r.id),
-    'AP=High satırların hepsinde aksiyon var', (n) => `${n} AP=High satırda önerilen aksiyon yok`, df.length + pf.length > 0);
+  // v4-risk: tek yüklem (SCMH: S≥9 / Top-N / KC-CI; AIAG-VDA: AP=H); belgelenmiş aksiyonsuz karar da kabul edilir.
+  const sc = isScmh(p);
+  add('ap-high', sc ? 'SCMH inceleme listesindeki satırlar (S≥9 / Top-N / KC-CI) için aksiyon veya karar var mı?' : 'AP=High satırlar için aksiyon tanımlanmış mı?', 8,
+    [...df, ...pf].filter((r) => needsAction(p, r).need && !actionAddressed(r)).map((r) => r.id),
+    sc ? 'İnceleme listesindeki satırların hepsinde aksiyon veya karar var' : 'AP=High satırların hepsinde aksiyon var', (n) => sc ? `${n} inceleme satırında aksiyon/karar yok` : `${n} AP=High satırda önerilen aksiyon yok`, df.length + pf.length > 0);
+  out.push(...riskChecks(p)); // v4-risk
 
   return out;
 }
@@ -196,6 +201,21 @@ export function traceability(p: Project): TraceMatrix[] {
       return !src || !('verification' in src ? src.verification || src.detection : src.detection);
     }).map((k) => k.id),
     orphanLabel: 'Doğrulama/test yöntemi tanımlı olmayan KC’ler',
+  });
+  // v4-risk: çok seviyeli DFMEA zinciri ve PFD girdi/çıktı → PFMEA
+  m.push({
+    key: 'df-chain',
+    title: 'DFMEA zinciri (alt seviye hata modu → üst seviye neden)',
+    links: p.dfmea.flatMap((d) => (d.causeFromIds ?? []).map((c) => ({ from: c, to: d.id }))),
+    orphans: [],
+    orphanLabel: '',
+  });
+  m.push({
+    key: 'pfd-pf',
+    title: 'PFD girdi/çıktı → PFMEA',
+    links: p.pfmea.flatMap((x) => [...(x.outputId ? [{ from: x.outputId, to: x.id }] : []), ...(x.causeInputIds ?? []).map((i) => ({ from: i, to: x.id }))]),
+    orphans: p.pfdItems.filter((o) => o.kind === 'Output' && !p.pfmea.some((x) => x.outputId === o.id)).map((o) => o.id),
+    orphanLabel: 'PFMEA hata modu olmayan PFD çıktıları',
   });
   m.push({
     key: 'fm-ll',

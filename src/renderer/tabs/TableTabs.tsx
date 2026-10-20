@@ -10,6 +10,8 @@ import { PasteTextDialog, useAi } from '../components/AiDialogs';
 import { Grid } from '../components/Grid';
 import { Modal } from '../components/Modal';
 import { CapabilityPanel, KcFactorPanel } from '../screens/Screens2';
+import { DfmeaCoveragePanel } from '../screens/Risk'; // v4-risk
+import { cpCoverageGap } from '../../shared/risk'; // v4-risk
 import { useStore } from '../store';
 
 type AddEdit = { kind: 'add'; table: TableKey; row: AnyRow };
@@ -225,6 +227,7 @@ export function DfmeaTab() {
         }
         emptyHint="Önce Yapı & Fonksiyon ekranında fonksiyonları tanımlayın, sonra “Fonksiyonlardan oluştur” veya “AI: DFMEA öner”."
       />
+      <DfmeaCoveragePanel />{/* v4-risk */}
       {ai.dialogs}
     </>
   );
@@ -299,6 +302,8 @@ export function ProcessTab() {
 
 export function PfmeaTab() {
   const [sel, setSel] = useState<string[]>([]);
+  const { project } = useStore(); // v4-risk
+  const [notInCp, setNotInCp] = useState(false); // v4-risk: "Kontrol planında yok" filtresi
   const [importDf, setImportDf] = useState(false);
   const [checklist, setChecklist] = useState(false);
   const ai = useAi();
@@ -308,8 +313,10 @@ export function PfmeaTab() {
         table="pfmea"
         selected={sel}
         onSelect={setSel}
+        filter={notInCp ? (r) => cpCoverageGap(project, r as never) : undefined}
         toolbar={
           <>
+            <label className="check-row" title="S 9–10, KC/CI veya ekibin önemli saydığı riskler: kontrol planında olmalı ya da gerekçeyle dışarıda bırakılmalı (CP webinar p43)"><input type="checkbox" checked={notInCp} onChange={(e) => setNotInCp(e.target.checked)} /> Önemli ama KP’de yok</label>
             <button className="btn" onClick={() => setImportDf(true)} title="DFMEA hata modlarını proses adımlarına aktarır (spesifikasyon §8, §25)">
               DFMEA’dan aktar
             </button>

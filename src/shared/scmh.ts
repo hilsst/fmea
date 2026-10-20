@@ -6,7 +6,8 @@
 //  - Proje satırı şablon satırından fazlaysa, son şablon satırının stiliyle satır eklenir.
 //  - Revision History, şablondaki mevcut satırların altına p.history'den eklenir.
 import { ScmhBook, type CellValue } from './scmhfill';
-import { scmhClassificationOf } from './scmhScoring';
+import { scmhClassificationOf, scmhPriority } from './scmhScoring';
+import { commentText, decisionCols, lineNumbers, reactionExportText, splitRequirement, withRank } from './risk'; // v4-risk
 import { LISTS } from './model';
 import type { ActionRow, ControlPlanRow, DfmeaRow, HistoryRow, PfdStepType, PfmeaRow, ProcessStepRow, Project, Score } from './types';
 
@@ -116,6 +117,28 @@ interface Ctx {
   b: ScmhBook;
   L: Layout;
   trace: boolean;
+  // v4-risk
+  ranks?: boolean;
+  comments?: boolean;
+}
+
+/** v4-risk: form dışı "Comments" sütunu (SCMH 7.2.19 Z/AA "Comments"); izlenebilirlik sütununun solunda. */
+export const SCMH_COMMENTS: Record<ScmhKind, { col: string; n: number; styleFrom: string }> = {
+  dfmea: { col: 'AA', n: 27, styleFrom: 'Z' },
+  pfmea: { col: 'AA', n: 27, styleFrom: 'Z' },
+  cp: { col: 'P', n: 16, styleFrom: 'O' },
+  pfd: { col: 'Q', n: 17, styleFrom: 'P' },
+};
+
+function writeComment(ctx: Ctx, kind: ScmhKind, r: number, text: string) {
+  if (!ctx.comments) return;
+  const c = SCMH_COMMENTS[kind];
+  if (r === 0) {
+    ctx.b.setColWidth(ctx.L.sheet, c.n, 45);
+    ctx.b.set(ctx.L.sheet, `${c.col}${ctx.L.trace.headerRow}`, 'Comments', { styleFrom: `${c.styleFrom}${ctx.L.trace.headerRow}`, wrap: true });
+    return;
+  }
+  if (text) ctx.b.set(ctx.L.sheet, `${c.col}${r}`, text, { styleFrom: `${c.styleFrom}${r}`, wrap: true });
 }
 
 /** Satırın hücrelerini yazar; metin hücreleri sarılır, satır yüksekliği metne göre ayarlanır. */
@@ -227,10 +250,10 @@ function classificationFor(p: Project, rowId: string, specialChar?: string): str
 }
 
 // ------------------------------------------------------------------ DFMEA
-async function fillDfmea(p: Project, tpl: Uint8Array, trace: boolean): Promise<Buffer> {
+async function fillDfmea(p: Project, tpl: Uint8Array, trace: boolean, opt: Pick<Ctx, 'ranks' | 'comments'> = {}): Promise<Buffer> {
   const b = await ScmhBook.open(tpl);
   const L = SCMH_LAYOUT.dfmea;
-  const ctx: Ctx = { b, L, trace };
+  const ctx: Ctx = { b, L, trace, ...opt };
   headerBlock(b, 'dfmea', p);
   const lvl = SCMH_CHECKBOX.dfmeaLevel[p.meta.dfmeaLevel];
   if (lvl) b.checkBox(L.sheet, lvl, true);
@@ -240,17 +263,20 @@ async function fillDfmea(p: Project, tpl: Uint8Array, trace: boolean): Promise<B
   setupTrace(ctx);
   const fn = new Map(p.structure.map((x) => [x.id, x]));
   const req = new Map(p.requirements.map((x) => [x.id, x]));
+  const lines = lineNumbers(rows); // v4-risk
+  writeComment(ctx, 'dfmea', 0, '');
   rows.forEach((d, i) => {
     const r = L.first + i;
     const f = fn.get(d.functionId);
     const item = or([d.system, d.subsystem, d.component].map(s).filter(Boolean).join(' / '), f?.element);
     const reqText = or(d.requirement, d.reqIds.map((id) => (req.get(id) ? `${id}: ${s(req.get(id)!.text)}` : id)));
-    const eff = [d.localEffect && `(L) ${s(d.localEffect)}`, d.higherEffect && `(N) ${s(d.higherEffect)}`, d.effect && (d.localEffect || d.higherEffect ? `(E) ${s(d.effect)}` : s(d.effect))]
+    const rk = (t: string, v: Score) => withRank(t, v, !!ctx.ranks); // v4-risk: (n) puanı
+    const eff = [d.localEffect && rk(`(L) ${s(d.localEffect)}`, d.localEffectS), d.higherEffect && rk(`(N) ${s(d.higherEffect)}`, d.higherEffectS), d.effect && rk(d.localEffect || d.higherEffect ? `(E) ${s(d.effect)}` : s(d.effect), d.s)]
       .filter(Boolean)
       .join('\n');
-    const a = actionCols(p, d);
+    const a = decisionCols(p, d, actionCols(p, d)); // v4-risk: ALARP / öngörülen sonuç
     writeRow(ctx, r, {
-      B: i + 1,
+      B: lines.get(d.id) ?? i + 1, // v4-risk: sabit satır numarası
       C: item || VY,
       D: need(d.function, f?.function),
       E: reqText || VY,
@@ -258,9 +284,9 @@ async function fillDfmea(p: Project, tpl: Uint8Array, trace: boolean): Promise<B
       G: eff || VY,
       H: score(d.s),
       I: need(d.cause),
-      J: need(d.prevention),
+      J: rk(need(d.prevention), d.o),
       K: score(d.o),
-      L: need(d.detection),
+      L: rk(need(d.detection), d.d),
       M: score(d.d),
       P: classificationFor(p, d.id, d.specialChar),
       Q: a.rec,
@@ -272,7 +298,8 @@ async function fillDfmea(p: Project, tpl: Uint8Array, trace: boolean): Promise<B
       W: a.newO,
       X: a.newD,
     });
-    writeTrace(ctx, r, [d.id, d.functionId, ...d.reqIds, d.actionId].filter(Boolean).join(' | '));
+    writeTrace(ctx, r, [d.id, d.functionId, ...d.reqIds, d.actionId, sdText(d)].filter(Boolean).join(' | ')); // v4-risk: SO/SD
+    writeComment(ctx, 'dfmea', r, commentText(p, d)); // v4-risk
   });
   b.stripFormulaCache(L.sheet);
   revisionHistory(b, L, p.history);
@@ -280,11 +307,10 @@ async function fillDfmea(p: Project, tpl: Uint8Array, trace: boolean): Promise<B
 }
 
 // ------------------------------------------------------------------ PFMEA
-/** PFMEA gereksinimi proses gereksinimi mi? (Model tek alan tutar; bağlantılardan türetilir.) */
-function isProcessRequirement(p: Project, row: PfmeaRow): boolean {
-  if (p.processParams.some((pp) => pp.pfIds.includes(row.id))) return true;
-  const cps = p.controlPlan.filter((c) => c.pfId === row.id);
-  return cps.length > 0 && cps.every((c) => (c.charType === 'Process Characteristic' || c.charType === 'Process Parameter' || (!c.productChar && !!c.processChar)));
+/** v4-risk: SCMH 7.2.10/7.2.11'de S×D sütunu yok; izlenebilirlik sütununa yazılır (SCMH 7.2.3 p59). */
+function sdText(r: DfmeaRow | PfmeaRow): string {
+  const pr = scmhPriority(r);
+  return [pr.so != null && `S×O ${pr.so}`, pr.sd != null && `S×D ${pr.sd}`].filter(Boolean).join(', ');
 }
 
 function sortedPfmea(p: Project): PfmeaRow[] {
@@ -293,10 +319,10 @@ function sortedPfmea(p: Project): PfmeaRow[] {
   return [...p.pfmea].sort((a, b) => opNum(op(a)) - opNum(op(b)) || op(a).localeCompare(op(b)) || a.id.localeCompare(b.id));
 }
 
-async function fillPfmea(p: Project, tpl: Uint8Array, trace: boolean): Promise<Buffer> {
+async function fillPfmea(p: Project, tpl: Uint8Array, trace: boolean, opt: Pick<Ctx, 'ranks' | 'comments'> = {}): Promise<Buffer> {
   const b = await ScmhBook.open(tpl);
   const L = SCMH_LAYOUT.pfmea;
-  const ctx: Ctx = { b, L, trace };
+  const ctx: Ctx = { b, L, trace, ...opt };
   headerBlock(b, 'pfmea', p);
   const ph = SCMH_CHECKBOX.pfmeaPhase[p.meta.scmhPhase];
   if (ph) b.checkBox(L.sheet, ph, true);
@@ -305,27 +331,29 @@ async function fillPfmea(p: Project, tpl: Uint8Array, trace: boolean): Promise<B
   ensureRows(b, L.sheet, L.first, rows.length, footer);
   setupTrace(ctx);
   const step = new Map(p.processSteps.map((x) => [x.id, x]));
+  const lines = lineNumbers(rows); // v4-risk
+  writeComment(ctx, 'pfmea', 0, '');
   rows.forEach((x, i) => {
     const r = L.first + i;
     const st = step.get(x.stepId);
     const label = stepLabel(or(st?.opNo, x.opNo), or(st?.name, x.stepName));
-    const reqText = s(x.requirement);
-    const proc = isProcessRequirement(p, x);
+    const req = splitRequirement(p, x); // v4-risk: SCMH 7.2.11 Rev A E/F sütunları
     const prevention = or(x.prevention, x.errorProofing && !/^None/.test(x.errorProofing) ? x.errorProofing : '');
-    const a = actionCols(p, x);
+    const a = decisionCols(p, x, actionCols(p, x)); // v4-risk
+    const rk = (t: string, v: Score) => withRank(t, v, !!ctx.ranks); // v4-risk
     writeRow(ctx, r, {
-      B: i + 1,
+      B: lines.get(x.id) ?? i + 1, // v4-risk
       C: label || VY,
       D: need(x.processFunction, st?.description),
-      E: proc ? '' : reqText || VY,
-      F: proc ? reqText : '',
+      E: req.product || (req.process ? '' : VY),
+      F: req.process,
       G: need(x.failureMode),
-      H: need(x.effect),
+      H: rk(need(x.effect), x.s),
       I: score(x.s),
       J: need(x.cause),
-      K: prevention || VY,
+      K: rk(prevention || VY, x.o),
       L: score(x.o),
-      M: need(x.detection),
+      M: rk(need(x.detection), x.d),
       N: score(x.d),
       Q: classificationFor(p, x.id, x.specialChar),
       R: a.rec,
@@ -337,7 +365,8 @@ async function fillPfmea(p: Project, tpl: Uint8Array, trace: boolean): Promise<B
       X: a.newO,
       Y: a.newD,
     });
-    writeTrace(ctx, r, [x.id, x.stepId, ...x.dfIds, x.actionId].filter(Boolean).join(' | '));
+    writeTrace(ctx, r, [x.id, x.stepId, ...x.dfIds, x.actionId, sdText(x)].filter(Boolean).join(' | ')); // v4-risk
+    writeComment(ctx, 'pfmea', r, commentText(p, x)); // v4-risk
   });
   b.stripFormulaCache(L.sheet);
   revisionHistory(b, L, p.history);
@@ -351,10 +380,10 @@ function sortedCp(p: Project): ControlPlanRow[] {
   return [...p.controlPlan].sort((a, b) => opNum(op(a)) - opNum(op(b)) || op(a).localeCompare(op(b)) || a.id.localeCompare(b.id));
 }
 
-async function fillCp(p: Project, tpl: Uint8Array, trace: boolean): Promise<Buffer> {
+async function fillCp(p: Project, tpl: Uint8Array, trace: boolean, opt: Pick<Ctx, 'ranks' | 'comments'> = {}): Promise<Buffer> {
   const b = await ScmhBook.open(tpl);
   const L = SCMH_LAYOUT.cp;
-  const ctx: Ctx = { b, L, trace };
+  const ctx: Ctx = { b, L, trace, ...opt };
   headerBlock(b, 'cp', p);
   const ph = SCMH_CHECKBOX.cpPhase[p.meta.scmhPhase];
   if (ph) b.checkBox(L.sheet, ph, true);
@@ -363,6 +392,8 @@ async function fillCp(p: Project, tpl: Uint8Array, trace: boolean): Promise<Buff
   ensureRows(b, L.sheet, L.first, rows.length, footer);
   setupTrace(ctx);
   const step = new Map(p.processSteps.map((x) => [x.id, x]));
+  const lines = lineNumbers(rows); // v4-risk
+  writeComment(ctx, 'cp', 0, '');
   rows.forEach((c, i) => {
     const r = L.first + i;
     const st = step.get(c.stepId);
@@ -373,11 +404,11 @@ async function fillCp(p: Project, tpl: Uint8Array, trace: boolean): Promise<Buff
     const prod = s(c.productChar);
     const procC = s(c.processChar);
     writeRow(ctx, r, {
-      B: i + 1,
+      B: lines.get(c.id) ?? i + 1, // v4-risk
       C: label || VY,
       D: need(st?.description),
       E: machine || VY,
-      F: need(c.reference),
+      F: need(c.reference, c.charId), // v4-risk: boşsa karakteristik ID (CP Q&A Q31)
       G: prod || (procC ? '' : VY),
       H: procC,
       I: s(c.kcId),
@@ -385,10 +416,11 @@ async function fillCp(p: Project, tpl: Uint8Array, trace: boolean): Promise<Buff
       K: meas || VY,
       L: need(c.sampleSize),
       M: need(c.frequency),
-      N: need(c.controlMethod),
-      O: need(c.reactionPlan),
+      N: need(c.controlMethod, c.controlKind ? [c.controlKind, c.epDevice, c.epVerification].map(s).filter((x) => x && x !== VY).join(' – ') : ''), // v4-risk
+      O: reactionExportText(c), // v4-risk: reaksiyon + sorumlu (şablonda sorumlu sütunu yok)
     });
-    writeTrace(ctx, r, [c.id, c.stepId, c.pfId, c.kcId, c.ppId].filter(Boolean).join(' | '));
+    writeTrace(ctx, r, [c.id, c.stepId, c.pfId, c.kcId, c.ppId, c.charId && `ID ${c.charId}`, ...(c.controlsCpIds ?? []).map((x) => `→ ${x}`), c.wiDocId && `WI ${c.wiDocId}${c.wiSection ? ' ' + c.wiSection : ''}`].filter(Boolean).join(' | ')); // v4-risk
+    writeComment(ctx, 'cp', r, s(c.notes)); // v4-risk
   });
   revisionHistory(b, L, p.history);
   return b.save();
@@ -406,27 +438,36 @@ export function inferStepType(step: Pick<ProcessStepRow, 'name' | 'stepType'>): 
   return [];
 }
 
-async function fillPfd(p: Project, tpl: Uint8Array, trace: boolean): Promise<Buffer> {
+async function fillPfd(p: Project, tpl: Uint8Array, trace: boolean, opt: Pick<Ctx, 'ranks' | 'comments'> = {}): Promise<Buffer> {
   const b = await ScmhBook.open(tpl);
   const L = SCMH_LAYOUT.pfd;
-  const ctx: Ctx = { b, L, trace };
+  const ctx: Ctx = { b, L, trace, ...opt };
   headerBlock(b, 'pfd', p);
   const steps = [...p.processSteps].sort((a, c) => opNum(a.opNo) - opNum(c.opNo) || s(a.opNo).localeCompare(s(c.opNo)) || a.id.localeCompare(c.id));
   const footer = footerRow(b, L.sheet, 'B', L.first, L.last + 1);
   ensureRows(b, L.sheet, L.first, steps.length, footer);
   setupTrace(ctx);
+  const lines = lineNumbers(steps); // v4-risk
+  const byId = new Map(p.processSteps.map((x) => [x.id, x]));
+  writeComment(ctx, 'pfd', 0, '');
   steps.forEach((st, i) => {
     const r = L.first + i;
     const pf = p.pfmea.filter((x) => x.stepId === st.id);
     const cps = p.controlPlan.filter((c) => c.stepId === st.id);
-    const cls = or(st.classification, uniq([...pf.flatMap((x) => scmhClassificationOf(p, x.id).split('; ')), ...cps.map((c) => c.kcId)]).join('; '));
-    const prod = or(st.productChars, uniq(cps.map((c) => s(c.productChar))).join('; '));
-    const proc = or(st.processChars, uniq(cps.map((c) => s(c.processChar))).join('; '));
+    // v4-risk: PFD çıktıları (ürün karakteristiği) ve değişkenlik kaynağı girdileri (proses karakteristiği), PF webinar p14/p31
+    const io = p.pfdItems.filter((x) => x.stepId === st.id && s(x.text));
+    const ioText = (k: 'Input' | 'Output') => io.filter((x) => x.kind === k && (k === 'Output' || x.sourceOfVariation || !io.some((y) => y.kind === 'Input' && y.sourceOfVariation))).map((x) => (x.charId ? `${s(x.charId)}: ${s(x.text)}` : s(x.text))).join('; ');
+    const cls = or(st.classification, uniq([...pf.flatMap((x) => scmhClassificationOf(p, x.id).split('; ')), ...cps.map((c) => c.kcId), ...io.map((x) => x.kcId)]).join('; '));
+    const prod = or(st.productChars, ioText('Output'), uniq(cps.map((c) => s(c.productChar))).join('; '));
+    const proc = or(st.processChars, ioText('Input'), uniq(cps.map((c) => s(c.processChar))).join('; '));
     const types = inferStepType(st);
+    const alt = st.alternateOf ? byId.get(st.alternateOf) : undefined;
+    const ret = st.returnTo ? byId.get(st.returnTo) : undefined;
+    const desc = [alt ? `Alternatif rota (${or(alt.opNo, alt.id)} yerine): ` : '', need(st.description), ret ? ` → dönüş: ${or(ret.opNo, ret.id)}` : ''].join('');
     const vals: Record<string, CellValue> = {
-      B: i + 1,
+      B: lines.get(st.id) ?? i + 1, // v4-risk
       C: stepLabel(s(st.opNo), s(st.name)) || VY,
-      D: need(st.description),
+      D: desc, // v4-risk
       N: cls,
       O: prod,
       P: proc,
@@ -438,8 +479,11 @@ async function fillPfd(p: Project, tpl: Uint8Array, trace: boolean): Promise<Buf
       if (!c) continue;
       vals[c.col] = t === 'Other' ? need(st.stepTypeOther) : c.mark;
     }
+    if (st.external) vals.K = [s(vals.K), `External – ${need(st.externalSupplier)}`].filter(Boolean).join('; '); // v4-risk: dış operasyon
+    if (st.external && vals.F === VY) vals.F = '';
     writeRow(ctx, r, vals, 20.15);
-    writeTrace(ctx, r, [st.id, ...pf.map((x) => x.id), ...cps.map((c) => c.id)].join(' | '));
+    writeTrace(ctx, r, [st.id, ...pf.map((x) => x.id), ...cps.map((c) => c.id), ...io.map((x) => x.id)].join(' | ')); // v4-risk
+    writeComment(ctx, 'pfd', r, s(st.notes)); // v4-risk
   });
   revisionHistory(b, L, p.history);
   return b.save();
@@ -459,16 +503,21 @@ export interface ScmhOptions {
    * şablon yapısı birebir korunur.
    */
   traceColumn?: boolean;
+  /** v4-risk: kontrol/etki metnine "(n)" puanı (varsayılan settings.scmhInlineRanks). */
+  inlineRanks?: boolean;
+  /** v4-risk: form dışı Comments sütunu (varsayılan settings.scmhCommentsColumn). */
+  commentsColumn?: boolean;
 }
 
 /** Projeyi dört SCMH şablonuna yazar ve doldurulmuş paketleri döndürür. Şablonlar değiştirilmez. */
 export async function buildScmhPackage(p: Project, templates: ScmhTemplates, opts: ScmhOptions = {}): Promise<{ pfd: Buffer; dfmea: Buffer; pfmea: Buffer; cp: Buffer }> {
   const trace = !!opts.traceColumn;
+  const opt = { ranks: opts.inlineRanks ?? !!p.settings.scmhInlineRanks, comments: opts.commentsColumn ?? !!p.settings.scmhCommentsColumn }; // v4-risk
   const [pfd, dfmea, pfmea, cp] = await Promise.all([
-    fillPfd(p, templates.pfd, trace),
-    fillDfmea(p, templates.dfmea, trace),
-    fillPfmea(p, templates.pfmea, trace),
-    fillCp(p, templates.cp, trace),
+    fillPfd(p, templates.pfd, trace, opt),
+    fillDfmea(p, templates.dfmea, trace, opt),
+    fillPfmea(p, templates.pfmea, trace, opt),
+    fillCp(p, templates.cp, trace, opt),
   ]);
   return { pfd, dfmea, pfmea, cp };
 }
