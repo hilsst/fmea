@@ -5,6 +5,21 @@ import { cpRowsOfKc, kcReference, pfRowsOfKc, stepsOfKc } from './kcTrace';
 import { kcCandidates, processKcCandidates } from './kcTriggers';
 import type { Project } from './types';
 
+/**
+ * KC listesinin müşteri onayı: APQP teslimat onayı ('KC list' / 'Customer' adımı, mevcut revizyon) varsa o kayıt
+ * kullanılır (apqpModel DeliverableApproval); yoksa KC ekranında girilen meta alanları (kcListAgreed*).
+ * Liste düzeyindeki bu kayıt, KC başına `customerAgreed` işaretlerinin dayanağıdır; KC sonradan değişirse
+ * yalnızca o KC'nin işareti düşer (kcScmh.kcOnSet).
+ */
+export function kcListCustomerApproval(p: Project): { by: string; date: string; ref: string; source: 'APQP' | 'KC' } | null {
+  const a = (p.apqp?.deliverableApprovals ?? [])
+    .filter((x) => x.deliverable === 'KC list' && x.step === 'Customer' && x.decision === 'Approved' && x.revision === p.meta.fmeaRevision)
+    .sort((x, y) => y.at.localeCompare(x.at))[0];
+  if (a) return { by: a.customerName || a.user, date: a.at.slice(0, 10), ref: a.customerRef ?? '', source: 'APQP' };
+  if (p.meta.kcListAgreedBy || p.meta.kcListAgreedDate) return { by: p.meta.kcListAgreedBy, date: p.meta.kcListAgreedDate, ref: p.meta.kcListAgreementRef, source: 'KC' };
+  return null;
+}
+
 const nonEmpty = (s: string | undefined | null) => !!s && s.trim() !== '';
 
 export function kcChecks(p: Project): CheckResult[] {
@@ -67,7 +82,7 @@ export function kcChecks(p: Project): CheckResult[] {
     prodConfirmed.filter((k) => !k.onDrawing || !kcReference(p, k)).map((k) => k.id), 'Kesinleşmiş ürün KC’lerinin tasarım kaydı referansı var', (n) => `${n} ürün KC tasarım kaydında işaretli değil / referans yok`, prodConfirmed.length > 0);
 
   add('kc-customer', 'KC/CI listesi müşteriyle mutabık kalınmış mı? (7.2.3 p22)', 4,
-    listed.filter((k) => !k.customerAgreed).map((k) => k.id), `Liste müşteriyle mutabık${p.meta.kcListAgreedBy ? ` (${p.meta.kcListAgreedBy} ${p.meta.kcListAgreedDate})` : ''}`, (n) => `${n} KC/CI müşteri mutabakatı bekliyor`, listed.length > 0);
+    listed.filter((k) => !k.customerAgreed).map((k) => k.id), (() => { const a = kcListCustomerApproval(p); return `Liste müşteriyle mutabık${a ? ` (${a.by} ${a.date}${a.source === 'APQP' ? ', APQP KC listesi onayı' : ''})` : ''}`; })(), (n) => `${n} KC/CI müşteri mutabakatı bekliyor`, listed.length > 0);
 
   return out;
 }

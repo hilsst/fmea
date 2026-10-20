@@ -1,5 +1,6 @@
 // Engineering Approval Workflow (§36). AI hiçbir adımı onaylayamaz; her karar kullanıcı adıyla kaydedilir.
 import type { ApprovalRecord, Project, WorkflowStep } from './types';
+import { prrGateError } from './apqp'; // v4-apqp
 import { riskApprovalBlockers } from './risk'; // v4-risk
 
 export function enabledSteps(p: Project): { step: WorkflowStep; role: string }[] {
@@ -44,6 +45,11 @@ export function decisionError(p: Project, d: DecisionInput, openCritical: number
   if (d.decision === 'Approved' && (d.step === 'Final Approval' || d.step === 'Baseline')) {
     const b = riskApprovalBlockers(p);
     if (b.length) return `${b.length} S 9–10 satırda severity kararı eksik veya geçersiz: ${b.slice(0, 10).join(', ')}${b.length > 10 ? ' …' : ''}.`;
+  }
+  // v4-apqp: PRR kapısı – APQP projesinde açık FMEA aksiyonları kapatılmadan/azaltılmadan final onay ve baseline yok (SCMH 7.2.3 s.78)
+  if (d.decision === 'Approved' && (d.step === 'Final Approval' || d.step === 'Baseline')) {
+    const gate = prrGateError(p);
+    if (gate) return gate;
   }
   return '';
 }

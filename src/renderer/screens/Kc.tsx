@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { rowLabel } from '../../shared/columns';
 import { kcFormRows, KC_FORM_TEMPLATE_FILE } from '../../shared/kcForm';
+import { kcListCustomerApproval } from '../../shared/kcChecks';
 import {
   DECISION_QUESTIONS,
   KC_ELIMINATED_BY,
@@ -263,8 +264,9 @@ export function KcTraceScreen() {
       : edit({ kind: 'set', table: 'controlPlan', id: cpId, field: 'controlMethod', value: [c.controlMethod, 'SPC'].filter(Boolean).join(' + ') }, 'Proses KC: SPC');
   };
   const listed = p.kcs.filter((k) => isListed(k) && !isInactive(k));
+  const appr = kcListCustomerApproval(p);
   const agree = async () => {
-    if (!p.meta.kcListAgreedBy.trim() || !p.meta.kcListAgreedDate.trim()) return toast('Önce müşteri temsilcisini ve mutabakat tarihini girin.', 'warn');
+    if (!appr?.by?.trim() || !appr.date?.trim()) return toast('Önce müşteri temsilcisini ve mutabakat tarihini girin (veya APQP › teslimat onaylarında KC listesi için müşteri adımını kaydedin).', 'warn');
     const ok = await edit(listed.filter((k) => !k.customerAgreed).map((k) => set(k.id, 'customerAgreed', true)), 'KC listesi müşteri mutabakatı');
     if (ok) toast(`${listed.length} KC/CI müşteriyle mutabık işaretlendi`);
   };
@@ -302,6 +304,7 @@ export function KcTraceScreen() {
       <section className="card">
         <h3>Müşteri mutabakatı (SCMH 7.2.3 p22)</h3>
         <p className="muted small">“A preliminary listing of CIs and KCs agreed upon between supplier and customer.” Mutabakat mühendis tarafından kaydedilir; mutabakattan sonra değişen KC’nin işareti otomatik düşer.</p>
+        {appr?.source === 'APQP' && <p className="small"><b>APQP KC listesi müşteri onayı:</b> {appr.by} · {appr.date}{appr.ref ? ` · ${appr.ref}` : ''} – liste düzeyindeki mutabakat bu kayıttan alınır.</p>}
         <div className="form">
           <label><span>Müşteri temsilcisi</span><TextCell value={p.meta.kcListAgreedBy} onCommit={setMeta('kcListAgreedBy')} /></label>
           <label><span>Tarih</span><TextCell type="date" value={p.meta.kcListAgreedDate} onCommit={setMeta('kcListAgreedDate')} /></label>

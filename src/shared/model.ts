@@ -9,6 +9,7 @@ import type {
 import { WORKFLOW_STEPS } from './types';
 import { SCMH_SCORING } from './scmhScoring';
 import { DEFAULT_CI_NUMBERING, DEFAULT_KC_NUMBERING, kcRowDefaults } from './kcScmh'; // v4-kc
+import { defaultApqp, normalizeApqp } from './apqpModel'; // v4-apqp
 import { CAP_SETTINGS_DEFAULTS, CAP_V4_DEFAULTS, MSA_V4_DEFAULTS, capNormalize } from './capDefaults'; // v4-cap
 import { normalizeRisk } from './riskModel'; // v4-risk
 
@@ -362,6 +363,7 @@ export function newProject(): Project {
     auditLog: [],
     docIndex: {},
     kcRegistry: { kc: 0, ci: 0 }, // v4-kc
+    apqp: defaultApqp(), // v4-apqp
     pfdItems: [], // v4-risk
     lineCounters: {}, // v4-risk
   };
@@ -398,6 +400,7 @@ export function normalizeProject(raw: Partial<Project>, report?: MigrationReport
     auditLog: raw.auditLog ?? [],
     docIndex: raw.docIndex ?? {},
     kcRegistry: { kc: 0, ci: 0, ...(raw.kcRegistry ?? {}) }, // v4-kc
+    apqp: normalizeApqp(raw.apqp), // v4-apqp: 3.0 dosyalarında yok → varsayılanlar
     lineCounters: { ...(raw.lineCounters ?? {}) }, // v4-risk
   } as Project;
   // scoringStandard alanı olmayan (SCMH öncesi) dosyalar AIAG-VDA olarak kalır; mevcut projeler sessizce değişmez.
@@ -456,6 +459,12 @@ export const LISTS = {
   msaStatus: ['Planned', 'In Progress', 'Acceptable', 'Conditionally acceptable', 'Not acceptable'],
   processStep: ['Incoming Material', 'Storage', 'Material Preparation', 'Cutting', 'Kitting', 'Lay-up', 'Debulk', 'Vacuum Bagging', 'Cure', 'Demolding', 'Machining', 'Bonding', 'Surface Treatment', 'Painting', 'Inspection', 'Assembly', 'Final Inspection', 'Packaging'],
 };
+
+// v4-apqp: liste ekleri – FMEA güncelleme tetikleyicileri (SCMH 7.2.3 s.82, s.99–100), bakım/yazılım KP kalemleri
+// (CP Q&A Q6, Q8), DRA yöntemleri (DRA Q&A Q29).
+LISTS.llSource.push('Production run', 'Continuous improvement');
+LISTS.charType.push('Maintenance / Equipment', 'Software configuration');
+LISTS.actionType.push('DOE', 'Monte Carlo / probabilistic analysis', 'Tolerance stack-up', 'Test-to-failure');
 
 /** Spesifikasyon §9 – kompozit PFMEA'da otomatik değerlendirilecek hata modları. */
 export const COMPOSITE_CHECKLIST: Record<string, string[]> = {

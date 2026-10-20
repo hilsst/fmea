@@ -7,6 +7,7 @@
 import { ScmhBook } from './scmhfill';
 import { isCi, isListed, kcDisplayNo } from './kcScmh';
 import { kcOrigins, kcReference } from './kcTrace';
+import { kcListCustomerApproval } from './kcChecks';
 import type { KcRow, Project } from './types';
 
 export const VY = 'VERİ YOK – doğrulanmalı';
@@ -85,8 +86,8 @@ export function kcFormComments(p: Project): string {
     if (e.kind === 'Added') out.push(`${e.at.slice(0, 10)} ${no} eklendi`);
     else if (e.field === 'lifecycle') out.push(`${e.at.slice(0, 10)} ${no}: ${t(e.from) || 'aday'} → ${t(e.to) || 'aday'}${e.reason ? ` (${e.reason})` : ''}`);
   }
-  if (p.meta.kcListAgreedBy || p.meta.kcListAgreedDate)
-    out.push(`${p.meta.kcListAgreedDate || VY} KC listesi müşteriyle mutabık: ${p.meta.kcListAgreedBy || VY}${p.meta.kcListAgreementRef ? ` (${p.meta.kcListAgreementRef})` : ''}`);
+  const ag = kcListCustomerApproval(p);
+  if (ag) out.push(`${ag.date || VY} KC listesi müşteriyle mutabık: ${ag.by || VY}${ag.ref ? ` (${ag.ref})` : ''}`);
   return out.slice(-40).join('\n');
 }
 

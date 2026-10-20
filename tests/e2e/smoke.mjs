@@ -94,6 +94,22 @@ for (const [s0, t, n] of [['Onay', 'Denetim İzi', '28-audit'], ['Revizyon / Bas
   await win.waitForTimeout(250);
   await shot(n);
 }
+// v4-apqp: APQP ve PPAP ekranları
+await screen('APQP');
+await win.locator('.card select').first().selectOption('ND');
+await win.waitForTimeout(250);
+await shot('34-apqp');
+for (const t of ['Fazlar & Kilometre Taşları', 'Teslimat Onayları', 'Ekip & Kriterler', 'P-Diyagramı / DRA', 'KP Fazları & Başlık', 'Ambalaj 7.2.20', 'Aile & Tetikleyiciler', 'Olgunluk 7.2.14']) {
+  await sub(t);
+  await win.waitForTimeout(150);
+}
+await shot('35-apqp-maturity');
+await screen('PPAP');
+for (const t of ['PRR Kapısı', 'Sunum & Karar', 'PPAP Elemanları']) {
+  await sub(t);
+  await win.waitForTimeout(150);
+}
+await shot('36-ppap');
 const auditRows = await (async () => { await screen('Onay'); await sub('Denetim İzi'); return win.locator('.effects.audit tbody tr').count(); })();
 
 // Neden burada? çekmecesi

@@ -8,7 +8,7 @@ import { blankRow, newProject, nextId, normalizeProject } from '../src/shared/mo
 import { buildKcForm, kcFormFileName, kcFormRows, KC_FORM_LAYOUT } from '../src/shared/kcForm';
 import { formatKcNo, hasKcControl, issueKcNo, scmhKcDecision } from '../src/shared/kcScmh';
 import { kcCandidates, kcTriggers, processKcCandidates } from '../src/shared/kcTriggers';
-import { kcChecks } from '../src/shared/kcChecks';
+import { kcChecks, kcListCustomerApproval } from '../src/shared/kcChecks';
 import { cpClassification, rowClassification, stepClassification } from '../src/shared/kcTrace';
 import { buildScmhPackage, SCMH_LAYOUT, type ScmhKind } from '../src/shared/scmh';
 import { ScmhBook } from '../src/shared/scmhfill';
@@ -213,6 +213,15 @@ describe('flow-down and checks', () => {
     p = apply(p, [{ kind: 'set', table: 'kcs', id: 'KC-002', field: 'lifecycle', value: 'Eliminated' }]);
     p = addKc(p, { sourceId: 'PF-002', characteristic: 'Spindle  speed', lifecycle: 'Potential' });
     expect(kcChecks(p).find((c) => c.key === 'kc-reintro')!.ids).toEqual(['KC-003↔KC-002']);
+  });
+  it('list-level customer agreement comes from the APQP KC-list Customer approval when present', () => {
+    const p = withKcs();
+    expect(kcListCustomerApproval(p)).toBeNull();
+    p.meta.kcListAgreedBy = 'Cust A';
+    p.meta.kcListAgreedDate = '2026-10-01';
+    expect(kcListCustomerApproval(p)).toMatchObject({ by: 'Cust A', source: 'KC' });
+    p.apqp.deliverableApprovals.push({ id: 'DA-1', deliverable: 'KC list', step: 'Customer', user: 'u', role: '', at: '2026-10-15T10:00:00Z', decision: 'Approved', comment: '', revision: p.meta.fmeaRevision, customerName: 'Cust B', customerRef: 'MAIL-7' });
+    expect(kcListCustomerApproval(p)).toEqual({ by: 'Cust B', date: '2026-10-15', ref: 'MAIL-7', source: 'APQP' });
   });
   it('KC checks run only for SCMH projects; columns follow the standard', () => {
     const p = withKcs();

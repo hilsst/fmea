@@ -5,6 +5,7 @@ import { kcChecks } from './kcChecks'; // v4-kc
 import { actionAddressed, needsAction, riskChecks } from './risk'; // v4-risk
 import { isScmh } from './scmhScoring'; // v4-risk
 import type { ControlPlanRow, DfmeaRow, KcRow, PfmeaRow, Project } from './types';
+import { apqpChecks } from './apqp'; // v4-apqp
 
 export interface CheckResult {
   key: string;
@@ -109,6 +110,7 @@ export function qualityChecks(p: Project): CheckResult[] {
   // v4-kc: SCMH / AS9145 KC–CI izlenebilirlik kontrolleri (kcTrace.ts)
   if (isScmh(p)) out.push(...kcChecks(p));
 
+  out.push(...apqpChecks(p)); // v4-apqp: yalnızca APQP / ekip kaydı kullanılan projelerde
   out.push(...capChecks(p)); // v4-cap
   return out;
 }
