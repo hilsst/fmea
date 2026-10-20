@@ -20,7 +20,8 @@ describe('gereksinim otomatik doldurma', () => {
   it('limit yoksa uydurmaz: VERİ YOK', () => {
     const r = req(add(newProject(), 'Panel yük altında fonksiyonunu korumalıdır'));
     expect(r.acceptance).toBe(NO_DATA);
-    expect(r.verification).toBe(NO_DATA);
+    expect(r.reqType).toBe('Performance');
+    expect(r.verification).toContain(NO_DATA);
     expect(acceptanceOf({ nominal: 5, lsl: null, usl: null, unit: 'mm', tolerance: '' })).toBe(`5 mm – tolerans ${NO_DATA}`);
     expect(verificationOf({ text: '', reqType: 'Material', characteristic: '' })).toMatch(/CoC/);
   });

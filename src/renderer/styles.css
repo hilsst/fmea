@@ -380,3 +380,8 @@ tr.crit td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .check.table-approval.on { color: var(--green); border-color: var(--green); }
 .check.table-approval.stale { color: var(--amber); border-color: var(--amber); }
 .quick-reasons { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+.tree-node .tree-acts { display: none; margin-left: auto; gap: 2px; }
+.tree-node:hover .tree-acts { display: inline-flex; }
+.tree-node.pending b { color: var(--amber); }
+.tree .fn-list { list-style: none; padding-left: 18px; margin: 0 0 4px; font-size: 12px; }
+.tree .fn-list .rid { font-size: 10px; opacity: 0.6; }

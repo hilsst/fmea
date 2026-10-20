@@ -215,6 +215,8 @@ export interface StructureRow extends BaseRow {
   performanceReq: string;
   constraint: string;
   interface: string;
+  /** Otomatik önerilen yapı/fonksiyon satırları "AI Proposed" gelir; mühendis onaylar veya reddeder. */
+  approval: Approval | '';
 }
 
 interface FmeaCommon extends BaseRow {

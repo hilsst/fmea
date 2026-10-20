@@ -138,7 +138,7 @@ function blankRowV3(table: TableKey, id: string): { id: string } & Record<string
     case 'requirements':
       return { id, text: '', reqType: '', acceptance: '', verification: '', source: '', dataStatus: '', approval: 'AI Proposed', notes: '', characteristic: '', nominal: null, lsl: null, usl: null, unit: '', tolerance: '', sourceDocId: '', sourcePage: '', sourceSection: '', sourceCell: '', balloon: '', evidenceText: '', confidence: '' };
     case 'structure':
-      return { id, level: '', parentId: '', element: '', function: '', functionType: '', reqIds: [], source: '', notes: '', performanceReq: '', constraint: '', interface: '' };
+      return { id, level: '', parentId: '', element: '', function: '', functionType: '', reqIds: [], source: '', notes: '', performanceReq: '', constraint: '', interface: '', approval: '' };
     case 'dfmea':
       return { id, ...fmeaCommon, system: '', subsystem: '', component: '', functionId: '', function: '', reqIds: [], requirement: '', localEffect: '', higherEffect: '', verification: '', causeFromIds: [], localEffectS: null, higherEffectS: null, riskCategory: [], noiseFactor: [] }; // v4-risk: son 5 alan
     case 'processSteps':

@@ -1,14 +1,14 @@
 // Gereksinim satırından kabul kriteri, doğrulama yöntemi ve ölçü alanlarının otomatik doldurulması.
 // Kural: kaynakta olmayan değer uydurulmaz. Limitler metinden/alanlardan gelir; yoksa VERİ YOK.
 // Doğrulama yöntemi gereksinim tipinden önerilir ve "AI ÖNERİSİ" olarak işaretlenir (onay mühendiste).
-import { parseValueSpec } from './docmodel';
+import { classifyRequirement, parseValueSpec } from './docmodel';
 import type { RequirementRow } from './types';
 
 export const NO_DATA = 'VERİ YOK – doğrulanmalı';
 export const SUGGESTION = 'AI ÖNERİSİ – onay gerekli';
 
 /** Otomatik doldurulan alanlar; mühendis elle değiştirince otomatik güncelleme o alanda durur. */
-export const REQ_AUTO_FIELDS = ['acceptance', 'verification', 'characteristic', 'nominal', 'lsl', 'usl', 'unit', 'tolerance'] as const;
+export const REQ_AUTO_FIELDS = ['reqType', 'acceptance', 'verification', 'characteristic', 'nominal', 'lsl', 'usl', 'unit', 'tolerance'] as const;
 /** Bu alanlar değişince otomatik alanlar yeniden hesaplanır. */
 export const REQ_AUTO_INPUTS = ['text', 'reqType', 'characteristic', 'nominal', 'lsl', 'usl', 'unit', 'tolerance'];
 
@@ -92,6 +92,7 @@ export function reqAutoValues(r: RequirementRow): Partial<Record<(typeof REQ_AUT
   if (spec) {
     for (const f of ['nominal', 'lsl', 'usl', 'unit', 'tolerance'] as const) if (free(f) && !isEmpty(spec[f])) out[f] = spec[f];
   }
+  if (free('reqType') && r.text?.trim()) out.reqType = classifyRequirement(r.text);
   if (free('characteristic')) {
     const c = characteristicOf(r.text ?? '');
     if (c) out.characteristic = c;

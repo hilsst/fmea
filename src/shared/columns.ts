@@ -139,6 +139,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     { key: 'reqIds', label: 'Gereksinimler', width: 160, type: 'multi', ref: 'requirements' },
     comp('dfCount', 'DFMEA', (r, p) => p.dfmea.filter((d) => d.functionId === r.id).length || '', 60),
     t('source', 'Kaynak', 150),
+    sel('approval', 'Onay', LISTS.approval, 130, { help: 'Otomatik önerilen satırlar AI Proposed gelir. Rejected satırlardan DFMEA önerilmez' }),
     t('reassess', 'Yeniden Değerlendirme', 180, { secondary: true }),
     long('notes', 'Notlar', 160),
   ],
