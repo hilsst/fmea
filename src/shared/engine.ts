@@ -5,6 +5,7 @@
 
 import { blankRow, nextId, tableOfId } from './model';
 import { isKcCandidate } from './scoring';
+import { KC_LOCK_MSG, kcLocked, kcOnSet } from './kcScmh'; // v4-kc
 import { crTouchesPpap, isUpdateTrigger, lessonReassessText, ppapApprovedDate } from './apqp'; // v4-apqp
 import { capOnDelete, capOnSet } from './capEngine'; // v4-cap
 import { cpRequired, joinedRequirement } from './risk'; // v4-risk
@@ -225,7 +226,7 @@ function syncKcCandidate(c: Ctx, table: 'dfmea' | 'pfmea', id: string) {
   }
   if (!cand) {
     for (const k of kcs)
-      if (k.autoCreated && k.status === 'AI Proposed')
+      if (k.autoCreated && k.status === 'AI Proposed' && !kcLocked(k)) // v4-kc: numaralı KC silinmez
         c.del('kcs', k.id, `${id} artık KC eşiğinin altında; onaylanmamış otomatik KC adayı kaldırılır`);
   }
 }
@@ -445,6 +446,8 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
         for (const m of c.rows<AnyRow & { kcId: string }>('msa').filter((m) => m.kcId === id)) c.set('msa', m.id, 'characteristic', k.characteristic, `${id} karakteristik tanımı değişti`);
         for (const m of c.rows<AnyRow & { kcId: string }>('capability').filter((m) => m.kcId === id)) c.set('capability', m.id, 'characteristic', k.characteristic, `${id} karakteristik tanımı değişti`);
       }
+      // v4-kc: KC numarası, eleme tarihi, müşteri mutabakatının düşmesi (kcScmh.ts)
+      if (k) for (const x of kcOnSet(c.p, k, field, fresh)) c.set(x.table, x.id, x.field, x.value, x.reason);
       if (field === 'status' && k.status === 'Approved') onKcApproved(c, k);
       if (field === 'status' && k.status === 'Rejected') onKcRejected(c, k);
       break;
@@ -706,7 +709,11 @@ function onDelete(c: Ctx, e: Extract<Event, { type: 'delete' }>) {
         for (const pp of c.rows<ProcessParamRow>('processParams').filter((r) => r.pfIds.includes(id)))
           c.set('processParams', pp.id, 'pfIds', pp.pfIds.filter((x) => x !== id), why);
       }
-      for (const k of c.rows<KcRow>('kcs').filter((k) => k.sourceId === id)) c.del('kcs', k.id, `Kaynağı ${why}`);
+      for (const k of c.rows<KcRow>('kcs').filter((k) => k.sourceId === id)) {
+        // v4-kc: numaralı KC kayıtta kalır (7.2.17 §1.2.1); yalnızca yeniden değerlendirme işaretlenir
+        if (kcLocked(k)) c.set('kcs', k.id, 'reassess', `FMEA Reassessment Required – kaynak ${why}; KC durumunu değerlendirin (Eliminated + gerekçe)`, `Kaynağı ${why}`);
+        else c.del('kcs', k.id, `Kaynağı ${why}`);
+      }
       for (const a of c.rows<ActionRow>('actions').filter((a) => a.sourceId === id)) c.del('actions', a.id, `Kaynağı ${why}`);
       for (const l of c.rows<AnyRow & { linkedFmeaIds: string[] }>('lessons').filter((l) => l.linkedFmeaIds.includes(id)))
         c.set('lessons', l.id, 'linkedFmeaIds', l.linkedFmeaIds.filter((x) => x !== id), why);
@@ -781,6 +788,11 @@ export function planEdits(project: Project, edits: Edit[], propagate = true): Pl
     } else if (ed.kind === 'add') {
       c.add(ed.table, ed.row, 'Kullanıcı ekledi');
     } else if (ed.kind === 'delete') {
+      // v4-kc: numaralı KC/CI silinemez; silme isteği yeniden değerlendirme notuna dönüşür
+      if (ed.table === 'kcs' && kcLocked(c.find<KcRow>('kcs', ed.id))) {
+        c.set('kcs', ed.id, 'reassess', KC_LOCK_MSG, 'Silme reddedildi');
+        continue;
+      }
       c.del(ed.table, ed.id, 'Kullanıcı sildi');
     } else {
       c.setting(ed.field, ed.value, 'Kullanıcı değişikliği');

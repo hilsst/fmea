@@ -22,6 +22,7 @@ import { useStore } from './store';
 import { ApqpScreen, PpapScreen, apqpBadge, apqpUnapproved } from './screens/Apqp'; // v4-apqp
 import { TraceabilityTab } from './tabs/AnalysisTabs';
 import { ProjectTab } from './tabs/ProjectTab';
+import { KcFlowScreen, KcTraceScreen } from './screens/Kc'; // v4-kc
 import {
   ActionsTab, CapabilityTab, ControlPlanTab, DfmeaTab, DocumentsTab, HistoryTab, IssuesTab, KcTab, LessonsTab, MsaTab, PfmeaTab, ProcessTab, RequirementsTab, StructureTab,
 } from './tabs/TableTabs';
@@ -357,7 +358,7 @@ function ScreenView({ screen, sub, go }: { screen: ScreenKey; sub?: string; go: 
     case 'dfmea': return sub === 'structure' ? <StructureTab /> : <DfmeaTab />;
     case 'pfmea': return sub === 'processSteps' ? <ProcessTab /> : sub === 'pfdItems' ? <Grid table="pfdItems" emptyHint="Her PFD adımının çıktıları (→ PFMEA hata modu) ve girdileri / değişkenlik kaynakları (→ PFMEA nedeni). Çıktı eklendiğinde hata modu taslakları önerilir (PF webinar p20, p22)." /> /* v4-risk */ : sub === 'processParams' ? <Grid table="processParams" emptyHint="Özel proses parametreleri (kür sıcaklığı, basınç, vakum, süre…). Limitler kaynak spesifikasyondan girilir; yoksa VERİ YOK." /> : <PfmeaTab />;
     case 'risk': return <RiskScreen />;
-    case 'kcs': return <KcTab />;
+    case 'kcs': return sub === 'kcFlow' ? <KcFlowScreen /> : sub === 'kcTrace' ? <KcTraceScreen /> : <KcTab />; // v4-kc
     case 'controlPlan': return <ControlPlanTab />;
     case 'msa': return <MsaTab />;
     case 'capability': return <CapabilityTab />;

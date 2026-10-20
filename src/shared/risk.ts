@@ -15,6 +15,8 @@ import type { Finding } from './semantic';
 import { apOf, riskLevel, type RiskLevel } from './scoring';
 import { isScmh, scmhPriority, scmhSortBy, SCMH_PRIORITY, type ScmhMeasure } from './scmhScoring';
 import { splitRequirement } from './riskModel';
+import { isInactive } from './kcScmh'; // v4-kc
+import { dfRowsOfKc, pfRowsOfKc } from './kcTrace'; // v4-kc
 import type { ActionRow, ControlPlanRow, DfmeaRow, PfmeaRow, ProcessStepRow, Project, Score } from './types';
 
 export const VY = 'VERİ YOK – doğrulanmalı';
@@ -54,6 +56,9 @@ export function actionOf(p: Pick<Project, 'actions'>, row: { id: string; actionI
 
 /** Satıra bağlı (reddedilmemiş) KC'ler: doğrudan kaynak veya (PFMEA için) bağlı DFMEA satırlarının KC'leri. */
 export function linkedKcIds(p: Pick<Project, 'kcs'>, row: Fmea): string[] {
+  // v4-kc: KC/CI akışı (kaynak, ek bağlantı, REQ- kaynaklı müşteri KC'si, dfIds) – elenen KC "atanmış" sayılmaz
+  const full = p as Pick<Project, 'kcs'> & Partial<Project>;
+  if (full.dfmea && full.pfmea) return p.kcs.filter((k) => !isInactive(k) && (isPf(row) ? pfRowsOfKc(full, k) : dfRowsOfKc(full, k)).some((r) => r.id === row.id)).map((k) => k.id);
   const src = new Set([row.id, ...(isPf(row) ? row.dfIds : [])]);
   return p.kcs.filter((k) => src.has(k.sourceId) && k.status !== 'Rejected').map((k) => k.id);
 }

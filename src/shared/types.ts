@@ -24,6 +24,11 @@ export type Verification = 'VERIFIED' | 'VERIFIED – farklı konum' | 'SOURCE N
 export type ActionStatus = 'Open' | 'In Progress' | 'Completed' | 'Cancelled' | '';
 export type IssueStatus = 'Open' | 'Under Review' | 'Waiting Customer' | 'Resolved' | 'Closed' | '';
 export type KcClass = 'KC-1 Critical' | 'KC-2 Significant' | 'KC-3 Process KC' | '';
+// v4-kc
+export type KcItemType = 'KC' | 'CI' | '';
+export type KcType = 'Product' | 'Process' | '';
+export type KcLifecycle = 'Preliminary' | 'Potential' | 'Confirmed' | 'Eliminated' | '';
+export type YesNo = 'Yes' | 'No' | '';
 export type Score = number | null;
 
 export interface BaseRow {
@@ -74,6 +79,13 @@ export interface ProjectMeta {
   dfmeaLevel: string;
   /** PFMEA / Control Plan aşaması checkbox'ı: SCMH_PHASES ('Pre-Production' | 'Production') veya ''. */
   scmhPhase: string;
+  // v4-kc: SCMH 7.2.16 KC Traceability Form başlığı ve KC listesinin müşteri mutabakatı (7.2.3 p22)
+  kcFormRevision: string;
+  kcFormDate: string;
+  kcContacts: string;
+  kcListAgreedBy: string;
+  kcListAgreedDate: string;
+  kcListAgreementRef: string;
 }
 
 export interface Settings {
@@ -104,6 +116,9 @@ export interface Settings {
   reasonFields: string[];
   /** Puanlama/önceliklendirme standardı. SCMH: RPN eşiği yok, S 9–10 her zaman incelenir. */
   scoringStandard: 'SCMH' | 'AIAG-VDA';
+  // v4-kc: KC/CI numaralandırma ({PN}, {nnn}); SCMH 7.2.17 §1.2.1.
+  kcNumbering: string;
+  ciNumbering: string;
   // v4-risk: SCMH inceleme listesi (ekibin kararı): RPN / S×O / S×D sıralamasında ilk N satır. Boş = kullanılmaz
   // (SCMH sabit eşik tanımlamaz: DFMEA Guidance O19; SCMH 7.2.3 p59 SO/SD/RPN ile önceliklendirme).
   scmhReviewTopN: number | null;
@@ -178,6 +193,9 @@ export interface RequirementRow extends BaseRow {
   balloon: string;
   evidenceText: string;
   confidence: Confidence;
+  // v4-kc: 9145 Special Requirement (SR) – 7.2.3 p40 (kapasite sınırı, karmaşıklık, olgunluk)
+  specialRequirement: boolean;
+  srReason: string;
 }
 
 export type StructureLevel = 'System' | 'Subsystem' | 'Product' | 'Assembly' | 'Component' | 'Part' | 'Feature';
@@ -313,6 +331,8 @@ export interface PfmeaRow extends FmeaCommon {
   why4: string;
   why5: string;
   rootCause: string;
+  // v4-kc: 7.2.3 p63 – risk tasarım aksiyonuyla (O/S azaltma) düşürülebilir mi? 'No' → proses KC adayı
+  designActionFeasible: '' | 'Yes' | 'No';
   // v4-apqp: ön PFMEA (DRA ile eşzamanlı, SCMH 7.2.3 s.36) / yayımlanmış
   stage?: 'Preliminary' | 'Released' | '';
   // v4-risk: SCMH 7.2.11 Rev A ürün / proses gereksinimi; KP kapsamı; DFMEA'ya tasarım talebi; PFD girdi/çıktı bağı
@@ -381,6 +401,45 @@ export interface KcRow extends BaseRow {
   fCapability: boolean;
   fHistorical: boolean;
   fDetection: boolean;
+  // v4-kc: SCMH / AS9145 KC–CI modeli (kcScmh.ts)
+  /** KC veya Critical Item (CI). Boş = KC. */
+  itemType: KcItemType;
+  /** Ürün / proses KC. Boşsa kaynaktan türetilir (DF/REQ → Product, PF → Process). */
+  kcType: KcType;
+  /** Yaşam döngüsü; Eliminated kayıt silinmez (7.2.17 §1.2.1). Boş = aday (karar yok). */
+  lifecycle: KcLifecycle;
+  /** PN-KC-XXX numarası (7.2.17 §1.2.1); bir kez verilir, tekrar kullanılmaz. */
+  kcNo: string;
+  eliminatedBy: string;
+  eliminatedRef: string;
+  eliminatedDate: string;
+  eliminationNote: string;
+  designatedBy: '' | 'Customer' | 'Organization';
+  /** Oluşturulduğundaki aday tetikleyicileri (S, SO, SD, OD, RPN, Safety, Customer, SR). */
+  triggers: string[];
+  /** SCMH KC karar akışı cevapları (CAP webinar p54 / DRA webinar slide 43). */
+  qSafetyCritical: YesNo;
+  qCriticalOther: YesNo;
+  qUnsafe: YesNo;
+  qAffectsOther: YesNo;
+  qVariation: YesNo;
+  /** Ek bağlantılar (DF/PF/OP/CP/FN ID); kaynak dışındaki FMEA satırlarına akış. */
+  linkedIds: string[];
+  /** Proses KC'yi süren proses parametreleri ve kontrol ettiği ürün KC'leri (G-16). */
+  ppIds: string[];
+  relatedKcIds: string[];
+  /** CI için yapı elemanı (FN-xxx). */
+  structureId: string;
+  /** Tasarım kaydı (7.2.3 p40 "indicated in the design records"). */
+  designRecordDocId: string;
+  designRecordRef: string;
+  onDrawing: boolean;
+  flowDownTo: string;
+  flowDownDate: string;
+  /** 7.2.16 IMPACT ve Originating Document. */
+  impact: string[];
+  originatingDoc: string[];
+  customerAgreed: boolean;
 }
 
 export interface ControlPlanRow extends BaseRow {
@@ -732,6 +791,8 @@ export interface Project {
   auditLog: AuditEntry[];
   /** Doküman analiz çıktısı (yerel ayrıştırma); kaynak doğrulama için dosyada saklanır. */
   docIndex: Record<string, import('./docmodel').ExtractedDoc>;
+  /** v4-kc: KC/CI numara sayaçları; asla azalmaz (7.2.17 §1.2.1 – numara tekrar kullanılmaz). */
+  kcRegistry: { kc: number; ci: number };
   // v4-apqp: APQP/PPAP proje kaydı (7.2.12, 7.2.14, 7.2.15, 7.2.20, PPAP)
   apqp: import('./apqpModel').ApqpData;
   // v4-risk

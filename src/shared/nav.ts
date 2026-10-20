@@ -47,7 +47,11 @@ export const SCREENS: Screen[] = [
     subs: [{ key: 'processSteps', label: 'Proses Akışı (PFD)', table: 'processSteps' }, { key: 'pfdItems', label: 'PFD Girdi / Çıktı', table: 'pfdItems' } /* v4-risk */, { key: 'processParams', label: 'Proses Parametreleri', table: 'processParams' }, { key: 'pfmea', label: 'PFMEA', table: 'pfmea' }],
   },
   { key: 'risk', label: 'Risk', group: 'Analiz', stage: 'Risk Engine', hint: 'Puanlama standardı (IAQG SCMH veya AIAG-VDA), S/O/D kriterleri ve önceliklendirme.' },
-  { key: 'kcs', label: 'Özel Karakteristikler', group: 'Analiz', stage: 'Special Characteristic Engine', hint: 'KC adayları faktörleriyle değerlendirilir; karar ve kategori mühendisindir.' },
+  {
+    key: 'kcs', label: 'Özel Karakteristikler', group: 'Analiz', stage: 'Special Characteristic Engine', hint: 'KC adayları faktörleriyle değerlendirilir; karar ve kategori mühendisindir.',
+    // v4-kc: SCMH / AS9145 KC–CI bölümleri
+    subs: [{ key: 'kcs', label: 'KC / CI Listesi', table: 'kcs' }, { key: 'kcFlow', label: 'Adaylar & Karar Akışı' }, { key: 'kcTrace', label: 'İzlenebilirlik & 7.2.16' }],
+  },
   { key: 'controlPlan', label: 'Kontrol Planı', group: 'Kontrol', stage: 'Control Plan Engine', hint: 'Ürün karakteristiği, proses karakteristiği ve proses parametresi ayrı tutulur.' },
   { key: 'msa', label: 'MSA', group: 'Kontrol', stage: 'Ölçüm Sistemi Analizi', hint: 'Ölçüm tipine göre çalışma önerilir; her ölçüm için GR&R zorunlu değildir.' },
   { key: 'capability', label: 'Capability', group: 'Kontrol', stage: 'Capability Validation', hint: 'Cp/Cpk/Pp/Ppk yalnızca normallik, kararlılık ve yeterli örnekle geçerlidir.' },

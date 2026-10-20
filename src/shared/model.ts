@@ -8,6 +8,7 @@ import type {
 } from './types';
 import { WORKFLOW_STEPS } from './types';
 import { SCMH_SCORING } from './scmhScoring';
+import { DEFAULT_CI_NUMBERING, DEFAULT_KC_NUMBERING, kcRowDefaults } from './kcScmh'; // v4-kc
 import { defaultApqp, normalizeApqp } from './apqpModel'; // v4-apqp
 import { CAP_SETTINGS_DEFAULTS, CAP_V4_DEFAULTS, MSA_V4_DEFAULTS, capNormalize } from './capDefaults'; // v4-cap
 import { normalizeRisk } from './riskModel'; // v4-risk
@@ -73,6 +74,12 @@ export function nextId(project: Project, table: TableKey): string {
     const m = /-(\d+)$/.exec(r.id);
     if (m) max = Math.max(max, Number(m[1]));
   }
+  // v4-kc: silinmiş KC iç ID'leri tekrar verilmez (denetim izi / değişiklik kaydında geçen ID'ler sayılır).
+  if (table === 'kcs')
+    for (const e of [...(project.auditLog ?? []), ...(project.changeLog ?? [])]) {
+      const m = e.table === 'kcs' ? /^KC-(\d+)$/.exec(e.id) : null;
+      if (m) max = Math.max(max, Number(m[1]));
+    }
   return `${prefix}-${String(max + 1).padStart(3, '0')}`;
 }
 
@@ -119,7 +126,12 @@ const fmeaCommon = {
   sDispositionReason: '',
 };
 
+// v4-kc: 4.0 ek alanları (KC/CI modeli, SR, proses KC sorusu) kcScmh.ts'teki varsayılanlarla eklenir.
 export function blankRow(table: TableKey, id: string): AnyRow {
+  return { ...blankRowV3(table, id), ...(kcRowDefaults(table) ?? {}) } as unknown as AnyRow;
+}
+
+function blankRowV3(table: TableKey, id: string): { id: string } & Record<string, unknown> {
   switch (table) {
     case 'documents':
       return { id, name: '', docType: '', docNumber: '', revision: '', date: '', source: '', product: '', notes: '', filePath: '', parseStatus: '' };
@@ -187,6 +199,13 @@ export const DEFAULT_META: ProjectMeta = {
   facilitator: '',
   dfmeaLevel: '',
   scmhPhase: '',
+  // v4-kc
+  kcFormRevision: '',
+  kcFormDate: '',
+  kcContacts: '',
+  kcListAgreedBy: '',
+  kcListAgreedDate: '',
+  kcListAgreementRef: '',
 };
 
 const DEFAULT_STEP_ROLE: Record<string, string> = {
@@ -217,6 +236,9 @@ export const DEFAULT_SETTINGS: Settings = {
   workflow: WORKFLOW_STEPS.map((step) => ({ step, enabled: true, role: DEFAULT_STEP_ROLE[step] })),
   reasonFields: ['s', 'o', 'd', 'kcs.status', 'kcs.category', 'kcs.kcClass', 'approval', 'riskDecision', 'sDisposition'], // v4-risk: son 2
   scoringStandard: 'SCMH',
+  // v4-kc: SCMH 7.2.17 §1.2.1 numaralandırma
+  kcNumbering: DEFAULT_KC_NUMBERING,
+  ciNumbering: DEFAULT_CI_NUMBERING,
   ...CAP_SETTINGS_DEFAULTS, // v4-cap
   scmhReviewTopN: null, // v4-risk
   scmhInlineRanks: false, // v4-risk
@@ -340,6 +362,7 @@ export function newProject(): Project {
     approvals: [],
     auditLog: [],
     docIndex: {},
+    kcRegistry: { kc: 0, ci: 0 }, // v4-kc
     apqp: defaultApqp(), // v4-apqp
     pfdItems: [], // v4-risk
     lineCounters: {}, // v4-risk
@@ -376,6 +399,7 @@ export function normalizeProject(raw: Partial<Project>, report?: MigrationReport
     approvals: raw.approvals ?? [],
     auditLog: raw.auditLog ?? [],
     docIndex: raw.docIndex ?? {},
+    kcRegistry: { kc: 0, ci: 0, ...(raw.kcRegistry ?? {}) }, // v4-kc
     apqp: normalizeApqp(raw.apqp), // v4-apqp: 3.0 dosyalarında yok → varsayılanlar
     lineCounters: { ...(raw.lineCounters ?? {}) }, // v4-risk
   } as Project;

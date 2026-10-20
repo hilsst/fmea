@@ -6,7 +6,7 @@
 //  - Proje satırı şablon satırından fazlaysa, son şablon satırının stiliyle satır eklenir.
 //  - Revision History, şablondaki mevcut satırların altına p.history'den eklenir.
 import { ScmhBook, type CellValue } from './scmhfill';
-import { scmhClassificationOf, scmhPriority } from './scmhScoring';
+import { scmhClassificationOf, scmhCpClassification, scmhPriority, scmhStepClassification } from './scmhScoring'; // v4-kc
 import { commentText, decisionCols, lineNumbers, reactionExportText, splitRequirement, withRank } from './risk'; // v4-risk
 import { LISTS } from './model';
 import type { ActionRow, ControlPlanRow, DfmeaRow, HistoryRow, PfdStepType, PfmeaRow, ProcessStepRow, Project, Score } from './types';
@@ -411,7 +411,7 @@ async function fillCp(p: Project, tpl: Uint8Array, trace: boolean, opt: Pick<Ctx
       F: need(c.reference, c.charId), // v4-risk: boşsa karakteristik ID (CP Q&A Q31)
       G: prod || (procC ? '' : VY),
       H: procC,
-      I: s(c.kcId),
+      I: scmhCpClassification(p, c), // v4-kc
       J: spec || VY,
       K: meas || VY,
       L: need(c.sampleSize),
@@ -457,7 +457,7 @@ async function fillPfd(p: Project, tpl: Uint8Array, trace: boolean, opt: Pick<Ct
     // v4-risk: PFD çıktıları (ürün karakteristiği) ve değişkenlik kaynağı girdileri (proses karakteristiği), PF webinar p14/p31
     const io = p.pfdItems.filter((x) => x.stepId === st.id && s(x.text));
     const ioText = (k: 'Input' | 'Output') => io.filter((x) => x.kind === k && (k === 'Output' || x.sourceOfVariation || !io.some((y) => y.kind === 'Input' && y.sourceOfVariation))).map((x) => (x.charId ? `${s(x.charId)}: ${s(x.text)}` : s(x.text))).join('; ');
-    const cls = or(st.classification, uniq([...pf.flatMap((x) => scmhClassificationOf(p, x.id).split('; ')), ...cps.map((c) => c.kcId), ...io.map((x) => x.kcId)]).join('; '));
+    const cls = or(st.classification, scmhStepClassification(p, st)); // v4-kc: KC/CI numaraları (DFMEA akışı ve PFD girdi/çıktıları dahil)
     const prod = or(st.productChars, ioText('Output'), uniq(cps.map((c) => s(c.productChar))).join('; '));
     const proc = or(st.processChars, ioText('Input'), uniq(cps.map((c) => s(c.processChar))).join('; '));
     const types = inferStepType(st);

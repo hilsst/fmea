@@ -17,9 +17,11 @@ interface GridProps {
   emptyHint?: ReactNode;
   selected?: string[];
   onSelect?: (ids: string[]) => void;
+  /** v4-kc: silme engeli; mesaj döndürürse satırlar silinmez. */
+  canDelete?: (ids: string[]) => string | null;
 }
 
-export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: selProp, onSelect }: GridProps) {
+export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: selProp, onSelect, canDelete }: GridProps) {
   const { project, edit, toast } = useStore();
   const [q, setQ] = useState('');
   const [all, setAll] = useState(false);
@@ -31,7 +33,8 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [table, q, sort]);
 
-  const cols = COLUMNS[table].filter((c) => all || !c.secondary);
+  const std = project.settings.scoringStandard ?? 'AIAG-VDA'; // v4-kc: kolonun puanlama standardı
+  const cols = COLUMNS[table].filter((c) => (all || !c.secondary) && (!c.mode || c.mode === std));
   const rows = project[table] as AnyRow[];
 
   const visible = useMemo(() => {
@@ -62,6 +65,8 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
 
   const removeSelected = async () => {
     if (!selected.length) return;
+    const blocked = canDelete?.(selected); // v4-kc
+    if (blocked) return toast(blocked, 'warn');
     if (!window.confirm(`${selected.length} satır silinsin mi?\n${selected.join(', ')}`)) return;
     const ok = await edit(selected.map((id) => ({ kind: 'delete' as const, table, id })), `${selected.length} satır silme`);
     if (ok) {

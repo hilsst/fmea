@@ -1,6 +1,7 @@
 // Spesifikasyon §35 FMEA kalite kontrolü ve §26 izlenebilirlik matrisleri.
 import { capChecks } from './capChecks'; // v4-cap
 import { apOf, isKcCandidate } from './scoring';
+import { kcChecks } from './kcChecks'; // v4-kc
 import { actionAddressed, needsAction, riskChecks } from './risk'; // v4-risk
 import { isScmh } from './scmhScoring'; // v4-risk
 import type { ControlPlanRow, DfmeaRow, KcRow, PfmeaRow, Project } from './types';
@@ -105,6 +106,9 @@ export function qualityChecks(p: Project): CheckResult[] {
     [...df, ...pf].filter((r) => needsAction(p, r).need && !actionAddressed(r)).map((r) => r.id),
     sc ? 'İnceleme listesindeki satırların hepsinde aksiyon veya karar var' : 'AP=High satırların hepsinde aksiyon var', (n) => sc ? `${n} inceleme satırında aksiyon/karar yok` : `${n} AP=High satırda önerilen aksiyon yok`, df.length + pf.length > 0);
   out.push(...riskChecks(p)); // v4-risk
+
+  // v4-kc: SCMH / AS9145 KC–CI izlenebilirlik kontrolleri (kcTrace.ts)
+  if (isScmh(p)) out.push(...kcChecks(p));
 
   out.push(...apqpChecks(p)); // v4-apqp: yalnızca APQP / ekip kaydı kullanılan projelerde
   out.push(...capChecks(p)); // v4-cap

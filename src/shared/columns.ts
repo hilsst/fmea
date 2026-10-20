@@ -7,6 +7,7 @@ import { apOf, RPN_WARNING, isKcCandidate, parseData, rpn } from './scoring';
 import type { CapabilityAnalysis } from './capability';
 import { impactOf } from './impact';
 import { evaluateKc } from './kc';
+import { kcExtraColumns, pfmeaExtraColumns, requirementExtraColumns } from './kcColumns'; // v4-kc
 import { PFD_STEP_TYPES } from './types';
 import { CP_PHASES as LISTS_CP_PHASES } from './apqpModel'; // v4-apqp
 import { RISK_COLS } from './riskColumns'; // v4-risk
@@ -31,6 +32,8 @@ export interface Col {
   secondary?: boolean;
   /** Bu kolon başka ekrandan kopyalanır; düzenleme ilgili ekranda yapılır. */
   derived?: string;
+  /** v4-kc: yalnızca bu puanlama standardındaki projelerde gösterilir. */
+  mode?: 'SCMH' | 'AIAG-VDA';
 }
 
 const t = (key: string, label: string, width = 160, extra: Partial<Col> = {}): Col => ({ key, label, width, type: 'text', ...extra });
@@ -389,6 +392,18 @@ export const COLUMNS: Record<TableKey, Col[]> = {
   ],
   pfdItems: RISK_COLS.pfdItems, // v4-risk
 };
+
+// v4-kc: KC/CI (9145), SR ve proses KC kolonları. SCMH projelerinde otomotiv KC sınıfı/kategorisi gizlenir.
+{
+  const kc = kcExtraColumns();
+  for (const c of COLUMNS.kcs) if (kc.hideInScmh.includes(c.key)) c.mode = 'AIAG-VDA';
+  const src = COLUMNS.kcs.find((c) => c.key === 'sourceId');
+  if (src) Object.assign(src, { ref: ['dfmea', 'pfmea', 'requirements'], label: 'Kaynak (FMEA / Gereksinim)', help: 'DF-/PF- satırı veya müşteri KC’si için gereksinim (REQ-)' });
+  COLUMNS.kcs.unshift(...kc.first);
+  COLUMNS.kcs.push(...kc.rest);
+  COLUMNS.requirements.push(...requirementExtraColumns());
+  COLUMNS.pfmea.push(...pfmeaExtraColumns());
+}
 
 const LONG_LABEL: Record<string, string> = { s: 'Severity (S)', o: 'Occurrence (O)', d: 'Detection (D)', severity: 'Severity (S)', newS: 'Yeni Severity', newO: 'Yeni Occurrence', newD: 'Yeni Detection' };
 

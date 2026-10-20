@@ -8,6 +8,7 @@ import type { ExtractedDoc } from '../shared/docmodel';
 import { buildWorkbook } from '../shared/excel';
 import { buildWorkbookV2 } from '../shared/excel2';
 import { buildScmhPackage, scmhFileName, SCMH_TEMPLATE_FILES, type ScmhKind } from '../shared/scmh';
+import { buildKcForm, kcFormFileName, KC_FORM_TEMPLATE_FILE } from '../shared/kcForm'; // v4-kc
 import { cpPhaseVariants } from '../shared/apqp'; // v4-apqp
 import { apqpFileName, fillApqpApplicability, fillMaturityEvidence, fillPackagingForm, findApqpTemplate, type ApqpTemplateKind } from '../shared/apqpExport'; // v4-apqp
 import type { SheetGrid } from '../shared/importmap';
@@ -165,7 +166,7 @@ function buildMenu() {
         { label: 'Farklı Kaydet…', accelerator: 'CmdOrCtrl+Shift+S', click: m('saveAs') },
         { type: 'separator' },
         { label: 'Excel’e Aktar (2.0, 14 sayfa)…', accelerator: 'CmdOrCtrl+E', click: m('export2') },
-        { label: 'SCMH Paketi (PFD, DFMEA, PFMEA, Kontrol Planı)…', accelerator: 'CmdOrCtrl+Shift+E', click: m('scmh') },
+        { label: 'SCMH Paketi (PFD, DFMEA, PFMEA, Kontrol Planı, KC Formu)…', accelerator: 'CmdOrCtrl+Shift+E', click: m('scmh') },
         { label: 'Excel’e Aktar (1.0 biçimi)…', click: m('export') },
         { label: 'Excel FMEA İçe Aktar…', click: m('import') },
         { label: 'İnceleme Raporu (PDF / HTML)…', click: m('report') },
@@ -360,6 +361,13 @@ function registerIpc() {
         if (k === 'cp' && variants.length) continue;
         const f = path.join(out.filePaths[0], scmhFileName(k, data));
         await fs.writeFile(f, pkg[k]);
+        files.push(f);
+      }
+      // v4-kc: opsiyonel 5. şablon – 7.2.16 KC Traceability Form (klasörde varsa doldurulur)
+      const kcTpl = path.join(dir, KC_FORM_TEMPLATE_FILE);
+      if (fssync.existsSync(kcTpl)) {
+        const f = path.join(out.filePaths[0], kcFormFileName(data));
+        await fs.writeFile(f, await buildKcForm(data, new Uint8Array(await fs.readFile(kcTpl))));
         files.push(f);
       }
       for (const v of variants) {
