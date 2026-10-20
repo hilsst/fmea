@@ -87,3 +87,30 @@ describe('otomatik öneri motoru', () => {
     expect(rows.find((r) => r.failureMode === 'Kür sıcaklığı alt limitin altında')!.source).toMatch(/limit VERİ YOK/);
   });
 });
+
+describe('dokümandan tüm zincir', () => {
+  it('analiz edilmiş dokümandan gereksinim → yapı → DFMEA, mevcut PFMEA boşları tamamlanır', () => {
+    let p = newProject();
+    p.meta.partName = 'Panel';
+    p = apply(p, [
+      { kind: 'add', table: 'documents', row: { ...blankRow('documents', 'DOC-001'), id: 'DOC-001', name: 'Şartname', docNumber: 'TS-1' } },
+      { kind: 'add', table: 'processSteps', row: { ...blankRow('processSteps', 'OP-001'), id: 'OP-001', opNo: '10', name: 'Machining' } },
+      { kind: 'add', table: 'pfmea', row: { ...blankRow('pfmea', 'PF-001'), id: 'PF-001', stepId: 'OP-001', failureMode: 'Delik büyük', detection: 'Mastar' } },
+    ]);
+    p.docIndex['DOC-001'] = {
+      fileName: 'ts.txt', ext: 'txt', hash: 'x', size: 1, parser: 'txt', status: 'ok', messages: [], meta: {}, extractedAt: '',
+      blocks: [{ id: 'p1', kind: 'paragraph', text: 'Delik çapı Ø8.0 ±0.05 mm olmalıdır.', loc: { page: 2 } }],
+    } as never;
+    const g = generate(p, ['requirements', 'structure', 'dfmea', 'pfmea', 'fill'], { docIds: ['DOC-001'] });
+    const q = apply(p, g.edits);
+    const req = q.requirements[0];
+    expect(req.acceptance).toMatch(/7\.95–8\.05 mm/);
+    expect(q.structure.some((s) => s.reqIds.includes(req.id))).toBe(true);
+    expect(q.dfmea.length).toBeGreaterThan(0);
+    const pf = q.pfmea.find((r) => r.id === 'PF-001')!;
+    expect(pf.processFunction).toBeTruthy();
+    expect(pf.productRequirement).toMatch(/Delik/);
+    expect(pf.dfIds.length).toBeGreaterThan(0);
+    expect(g.counts.filled).toBe(1);
+  });
+});

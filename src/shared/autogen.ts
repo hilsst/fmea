@@ -3,7 +3,7 @@
 // Kaynakta olmayan değer uydurulmaz (VERİ YOK); kütüphane içeriği ENGINEERING KNOWLEDGE olarak işaretlenir.
 import { findRequirementCandidates, locText } from './docmodel';
 import { DFMEA_LIB, PFMEA_LIB, paramTemplates, pfmeaAreaOf, type FailureTemplate } from './failureLib';
-import { dfmeaFillValues, pfmeaFillValues } from './fmeaFill';
+import { dfmeaFillValues, fillBlanksEdits, pfmeaFillValues } from './fmeaFill';
 import { blankRow, nextId } from './model';
 import { NO_DATA, characteristicOf, reqAutoValues } from './reqAutofill';
 import type { AnyRow, PfmeaRow, ProcessParamRow, ProcessStepRow, Project, RequirementRow, StructureRow, TableKey } from './types';
@@ -16,7 +16,7 @@ const LIB_REASON = 'Hata kütüphanesi başlangıç değeri – kriter tablosuna
 /** Satır ekleyen ve eklenenleri kendi proje kopyasında tutan yardımcı (sonraki adımlar yeni satırları görür). */
 export class Gen {
   edits: GenEdit[] = [];
-  counts: Partial<Record<TableKey, number>> = {};
+  counts: Partial<Record<string, number>> = {};
   constructor(public p: Project) {}
   add(table: TableKey, data: Partial<AnyRow>): string {
     const id = nextId(this.p, table);
@@ -232,7 +232,8 @@ export function genPfmea(g: Gen, stepIds?: string[]) {
 
 // ───────────────────────── Zincir ─────────────────────────
 
-export type GenStage = 'requirements' | 'structure' | 'dfmea' | 'pfmea';
+/** fill: mevcut DFMEA/PFMEA satırlarının boş alanlarını da doldurur. */
+export type GenStage = 'requirements' | 'structure' | 'dfmea' | 'pfmea' | 'fill';
 
 /** Seçilen aşamaları sırayla çalıştırır; her aşama bir öncekinin ürettiği satırları kullanır. */
 export function generate(p: Project, stages: GenStage[], opts: { docIds?: string[]; reqIds?: string[]; fnIds?: string[]; stepIds?: string[] } = {}): Gen {
@@ -241,10 +242,19 @@ export function generate(p: Project, stages: GenStage[], opts: { docIds?: string
   if (stages.includes('structure')) genStructure(g, stages.includes('requirements') ? undefined : opts.reqIds);
   if (stages.includes('dfmea')) genDfmea(g, stages.includes('structure') ? undefined : opts.fnIds);
   if (stages.includes('pfmea')) genPfmea(g, opts.stepIds);
+  if (stages.includes('fill')) {
+    // Bu çalıştırmada eklenenler zaten dolu; önceden var olan satırların boşları tamamlanır.
+    const before = new Set([...p.dfmea, ...p.pfmea].map((r) => r.id));
+    const n = g.edits.length;
+    for (const t of ['dfmea', 'pfmea'] as const)
+      for (const e of fillBlanksEdits(g.p, t).filter((x) => before.has(x.id))) g.set(t, e.id, e.field, e.value);
+    const filled = new Set(g.edits.slice(n).map((e) => (e as { id: string }).id)).size;
+    if (filled) g.counts.filled = filled;
+  }
   return g;
 }
 
-export const STAGE_LABEL: Record<string, string> = { requirements: 'gereksinim', evidence: 'kanıt', structure: 'yapı/fonksiyon', dfmea: 'DFMEA', pfmea: 'PFMEA' };
+export const STAGE_LABEL: Record<string, string> = { requirements: 'gereksinim', evidence: 'kanıt', structure: 'yapı/fonksiyon', dfmea: 'DFMEA', pfmea: 'PFMEA', filled: 'satırda boş alan tamamlama' };
 
 export function countText(g: Gen): string {
   return Object.entries(g.counts).map(([t, n]) => `${n} ${STAGE_LABEL[t] ?? t}`).join(', ');

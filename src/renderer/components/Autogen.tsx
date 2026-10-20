@@ -1,6 +1,7 @@
 import { countText, generate, type GenStage } from '../../shared/autogen';
 import { fillBlanksEdits } from '../../shared/fmeaFill';
 import type { Edit } from '../../shared/engine';
+import type { Project } from '../../shared/types';
 import { useStore } from '../store';
 
 /** DFMEA / PFMEA satırlarının boş alanlarını ilişkili veriden doldurur; dolu alanlara dokunmaz. */
@@ -17,8 +18,9 @@ export function useFillBlanks(table: 'dfmea' | 'pfmea') {
 /** Kural tabanlı öneri motorunu çalıştırır; eklemeden önce ne ekleneceğini sorar. Satırlar "AI Proposed" gelir. */
 export function useAutogen() {
   const { project, edit, toast, confirm } = useStore();
-  return async (stages: GenStage[], title: string, opts: Parameters<typeof generate>[2] = {}) => {
-    const g = generate(project, stages, opts);
+  /** base: henüz render'a yansımamış güncel proje (ör. analizden hemen sonra). */
+  return async (stages: GenStage[], title: string, opts: Parameters<typeof generate>[2] = {}, base: Project = project) => {
+    const g = generate(base, stages, opts);
     if (!g.edits.length) return toast('Önerilecek yeni satır yok (mevcut satırlar korunur, yalnızca eksikler önerilir).', 'warn');
     const ok = await confirm(
       `${title}: ${countText(g)} önerilecek`,

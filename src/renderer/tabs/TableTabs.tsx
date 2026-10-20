@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { findRequirementCandidates, locText, UNSUPPORTED_MSG } from '../../shared/docmodel';
 import { summarizeChanges, type Edit } from '../../shared/engine';
 import { reqAutoValues } from '../../shared/reqAutofill';
+import type { GenStage } from '../../shared/autogen';
 import { COMPOSITE_TEMPLATE, isComposite } from '../../shared/kb';
 import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
 import { KC_LOCK_MSG, isCi, kcLocked, scmhKcDecision } from '../../shared/kcScmh'; // v4-kc
@@ -38,6 +39,8 @@ function batch(project: Project) {
   };
 }
 
+const ALL_STAGES: GenStage[] = ['requirements', 'structure', 'dfmea', 'pfmea', 'fill'];
+
 export function DocumentsTab() {
   const { project, edit, mutate, toast } = useStore();
   const [sel, setSel] = useState<string[]>([]);
@@ -72,6 +75,9 @@ export function DocumentsTab() {
       if (row) row.parseStatus = status;
     }, { kind: 'Modified', table: 'documents', id: doc.id, field: 'parseStatus', to: status });
     toast(x.status === 'unsupported' ? UNSUPPORTED_MSG : `Analiz tamamlandı: ${x.blocks.length} metin bloğu`, x.status === 'ok' ? 'ok' : 'warn');
+    // Ana akış: doküman analiz edilince tüm tablolar kütüphaneden önerilir; mühendise kontrol, düzeltme ve onay kalır.
+    if (x.status !== 'unsupported')
+      await gen(ALL_STAGES, `${doc.docNumber || doc.name} analizinden öneriler`, { docIds: [doc.id] }, { ...project, docIndex: { ...project.docIndex, [doc.id]: x } });
   };
   const addLocal = async () => {
     if (!doc || !index) return;
@@ -109,7 +115,7 @@ export function DocumentsTab() {
             <button className="btn" disabled={!index} onClick={addLocal} title="Yerel ayrıştırıcının bulduğu gereksinim cümlelerini ekler (AI kullanılmaz)">
               Yerel adayları ekle
             </button>
-            <button className="btn" disabled={!Object.keys(project.docIndex).length} onClick={() => gen(['requirements', 'structure', 'dfmea', 'pfmea'], 'Dokümanlardan tüm zincir', { docIds: sel.length ? sel : undefined })} title="Analiz edilmiş dokümanlardan (seçim yoksa hepsi) gereksinim → yapı/fonksiyon → DFMEA → PFMEA önerir. Yalnızca eksik satırlar eklenir; hepsi AI Proposed gelir.">
+            <button className="btn" disabled={!Object.keys(project.docIndex).length} onClick={() => gen(ALL_STAGES, 'Dokümanlardan tüm zincir', { docIds: sel.length ? sel : undefined })} title="Analiz edilmiş dokümanlardan (seçim yoksa hepsi) gereksinim → yapı/fonksiyon → DFMEA → PFMEA önerir. Yalnızca eksik satırlar eklenir; hepsi AI Proposed gelir.">
               ⟳ Tüm zinciri öner
             </button>
             <button className="btn ai" disabled={sel.length !== 1} onClick={() => ai.extractRequirements(doc)} title="Seçili dokümandan Requirements Matrix çıkarır">
