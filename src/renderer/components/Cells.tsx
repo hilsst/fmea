@@ -143,7 +143,7 @@ export function RefCell({ col, value, readonly, onCommit, project }: CellProps) 
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const box = useRef<HTMLDivElement>(null);
-  const opts = useMemo(() => (open ? refOptions(project, col.ref) : []), [open, project, col.ref]);
+  const opts = useMemo(() => (!open ? [] : col.options ? col.options.map((o) => ({ id: o, label: o })) : refOptions(project, col.ref)), [open, project, col.ref, col.options]);
   useEffect(() => {
     if (!open) return;
     const h = (e: MouseEvent) => {
@@ -188,7 +188,7 @@ export function MultiCell({ col, value, readonly, onCommit, project }: CellProps
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState<string[]>(ids);
   const [q, setQ] = useState('');
-  const opts = useMemo(() => (open ? refOptions(project, col.ref) : []), [open, project, col.ref]);
+  const opts = useMemo(() => (!open ? [] : col.options ? col.options.map((o) => ({ id: o, label: o })) : refOptions(project, col.ref)), [open, project, col.ref, col.options]);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => setSel(ids), [ids.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -205,7 +205,7 @@ export function MultiCell({ col, value, readonly, onCommit, project }: CellProps
   };
   return (
     <div className="multi-cell" ref={box}>
-      <button className="chips" disabled={readonly} onClick={() => (open ? close() : setOpen(true))} title={ids.length ? ids.map((i) => rowLabel(project, i)).join('\n') : ''}>
+      <button className="chips" disabled={readonly} onClick={() => (open ? close() : setOpen(true))} title={ids.length ? ids.map((i) => (col.options ? i : rowLabel(project, i))).join('\n') : ''}>
         {ids.length ? ids.map((i) => <span key={i} className="chip">{i}</span>) : <span className="muted">seç…</span>}
       </button>
       {open && (

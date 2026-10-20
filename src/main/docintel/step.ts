@@ -1,21 +1,17 @@
-// STEP (ISO 10303-21): HEADER alanları, DATA varlık sayıları, PRODUCT adları. Geometri / PMI yorumlanmaz.
-import { CAD_PARTIAL_MSG, type CadInfo } from '../../shared/docmodel';
-import { BlockList, result, type Parser } from './util';
+// STEP (ISO 10303-21, AP203 / AP214 / AP242): HEADER, varlık sayıları, PRODUCT adları ve geometri analizi
+// (birim, sınırlayıcı kutu, delik / silindir grupları, daireler, yüz türleri, montaj, malzeme, AP242 PMI).
+// Geometri değerleri nominal model geometrisidir; tolerans yalnızca PMI'dan gelir.
+import { CAD_NOMINAL_MSG, CAD_PARTIAL_MSG, type CadInfo, type ExtractMessage } from '../../shared/docmodel';
+import { BlockList, errMsg, result, type Parser } from './util';
+import { StepFile, stepString } from './cad/step-graph';
+import { analyzeStep, type StepGeometry } from './cad/step-analyze';
+import { cadBlocks } from './cad/report';
+
+export { stepString };
 
 type Arg = string | Arg[];
 
-/** STEP dize kaçışları: '' , \X2\..\X0\, \X\hh, \S\c */
-export function stepString(s: string): string {
-  return s
-    .replace(/''/g, "'")
-    .replace(/\\X2\\([0-9A-F]+)\\X0\\/gi, (_, h: string) => (h.match(/.{4}/g) ?? []).map((x) => String.fromCharCode(parseInt(x, 16))).join(''))
-    .replace(/\\X4\\([0-9A-F]+)\\X0\\/gi, (_, h: string) => (h.match(/.{8}/g) ?? []).map((x) => String.fromCodePoint(parseInt(x, 16))).join(''))
-    .replace(/\\X\\([0-9A-F]{2})/gi, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
-    .replace(/\\S\\(.)/g, (_, c: string) => String.fromCharCode(c.charCodeAt(0) + 128))
-    .replace(/\\\\/g, '\\');
-}
-
-/** pos konumundaki '(' ile başlayan parametre listesini ayrıştırır. Dizeler çözülmüş, diğer atomlar ham döner. */
+/** pos konumundaki '(' ile başlayan parametre listesini ayrıştırır. Dizeler çözülmüş, diğer atomlar ham döner. (HEADER için) */
 export function parseArgsAt(text: string, pos: number): [Arg[], number] {
   const stack: Arg[][] = [];
   let cur: Arg[] = [];
@@ -65,9 +61,8 @@ function headerCall(header: string, name: string): Arg[] | undefined {
 export const parseStep: Parser = async (_name, data) => {
   const raw = data.toString('latin1');
   if (!/ISO-10303-21\s*;/.test(raw.slice(0, 2000))) throw new Error('Geçerli bir STEP (ISO-10303-21) dosyası değil.');
-  const text = raw.replace(/\/\*[\s\S]*?\*\//g, '');
-  const hs = /\bHEADER\s*;([\s\S]*?)\bENDSEC\s*;/.exec(text);
-  const headerTxt = hs?.[1] ?? '';
+  const f = new StepFile(raw);
+  const headerTxt = f.headerText;
   const header: Record<string, string> = {};
   const fd = headerCall(headerTxt, 'FILE_DESCRIPTION');
   if (fd) {
@@ -83,45 +78,74 @@ export const parseStep: Parser = async (_name, data) => {
   if (fs) header.FILE_SCHEMA = flatStr(fs);
   for (const k of Object.keys(header)) if (!header[k]) delete header[k];
 
-  const ds = /\bDATA\s*;([\s\S]*?)\bENDSEC\s*;/.exec(text.slice(hs ? hs.index + hs[0].length : 0));
-  const dataTxt = ds?.[1] ?? '';
-  const counts: Record<string, number> = {};
-  for (const m of dataTxt.matchAll(/#\d+\s*=\s*(?:([A-Z][A-Z0-9_]*)\s*\(|(\())/gi)) {
-    const k = m[1] ? m[1].toUpperCase() : 'COMPLEX_ENTITY';
-    counts[k] = (counts[k] ?? 0) + 1;
-  }
-
+  const counts = f.counts;
   const bl = new BlockList();
   const label: [string, string][] = [
     ['FILE_NAME', 'Dosya adı'], ['FILE_DESCRIPTION', 'Açıklama'], ['FILE_SCHEMA', 'Şema'], ['author', 'Yazar'],
     ['organization', 'Kuruluş'], ['originatingSystem', 'Kaynak sistem'], ['timeStamp', 'Tarih'],
   ];
   for (const [k, l] of label) if (header[k]) bl.add('note', `${l}: ${header[k]}`, { part: 'header' });
-  for (const m of dataTxt.matchAll(/#(\d+)\s*=\s*PRODUCT\s*\(/gi)) {
-    const [args] = parseArgsAt(dataTxt, m.index! + m[0].length - 1);
-    const [id, name, desc] = [flatStr(args[0]), flatStr(args[1]), flatStr(args[2])];
-    const parts = [id, name && name !== id ? name : '', desc && desc !== name ? desc : ''].filter(Boolean);
-    if (parts.length) bl.add('entity', `PRODUCT: ${parts.join(' – ')}`, { part: `#${m[1]}` });
+  for (const id of f.ofType('PRODUCT')) {
+    const args = f.args(id) ?? [];
+    const s = (i: number) => (typeof args[i] === 'string' ? (args[i] as string) : '');
+    const [pid, name, desc] = [s(0), s(1), s(2)];
+    const parts = [pid, name && name !== pid ? name : '', desc && desc !== name ? desc : ''].filter(Boolean);
+    if (parts.length) bl.add('entity', `PRODUCT: ${parts.join(' – ')}`, { part: `#${id}` });
   }
 
-  const u = /SI_UNIT\s*\(\s*(\.[A-Z]+\.|\$)\s*,\s*\.METRE\.\s*\)|CONVERSION_BASED_UNIT\s*\(\s*'(INCH|FOOT|IN|FT)'/i.exec(dataTxt);
-  const units = u
-    ? u[2]
-      ? /^in/i.test(u[2]) ? 'in' : 'ft'
-      : ({ '.MILLI.': 'mm', '.CENTI.': 'cm', '.MICRO.': 'µm', '.KILO.': 'km', '.DECI.': 'dm', $: 'm' } as Record<string, string>)[u[1].toUpperCase()] ?? u[1]
-    : undefined;
+  let geo: StepGeometry | undefined;
+  const warnings = [...f.warnings];
+  try {
+    geo = analyzeStep(f);
+    warnings.push(...geo.warnings);
+  } catch (e) {
+    warnings.push(`Geometri analizi tamamlanamadı: ${errMsg(e)}`);
+  }
 
-  const cad: CadInfo = { format: 'STEP', units, entityCounts: counts, header };
+  const cad: CadInfo = { format: 'STEP', units: geo?.units, entityCounts: counts, header };
+  if (geo) {
+    cad.unitScaleToMm = geo.unitScaleToMm;
+    if (geo.bbox) cad.bbox = geo.bbox;
+    cad.solids = geo.solids;
+    cad.shells = geo.shells;
+    if (Object.keys(geo.faces).length) cad.faces = geo.faces;
+    if (geo.holes.length) cad.holes = geo.holes;
+    if (geo.fillets.length) cad.fillets = geo.fillets;
+    if (geo.circles.length) cad.circles = geo.circles;
+    if (geo.parts.length) cad.parts = geo.parts;
+    if (geo.assembly.length) cad.assembly = geo.assembly;
+    if (geo.materials.length) cad.materials = geo.materials;
+    if (geo.pmi.length) cad.pmi = geo.pmi;
+    if (geo.thickness.length) cad.thickness = geo.thickness;
+    if (geo.bsplineInBox) warnings.push('Kutuya B-spline kenar kontrol noktaları dahil edildi; serbest form bölgelerde kutu bir miktar büyük olabilir.');
+    if (geo.surfaceModels) warnings.push(`${geo.surfaceModels} yüzey modeli (SHELL_BASED_SURFACE_MODEL) var; bunlardaki silindirlerde delik / çıkıntı yönü belirlenmedi.`);
+  }
+  if (warnings.length) cad.warnings = warnings;
+  if (!cad.units) delete cad.units;
+
+  const understood = !!geo?.geometryUnderstood;
+  if (geo) cadBlocks(bl, cad, { reliable: understood });
+
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, v]) => `${k}: ${v}`).join(', ');
-  const messages = [
-    { level: 'warning' as const, text: CAD_PARTIAL_MSG },
-    { level: 'info' as const, text: `STEP varlık sayısı: ${total}${top ? ` (${top})` : ''}.` },
+  const messages: ExtractMessage[] = [
+    understood ? { level: 'warning', text: CAD_NOMINAL_MSG } : { level: 'warning', text: CAD_PARTIAL_MSG },
+    { level: 'info', text: `STEP varlık sayısı: ${total}${top ? ` (${top})` : ''}.` },
   ];
-  const pmi = Object.entries(counts).filter(([k]) => /TOLERANCE|DATUM|DIMENSIONAL_(SIZE|LOCATION)|ANNOTATION|DRAUGHTING_CALLOUT/.test(k)).reduce((a, [, v]) => a + v, 0);
-  if (pmi) messages.push({ level: 'warning' as const, text: `${pmi} PMI / GD&T varlığı mevcut ancak otomatik yorumlanmadı (MANUAL VERIFICATION REQUIRED).` });
+  const sem = (geo?.pmi ?? []).filter((p) => p.kind !== 'DATUM').length;
+  if (sem) messages.push({ level: 'info', text: `PMI: ${sem} ölçü / tolerans modelden okundu (toleranslı olanlar gereksinim adayı olarak yüksek güvenle önerilir).` });
+  if (geo?.presentationPmi)
+    messages.push({ level: 'warning', text: `${geo.presentationPmi} sunum (grafik) PMI / GD&T varlığı mevcut ancak otomatik yorumlanmadı (MANUAL VERIFICATION REQUIRED).` });
+  if (!total) messages.push({ level: 'warning', text: 'DATA bölümünde varlık bulunamadı.' });
+  for (const w of warnings) messages.push({ level: 'warning', text: w });
+  messages.push({
+    level: 'info',
+    text: 'Desteklenmeyen: hacim / kütle, delik geçiş-kör ayrımı, montaj yerleşim dönüşümleri, sunum (grafik) PMI, PMI değiştiricileri (MMC/LMC vb.).',
+  });
+
   const meta: Record<string, string> = {};
   if (header.FILE_NAME) meta.title = header.FILE_NAME;
   if (header.author) meta.author = header.author;
-  return result(bl.blocks, { status: 'partial', cad, meta, messages });
+  if (geo?.materials.length === 1) meta.material = geo.materials[0].name;
+  return result(bl.blocks, { status: understood ? 'ok' : 'partial', cad, meta, messages });
 };

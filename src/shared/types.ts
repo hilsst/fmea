@@ -54,6 +54,23 @@ export interface ProjectMeta {
   supplier: string;
   location: string;
   confidentiality: string;
+  // SCMH başlık alanları (IAQG SCMH 7.2.9–7.2.13 şablonları)
+  /** Company/Organization Name (boşsa `supplier` kullanılır). */
+  organization: string;
+  /** Export Control Classification */
+  exportControl: string;
+  /** Other Restrictions (boşsa `confidentiality` kullanılır). */
+  otherRestrictions: string;
+  /** DFMEA: Product Owner & E-mail */
+  productOwner: string;
+  /** PFD / PFMEA / Control Plan: Process Owner & E-mail */
+  processOwner: string;
+  /** DFMEA / PFMEA Facilitator & E-mail (boşsa `preparedBy` kullanılır). */
+  facilitator: string;
+  /** DFMEA seviyesi checkbox'ı: SCMH_DFMEA_LEVELS ('System' | 'Subsystem' | 'Component') veya ''. */
+  dfmeaLevel: string;
+  /** PFMEA / Control Plan aşaması checkbox'ı: SCMH_PHASES ('Pre-Production' | 'Production') veya ''. */
+  scmhPhase: string;
 }
 
 export interface Settings {
@@ -82,6 +99,8 @@ export interface Settings {
   workflow: { step: WorkflowStep; enabled: boolean; role: string }[];
   /** Bu alanlar değişirken neden sorulur (§37). */
   reasonFields: string[];
+  /** Puanlama/önceliklendirme standardı. SCMH: RPN eşiği yok, S 9–10 her zaman incelenir. */
+  scoringStandard: 'SCMH' | 'AIAG-VDA';
 }
 
 export interface DocumentRow extends BaseRow {
@@ -201,7 +220,19 @@ export interface ProcessStepRow extends BaseRow {
   processChars: string;
   source: string;
   notes: string;
+  /** SCMH PFD adım tipi (birden çok seçilebilir). */
+  stepType: PfdStepType[];
+  /** "Other (Specify)" seçildiğinde açıklama. */
+  stepTypeOther: string;
+  /** SCMH Classification: KC / CI ID'leri (örn. "KC-001; KC-002"). Boşsa PFMEA/KP bağlantılarından türetilir. */
+  classification: string;
 }
+
+export const SCMH_DFMEA_LEVELS = ['System', 'Subsystem', 'Component'] as const;
+export const SCMH_PHASES = ['Pre-Production', 'Production'] as const;
+
+export type PfdStepType = 'Operation' | 'Setup' | 'Move' | 'Store' | 'Inspect/Test' | 'Other' | 'Rework';
+export const PFD_STEP_TYPES: PfdStepType[] = ['Operation', 'Setup', 'Move', 'Store', 'Inspect/Test', 'Other', 'Rework'];
 
 export interface PfmeaRow extends FmeaCommon {
   stepId: string;
@@ -291,6 +322,8 @@ export interface ControlPlanRow extends BaseRow {
   tolerance: string;
   record: string;
   ppId: string;
+  /** SCMH CP "Reference": resim konumu / şartname bölümü (PFD ve PFMEA ile aynı numara). */
+  reference: string;
 }
 
 export interface MsaRow extends BaseRow {

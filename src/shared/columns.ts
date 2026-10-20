@@ -6,6 +6,7 @@ import { apOf, RPN_WARNING, isKcCandidate, parseData, riskLevel, rpn } from './s
 import type { CapabilityAnalysis } from './capability';
 import { impactOf } from './impact';
 import { evaluateKc } from './kc';
+import { PFD_STEP_TYPES } from './types';
 import type { AnyRow, CapabilityRow, ChangeRequestRow, DfmeaRow, KcRow, PfmeaRow, Project, TableKey } from './types';
 
 export type ColType = 'text' | 'long' | 'score' | 'select' | 'multi' | 'ref' | 'bool' | 'date' | 'number' | 'computed';
@@ -160,6 +161,9 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     t('machine', 'Makine / Ekipman', 140, { help: 'Değişirse bağlı PFMEA satırları yeniden değerlendirmeye düşer' }),
     t('tool', 'Takım / Kalıp', 130),
     { key: 'specialProcess', label: 'Özel Proses', width: 80, type: 'bool', help: 'Kür, bonding, boya, yüzey işlem, NDT...' },
+    { key: 'stepType', label: 'Adım Tipi (PFD)', width: 150, type: 'multi', options: PFD_STEP_TYPES, help: 'SCMH PFD sembolü: Operation, Setup, Move, Store, Inspect/Test, Other, Rework (birden çok seçilebilir)' },
+    t('stepTypeOther', 'Diğer (Belirtin)', 130, { secondary: true, help: 'Adım tipi “Other” ise açıklama (SCMH PFD “Other (Specify)”)' }),
+    t('classification', 'Classification', 120, { help: 'KC / CI ID’leri (örn. KC-001; KC-002). Boşsa bağlı PFMEA/Kontrol Planı KC’lerinden türetilir' }),
     long('productChars', 'Ürün Karakteristikleri', 180),
     long('processChars', 'Proses Karakteristikleri', 180),
     comp('pfCount', 'PFMEA', (r, p) => p.pfmea.filter((x) => x.stepId === r.id).length || '', 60),
@@ -229,6 +233,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('processChar', 'Proses Karakteristiği / Parametre', 180),
     { key: 'ppId', label: 'Proses Parametresi', width: 110, type: 'ref', ref: 'processParams', secondary: true },
     t('kcClass', 'KC Sınıfı', 110, { readonly: true, derived: 'Kritik Karakteristikler' }),
+    t('reference', 'Referans', 120, { help: 'SCMH “Reference”: resim konumu veya şartname bölümü (PFD/PFMEA ile aynı numara)' }),
     long('specification', 'Spesifikasyon', 180),
     t('tolerance', 'Tolerans', 100),
     t('method', 'Ölçüm Yöntemi', 150),

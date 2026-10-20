@@ -273,6 +273,14 @@ export function applyImport(
         row[f.key] = n;
       } else if (f.type === 'bool') {
         row[f.key] = TRUE_RE.test(text);
+      } else if (f.type === 'multi' && f.options) {
+        // Seçenek listeli çoklu alan (örn. PFD adım tipi): ID değil, liste değeri
+        const parts = text.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
+        const byLower = new Map(f.options.map((o) => [o.toLowerCase(), o] as [string, string]));
+        const ok = parts.map((x) => byLower.get(x.toLowerCase())).filter((x): x is string => !!x);
+        const bad = parts.filter((x) => !byLower.has(x.toLowerCase()));
+        if (bad.length) warnings.push(`${at}: “${bad.join(', ')}” ${f.label} listesinde yok; alınmadı.`);
+        row[f.key] = [...new Set([...((row[f.key] as string[]) ?? []), ...ok])];
       } else if (f.type === 'multi' || ARRAY_KEYS.has(f.key)) {
         const parts = text.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
         const ok = parts.filter((x) => known.has(x));

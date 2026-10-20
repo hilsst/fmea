@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import JSZip from 'jszip';
 import ExcelJS from 'exceljs';
 import { extractDocument, extractDocumentFile } from '../src/main/docintel/index';
-import { CAD_PARTIAL_MSG, UNSUPPORTED_MSG, findRequirementCandidates, type ExtractedDoc } from '../src/shared/docmodel';
+import { CAD_NOMINAL_MSG, CAD_PARTIAL_MSG, UNSUPPORTED_MSG, findRequirementCandidates, type ExtractedDoc } from '../src/shared/docmodel';
 import { PDF_SCANNED_MSG } from '../src/main/docintel/pdf';
 import { IMAGE_MSG } from '../src/main/docintel/image';
 import { stripMtext } from '../src/main/docintel/dxf';
@@ -410,16 +410,18 @@ describe('CAD', () => {
 
   it('IGES: S/G bölümleri, varlık sayıları, genel not ve ölçü', async () => {
     const d = await extractDocument('part.igs', fx('part.igs'));
-    expect(d.status).toBe('partial');
+    // Tek bir 110 çizgisi geometri olarak yorumlanır → ok (nominal geometri uyarısıyla)
+    expect(d.status).toBe('ok');
     expect(d.parser).toBe('iges');
-    expect(d.messages[0].text).toBe(CAD_PARTIAL_MSG);
+    expect(d.messages[0].text).toBe(CAD_NOMINAL_MSG);
+    expect(d.cad!.bbox!.sizeMm).toEqual([10, 0, 0]);
     expect(d.cad).toMatchObject({
       format: 'IGES',
       units: 'mm',
       entityCounts: { '110 Line': 1, '212 General Note': 2, '216 Linear Dimension': 1 },
       header: { fileName: 'part.igs', author: 'Kemal', organization: 'ACME Aero', nativeSystem: 'SolidWork' },
     });
-    expect(d.blocks.map((b) => [b.kind, b.text])).toEqual([
+    expect(d.blocks.filter((b) => !b.loc.section).map((b) => [b.kind, b.text])).toEqual([
       ['note', 'FMEA Studio IGES test fixture\nBracket drawing with notes'],
       ['dimension', '6.00+/-0.05'],
       ['note', 'MATERIAL: AL 7075-T6'],

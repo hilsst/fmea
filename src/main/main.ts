@@ -7,6 +7,7 @@ import { Worker } from 'node:worker_threads';
 import type { ExtractedDoc } from '../shared/docmodel';
 import { buildWorkbook } from '../shared/excel';
 import { buildWorkbookV2 } from '../shared/excel2';
+import { buildScmhPackage, scmhFileName, SCMH_TEMPLATE_FILES, type ScmhKind } from '../shared/scmh';
 import type { SheetGrid } from '../shared/importmap';
 import type { Project } from '../shared/types';
 import * as ai from './ai';
@@ -27,6 +28,8 @@ interface Config {
   aiProvider?: string;
   recent?: string[];
   ifs?: IfsSettings;
+  /** IAQG SCMH şablon klasörü (şablonlar © IAQG; uygulamayla dağıtılmaz, kullanıcı sağlar). */
+  scmhDir?: string;
 }
 
 /** safeStorage yoksa anahtar yalnızca bu oturumun belleğinde tutulur (diske yazılmaz). */
@@ -160,6 +163,7 @@ function buildMenu() {
         { label: 'Farklı Kaydet…', accelerator: 'CmdOrCtrl+Shift+S', click: m('saveAs') },
         { type: 'separator' },
         { label: 'Excel’e Aktar (2.0, 14 sayfa)…', accelerator: 'CmdOrCtrl+E', click: m('export2') },
+        { label: 'SCMH Paketi (PFD, DFMEA, PFMEA, Kontrol Planı)…', accelerator: 'CmdOrCtrl+Shift+E', click: m('scmh') },
         { label: 'Excel’e Aktar (1.0 biçimi)…', click: m('export') },
         { label: 'Excel FMEA İçe Aktar…', click: m('import') },
         { label: 'İnceleme Raporu (PDF / HTML)…', click: m('report') },
@@ -316,6 +320,47 @@ function registerIpc() {
     if (r.canceled || !r.filePath) return null;
     await fs.writeFile(r.filePath, await buildWorkbookV2(data));
     return r.filePath;
+  });
+  // SCMH paketi: PFD 7.2.9, DFMEA 7.2.10, PFMEA 7.2.11, Kontrol Planı 7.2.13 – resmi şablonlara doldurulur
+  const KINDS: ScmhKind[] = ['pfd', 'dfmea', 'pfmea', 'cp'];
+  const missingTemplates = (dir: string) => KINDS.filter((k) => !fssync.existsSync(path.join(dir, SCMH_TEMPLATE_FILES[k]))).map((k) => SCMH_TEMPLATE_FILES[k]);
+  ipcMain.handle('scmh:getDir', () => {
+    const dir = readConfig().scmhDir ?? '';
+    return { dir, missing: dir ? missingTemplates(dir) : KINDS.map((k) => SCMH_TEMPLATE_FILES[k]) };
+  });
+  const pickScmhDir = async () => {
+    const r = await dialog.showOpenDialog(win!, { title: 'IAQG SCMH şablon klasörünü seçin', properties: ['openDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    const c = readConfig();
+    c.scmhDir = r.filePaths[0];
+    writeConfig(c);
+    return { dir: c.scmhDir, missing: missingTemplates(c.scmhDir) };
+  };
+  ipcMain.handle('scmh:pickDir', pickScmhDir);
+  ipcMain.handle('scmh:export', async (_e, data: Project) => {
+    let dir = readConfig().scmhDir ?? '';
+    if (!dir || missingTemplates(dir).length) {
+      const picked = await pickScmhDir();
+      if (!picked) return { ok: false, error: 'SCMH şablon klasörü seçilmedi.' };
+      dir = picked.dir;
+    }
+    const missing = missingTemplates(dir);
+    if (missing.length) return { ok: false, error: `Şablon bulunamadı: ${missing.join(', ')}. Dosyaları scmh.iaqg.org’dan indirip bu klasöre koyun.` };
+    const out = await dialog.showOpenDialog(win!, { title: 'SCMH dosyalarının kaydedileceği klasör', properties: ['openDirectory', 'createDirectory'] });
+    if (out.canceled || !out.filePaths[0]) return { ok: false, error: '' };
+    try {
+      const t = Object.fromEntries(await Promise.all(KINDS.map(async (k) => [k, new Uint8Array(await fs.readFile(path.join(dir, SCMH_TEMPLATE_FILES[k])))]))) as Record<ScmhKind, Uint8Array>;
+      const pkg = await buildScmhPackage(data, t);
+      const files: string[] = [];
+      for (const k of KINDS) {
+        const f = path.join(out.filePaths[0], scmhFileName(k, data));
+        await fs.writeFile(f, pkg[k]);
+        files.push(f);
+      }
+      return { ok: true, files, dir: out.filePaths[0] };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
   ipcMain.handle('excel:readGrid', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters: [{ name: 'Excel / CSV', extensions: ['xlsx', 'xlsm', 'csv'] }] });

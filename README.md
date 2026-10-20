@@ -1,8 +1,8 @@
-# FMEA Studio 2.0
+# FMEA Studio 3.0
 
 Doküman → Gereksinim → DFMEA → PFMEA → Risk → Özel Karakteristik → Kontrol Planı → MSA → Capability → Aksiyon → Kalite Doğrulama → AI İnceleme → Mühendis Onayı zincirini tek dosyada yöneten masaüstü uygulaması (Windows / macOS / Linux).
 
-1.0 `.fmea` dosyaları açılışta veri kaybı olmadan 2.0 şemasına dönüştürülür. 2.0 ayrıntıları: [docs/v2/02-final-rapor.md](docs/v2/02-final-rapor.md).
+1.0 `.fmea` dosyaları açılışta veri kaybı olmadan 2.0 şemasına dönüştürülür. 2.0 ayrıntıları: [docs/v2/02-final-rapor.md](docs/v2/02-final-rapor.md). 3.0 (IAQG SCMH yapısı, STEP/IGES geometri analizi): [docs/v3/01-rapor.md](docs/v3/01-rapor.md).
 
 ## Kurulum (Windows)
 
@@ -68,7 +68,9 @@ Değişiklikler geri alınabilir (Ctrl+Z / Ctrl+Y).
 - Eksik bilgi **“VERİ YOK – doğrulanmalı”**, varsayım **“AI VARSAYIMI – mühendislik doğrulaması gerekli”**, öneri **“AI RECOMMENDATION”** olarak etiketlenir.
 - KC, Severity, AP, gereksinim ve kabul kriteri için onay durumları: AI Proposed / Engineer Reviewed / Approved / Rejected.
 - Önceliklendirme: emniyet/regülasyon → yüksek severity → KC → özel karakteristik → AP High → RPN → müşteriye özel. RPN tek başına karar kriteri değildir.
-- AP, AIAG & VDA FMEA Handbook (2019) tablosuyla otomatik hesaplanır.
+- Puanlama standardı proje başına seçilir (**Risk ve Öncelik → Puanlama standardı**):
+  - **IAQG SCMH** (yeni projelerde varsayılan): S/O/D tabloları SCMH’den gelir; RPN eşiği yoktur. S 9–10 olan her satır RPN’den bağımsız incelenir, ardından RPN ve S×O sırası izlenir.
+  - **AIAG-VDA 2019**: AP tablosuyla otomatik hesaplama. 3.0 öncesi dosyalar bu standartla açılır.
 
 ## AI önerileri
 
@@ -81,10 +83,12 @@ Değişiklikler geri alınabilir (Ctrl+Z / Ctrl+Y).
 ## Dosyalar
 
 - Proje dosyası: `.fmea` (JSON). Çift tıklamayla açılır.
+- **SCMH paketi** (Ctrl+Shift+E): PFD (7.2.9), DFMEA (7.2.10), PFMEA (7.2.11) ve Kontrol Planı (7.2.13) dosyaları, IAQG SCMH’nin kendi Excel şablonları doldurularak üretilir. Şablonlar IAQG’ye aittir ve uygulamayla dağıtılmaz: https://scmh.iaqg.org/ adresinden indirilen dört dosyanın bulunduğu klasör ilk kullanımda bir kez seçilir (**Ayarlar → SCMH şablon klasörü**).
 - **Excel’e aktar**: 14 sayfalık 2.0 çalışma kitabı (01_Project Summary … 14_Approval). 1.0 biçimi Dosya menüsünde durur.
 - **Excel FMEA içe aktar**: mevcut bir Excel FMEA kolon eşleme ekranıyla içe alınır; RPN/AP yeniden hesaplanır.
 - **Şirket şablonu** (`.fmeatpl`): ayarlar, KC kuralları, onay akışı ve AP tablosu.
 - **İnceleme raporu**: PDF veya HTML.
+- **STEP (.stp/.step) ve IGES (.igs/.iges)**: Dokümanlar ekranından yüklenir. Birim, genel boyutlar (mm), parça/montaj ağacı, malzeme, yüzey/delik/radyüs özeti ve AP242 PMI toleransları okunur. Model geometrisi nominaldir; tolerans yalnızca PMI varsa alınır, dosyada olmayan değer üretilmez.
 - Kaydedilmemiş çalışma birkaç saniyede bir kurtarma dosyasına yazılır; uygulama beklenmedik kapanırsa açılışta geri yükleme önerilir.
 
 ## Geliştirme
