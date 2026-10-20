@@ -6,7 +6,7 @@
 //  - Proje satırı şablon satırından fazlaysa, son şablon satırının stiliyle satır eklenir.
 //  - Revision History, şablondaki mevcut satırların altına p.history'den eklenir.
 import { ScmhBook, type CellValue } from './scmhfill';
-import { scmhClassificationOf } from './scmhScoring';
+import { scmhClassificationOf, scmhCpClassification, scmhStepClassification } from './scmhScoring'; // v4-kc
 import { LISTS } from './model';
 import type { ActionRow, ControlPlanRow, DfmeaRow, HistoryRow, PfdStepType, PfmeaRow, ProcessStepRow, Project, Score } from './types';
 
@@ -380,7 +380,7 @@ async function fillCp(p: Project, tpl: Uint8Array, trace: boolean): Promise<Buff
       F: need(c.reference),
       G: prod || (procC ? '' : VY),
       H: procC,
-      I: s(c.kcId),
+      I: scmhCpClassification(p, c), // v4-kc
       J: spec || VY,
       K: meas || VY,
       L: need(c.sampleSize),
@@ -419,7 +419,7 @@ async function fillPfd(p: Project, tpl: Uint8Array, trace: boolean): Promise<Buf
     const r = L.first + i;
     const pf = p.pfmea.filter((x) => x.stepId === st.id);
     const cps = p.controlPlan.filter((c) => c.stepId === st.id);
-    const cls = or(st.classification, uniq([...pf.flatMap((x) => scmhClassificationOf(p, x.id).split('; ')), ...cps.map((c) => c.kcId)]).join('; '));
+    const cls = or(st.classification, scmhStepClassification(p, st)); // v4-kc: KC/CI numaraları, DFMEA akışı dahil
     const prod = or(st.productChars, uniq(cps.map((c) => s(c.productChar))).join('; '));
     const proc = or(st.processChars, uniq(cps.map((c) => s(c.processChar))).join('; '));
     const types = inferStepType(st);

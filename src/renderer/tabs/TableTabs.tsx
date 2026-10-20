@@ -3,6 +3,9 @@ import { findRequirementCandidates, locText, UNSUPPORTED_MSG } from '../../share
 import { suggestMsaStudy, summarizeChanges } from '../../shared/engine';
 import { COMPOSITE_TEMPLATE, isComposite } from '../../shared/kb';
 import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
+import { KC_LOCK_MSG, isCi, kcLocked, scmhKcDecision } from '../../shared/kcScmh'; // v4-kc
+import { isScmh } from '../../shared/scmhScoring'; // v4-kc
+import { KcScmhPanel } from '../screens/Kc'; // v4-kc
 import { COMPOSITE_CHECKLIST, blankRow, nextId } from '../../shared/model';
 import type { AnyRow, KcRow, Project, TableKey } from '../../shared/types';
 import { api, isDesktop } from '../api';
@@ -472,7 +475,11 @@ export function KcTab() {
   const { toast } = useStore();
   const decide = (status: 'Approved' | 'Rejected' | 'Engineer Reviewed') => {
     // §72: Critical / Safety / Regulatory kategorili KC'ler toplu onaylanamaz; tek tek değerlendirilir.
-    const manual = sel.filter((id) => MANUAL_ONLY_CATEGORIES.includes((project.kcs.find((k) => k.id === id) as KcRow | undefined)?.category ?? ''));
+    const manual = sel.filter((id) => {
+      const k = project.kcs.find((k) => k.id === id) as KcRow | undefined;
+      // v4-kc: emniyetle ilgili SCMH karar sonucu ve Critical Item da tek tek onaylanır
+      return MANUAL_ONLY_CATEGORIES.includes(k?.category ?? '') || (!!k && (isCi(k) || scmhKcDecision(k).outcome.startsWith('Safety')));
+    });
     if (status === 'Approved' && sel.length > 1 && manual.length) return toast(`${manual.join(', ')} kritik/emniyet/regülasyon kategorisinde; toplu onaylanamaz, tek tek onaylayın.`, 'warn');
     return edit(sel.map((id) => ({ kind: 'set' as const, table: 'kcs' as const, id, field: 'status', value: status })), `KC kararı: ${status}`);
   };
@@ -483,6 +490,7 @@ export function KcTab() {
       table="kcs"
       selected={sel}
       onSelect={setSel}
+      canDelete={(ids) => (ids.some((id) => kcLocked(project.kcs.find((k) => k.id === id))) ? KC_LOCK_MSG : null)} // v4-kc
       toolbar={
         <>
           <button className="btn ok" disabled={!sel.length} onClick={() => decide('Approved')}>✓ Onayla</button>
@@ -493,7 +501,7 @@ export function KcTab() {
       }
       emptyHint="Severity eşiği veya özel karakteristik nedeniyle oluşan “AI Recommended KC” adayları burada görünür. Elle de ekleyebilirsiniz."
     />
-    <KcFactorPanel id={sel[0]} />
+    {isScmh(project) ? <KcScmhPanel id={sel[0]} /> : <KcFactorPanel id={sel[0]} />}{/* v4-kc */}
     </div>
   );
 }

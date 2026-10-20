@@ -8,6 +8,7 @@ import type {
 } from './types';
 import { WORKFLOW_STEPS } from './types';
 import { SCMH_SCORING } from './scmhScoring';
+import { DEFAULT_CI_NUMBERING, DEFAULT_KC_NUMBERING, kcRowDefaults } from './kcScmh'; // v4-kc
 
 export const SCHEMA_VERSION = 2;
 export const APP_VERSION = '3.0.0';
@@ -68,6 +69,12 @@ export function nextId(project: Project, table: TableKey): string {
     const m = /-(\d+)$/.exec(r.id);
     if (m) max = Math.max(max, Number(m[1]));
   }
+  // v4-kc: silinmiş KC iç ID'leri tekrar verilmez (denetim izi / değişiklik kaydında geçen ID'ler sayılır).
+  if (table === 'kcs')
+    for (const e of [...(project.auditLog ?? []), ...(project.changeLog ?? [])]) {
+      const m = e.table === 'kcs' ? /^KC-(\d+)$/.exec(e.id) : null;
+      if (m) max = Math.max(max, Number(m[1]));
+    }
   return `${prefix}-${String(max + 1).padStart(3, '0')}`;
 }
 
@@ -107,7 +114,12 @@ const fmeaCommon = {
   basis: '' as const,
 };
 
+// v4-kc: 4.0 ek alanları (KC/CI modeli, SR, proses KC sorusu) kcScmh.ts'teki varsayılanlarla eklenir.
 export function blankRow(table: TableKey, id: string): AnyRow {
+  return { ...blankRowV3(table, id), ...(kcRowDefaults(table) ?? {}) } as unknown as AnyRow;
+}
+
+function blankRowV3(table: TableKey, id: string): { id: string } & Record<string, unknown> {
   switch (table) {
     case 'documents':
       return { id, name: '', docType: '', docNumber: '', revision: '', date: '', source: '', product: '', notes: '', filePath: '', parseStatus: '' };
@@ -173,6 +185,13 @@ export const DEFAULT_META: ProjectMeta = {
   facilitator: '',
   dfmeaLevel: '',
   scmhPhase: '',
+  // v4-kc
+  kcFormRevision: '',
+  kcFormDate: '',
+  kcContacts: '',
+  kcListAgreedBy: '',
+  kcListAgreedDate: '',
+  kcListAgreementRef: '',
 };
 
 const DEFAULT_STEP_ROLE: Record<string, string> = {
@@ -203,6 +222,13 @@ export const DEFAULT_SETTINGS: Settings = {
   workflow: WORKFLOW_STEPS.map((step) => ({ step, enabled: true, role: DEFAULT_STEP_ROLE[step] })),
   reasonFields: ['s', 'o', 'd', 'kcs.status', 'kcs.category', 'kcs.kcClass', 'approval'],
   scoringStandard: 'SCMH',
+  // v4-kc: SCMH 7.2.17 §1.2.1 numaralandırma; tetik eşikleri ekip kararıdır (SCMH sayısal eşik vermez).
+  kcNumbering: DEFAULT_KC_NUMBERING,
+  ciNumbering: DEFAULT_CI_NUMBERING,
+  kcTriggerSO: null,
+  kcTriggerSD: null,
+  kcTriggerOD: null,
+  kcTriggerRPN: null,
 };
 
 // AIAG-VDA (2019) yapısına dayalı özet kriterler. Kurum/müşteri tablosu varsa "Puanlama" sekmesinden değiştirilir.
@@ -322,6 +348,7 @@ export function newProject(): Project {
     approvals: [],
     auditLog: [],
     docIndex: {},
+    kcRegistry: { kc: 0, ci: 0 }, // v4-kc
   };
 }
 
@@ -355,6 +382,7 @@ export function normalizeProject(raw: Partial<Project>, report?: MigrationReport
     approvals: raw.approvals ?? [],
     auditLog: raw.auditLog ?? [],
     docIndex: raw.docIndex ?? {},
+    kcRegistry: { kc: 0, ci: 0, ...(raw.kcRegistry ?? {}) }, // v4-kc
   } as Project;
   // scoringStandard alanı olmayan (SCMH öncesi) dosyalar AIAG-VDA olarak kalır; mevcut projeler sessizce değişmez.
   if (!raw.settings?.scoringStandard) {

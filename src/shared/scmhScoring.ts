@@ -2,7 +2,9 @@
 // Kriterler SCMH 7.2.10 DFMEA şablonunun D-SEV / D-OCC / D-DET sekmelerinden ve SCMH 7.2.11 PFMEA
 // şablonunun P-SEV / P-OCC / P-DET sekmelerinden kısaltılarak aktarılmıştır (İngilizce, şablondaki gibi).
 // Şablonun kendisi © IAQG; burada yalnızca kriter özetleri yer alır.
-import type { DfmeaRow, PfmeaRow, Project, Score, Scoring, ScoringEntry } from './types';
+import type { ControlPlanRow, DfmeaRow, PfmeaRow, ProcessStepRow, Project, Score, Scoring, ScoringEntry } from './types';
+import { isInactive, kcDisplayNo } from './kcScmh'; // v4-kc
+import { cpClassification, rowClassification, stepClassification } from './kcTrace'; // v4-kc
 
 export type ScoringStandard = 'SCMH' | 'AIAG-VDA';
 
@@ -163,20 +165,28 @@ export const SCMH_CLASS_KINDS = [
   { code: 'CI', label: 'Critical Item' },
 ] as const;
 
-/**
- * Classification sütunu için seçenekler: projedeki (reddedilmemiş) KC ID'leri.
- * CI ID'leri projede ayrı tutulmadığından listede yoktur; serbest metinle girilebilir.
- */
+// v4-kc: Classification artık KC ve CI numaralarını (PN-KC-XXX / PN-CI-XXX) taşır; DFMEA KC'leri PFMEA'ya dfIds
+// bağlantısıyla, PFD'ye adımın PFMEA/KP satırlarıyla akar (kcTrace.ts). Elenen ve reddedilen kayıtlar yazılmaz;
+// kesinleşmemiş olanlar "Potential: …" olarak yazılır.
+
+/** Classification sütunu için seçenekler: projedeki etkin KC ve CI numaraları. */
 export function scmhClassOptions(p: Pick<Project, 'kcs'>): string[] {
-  return p.kcs.filter((k) => k.status !== 'Rejected').map((k) => k.id);
+  return p.kcs.filter((k) => !isInactive(k)).map((k) => kcDisplayNo(k));
 }
 
-/** Bir FMEA satırına bağlı KC ID'leri (Classification hücresi metni, "; " ile). Yoksa ''. */
-export function scmhClassificationOf(p: Pick<Project, 'kcs'>, rowId: string): string {
-  return p.kcs
-    .filter((k) => k.sourceId === rowId && k.status !== 'Rejected')
-    .map((k) => k.id)
-    .join('; ');
+/** Bir FMEA satırına bağlı / akan KC-CI numaraları (Classification hücresi metni, "; " ile). Yoksa ''. */
+export function scmhClassificationOf(p: Pick<Project, 'kcs'> & Partial<Project>, rowId: string): string {
+  return rowClassification(p, rowId);
+}
+
+/** Kontrol planı satırının Classification metni (CP sütun I). */
+export function scmhCpClassification(p: Pick<Project, 'kcs'> & Partial<Project>, c: ControlPlanRow): string {
+  return cpClassification(p, c);
+}
+
+/** PFD adımının Classification metni (PFD sütun N), adımda elle girilmiş değer yoksa. */
+export function scmhStepClassification(p: Pick<Project, 'kcs'> & Partial<Project>, st: ProcessStepRow): string {
+  return stepClassification(p, st);
 }
 
 /** SCMH öncelik kuralı yardımcıları tek nesnede. */
