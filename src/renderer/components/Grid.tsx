@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { cellText, COLUMNS, type Col } from '../../shared/columns';
+import { cellText, tableColumns, type Col } from '../../shared/columns';
 import { blankRow, nextId } from '../../shared/model';
 import { riskLevelOf } from '../../shared/risk'; // v4-risk
 import { changesSinceApproval, moveRows, moveRowsTo, TABLE_APPROVE_LABEL } from '../../shared/rowOrder';
@@ -38,7 +38,8 @@ export function Grid({ table, header, toolbar, defaults, filter, emptyHint, sele
   useEffect(() => setLimit(PAGE), [table, q, sort]);
 
   const std = project.settings.scoringStandard ?? 'AIAG-VDA'; // v4-kc: kolonun puanlama standardı
-  const cols = COLUMNS[table].filter((c) => (all || !c.secondary) && (!c.mode || c.mode === std));
+  const layout = tableColumns(table, project.settings.tableFormat);
+  const cols = layout.filter((c) => (all || !c.secondary) && (!c.mode || c.mode === std));
   const rows = project[table] as AnyRow[];
   // Form bölümleri: art arda aynı gruptaki kolonlar tek başlık bandında birleşir.
   const bands = useMemo(() => {
@@ -57,10 +58,10 @@ export function Grid({ table, header, toolbar, defaults, filter, emptyHint, sele
     let out = filter ? rows.filter(filter) : rows;
     if (q.trim()) {
       const n = q.toLocaleLowerCase('tr');
-      out = out.filter((r) => r.id.toLowerCase().includes(n) || COLUMNS[table].some((c) => cellText(c, r, project).toLocaleLowerCase('tr').includes(n)));
+      out = out.filter((r) => r.id.toLowerCase().includes(n) || layout.some((c) => cellText(c, r, project).toLocaleLowerCase('tr').includes(n)));
     }
     if (sort) {
-      const col = COLUMNS[table].find((c) => c.key === sort.key)!;
+      const col = layout.find((c) => c.key === sort.key)!;
       out = [...out].sort((a, b) => {
         const av = cellText(col, a, project);
         const bv = cellText(col, b, project);

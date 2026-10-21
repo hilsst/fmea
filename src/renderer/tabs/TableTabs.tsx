@@ -316,7 +316,7 @@ function FmeaFormHeader({ kind }: { kind: 'dfmea' | 'pfmea' }) {
       <div className="fh-title">
         <span>{h.title}</span>
         <span className="muted">Doc. No: {h.docNo}</span>
-        {project.meta.fmeaRevision && <span className="muted">Rev: {project.meta.fmeaRevision}</span>}
+        {project.settings.tableFormat === 'F33' && project.meta.fmeaRevision && <span className="muted">Rev: {project.meta.fmeaRevision}</span>}
       </div>
       {h.fields.map((f) => (
         <div className="fh" key={f.label}>
@@ -324,10 +324,12 @@ function FmeaFormHeader({ kind }: { kind: 'dfmea' | 'pfmea' }) {
           {f.value ? <span>{f.value}</span> : <span className="missing">VERİ YOK – Proje sekmesinde girin</span>}
         </div>
       ))}
-      <div className="fh">
-        <b>Largest RPN Value:</b>
-        <span>{h.largestRpn ?? '–'}</span>
-      </div>
+      {h.largestRpn !== undefined && (
+        <div className="fh">
+          <b>Largest RPN Value:</b>
+          <span>{h.largestRpn ?? '–'}</span>
+        </div>
+      )}
     </div>
   );
 }

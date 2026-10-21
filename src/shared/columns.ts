@@ -124,6 +124,7 @@ const appTail = (): Col[] => [
   long('notes', 'Notlar', 160, { secondary: true }),
 ];
 
+const PF_REQ_IDS: Col = { key: 'reqIds', label: 'Gereksinim ID', width: 120, type: 'multi', ref: 'requirements', help: 'Gereksinimler ekranından seçin: üretim / proses / muayene tipi proses gereksinimine, diğerleri ürün gereksinimine yazılır' };
 const approvalCol = (): Col => sel('approval', 'Onay', LISTS.approval, 130);
 const lineNoCol = (g: string): Col => form(RISK_COLS.decision.find((c) => c.key === 'lineNo')!, 'A', 'Op. (Line) #', g);
 /** Form dışındaki kolonları uygulama grubuna koyar. */
@@ -229,6 +230,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     form(t('stepName', 'Proses Adımı', 150, { readonly: true, derived: 'Proses Akışı' }), 'C', 'Operation / Process Name', FORM_GROUPS.pfmea),
     form(long('processFunction', 'Proses Fonksiyonu', 180), 'D', 'Requirements – Proses Fonksiyonu', FORM_GROUPS.pfmea),
     ...RISK_COLS.pfReq.map((c, i) => form(c, 'D', i ? 'Requirements – Proses' : 'Requirements – Ürün', FORM_GROUPS.pfmea)), // v4-risk
+    { ...PF_REQ_IDS, group: FORM_GROUPS.pfmea },
     ...formBody(
       FORM_GROUPS.pfmea,
       long('effect', 'Etki', 190),
@@ -492,3 +494,57 @@ export function rowLabel(p: Project, id: string): string {
 }
 
 export type FmeaLike = DfmeaRow | PfmeaRow;
+
+// ───────── SCMH 7.2.10 / 7.2.11 düzeni (Ayarlar → Tablo düzeni) ─────────
+
+const SCMH_GROUPS = {
+  dfmea: 'Design Failure Mode and Effects Analysis – SCMH 7.2.10',
+  pfmea: 'Process Failure Mode and Effects Analysis – SCMH 7.2.11',
+  results: 'Recommended Action(s) and Action Results',
+};
+const actionDone = comp('actionDone', 'Gerçekleşen Tarih', (r, p) => p.actions.find((a) => a.id === (r as DfmeaRow).actionId)?.completionDate ?? '', 110, 'Aksiyonlar ekranındaki tamamlanma tarihi');
+const SCMH_SPEC: Record<'dfmea' | 'pfmea', [string, string, string][]> = {
+  // [kolon anahtarı, SCMH sütunu, SCMH başlığı]
+  dfmea: [
+    ['lineNo', 'B', 'Doc (Line) #'], ['item', 'C', 'Item'], ['function', 'D', 'Function'], ['requirement', 'E', 'Requirement'], ['reqIds', '', 'Gereksinim ID'],
+    ['failureMode', 'F', 'Potential Failure Mode'], ['effect', 'G', 'Potential Effect(s) of Failure'], ['s', 'H', 'SEV'], ['cause', 'I', 'Potential Cause(s) of Failure'],
+    ['prevention', 'J', 'Current Prevention Controls'], ['o', 'K', 'OCC'], ['detection', 'L', 'Current Detection Controls'], ['d', 'M', 'DET'], ['so', 'N', 'SEV * OCC'], ['rpn', 'O', 'RPN'],
+    ['specialChar', 'P', 'Classification'], ['recommendedAction', 'Q', 'Recommended Action(s)'], ['owner', 'R', 'Responsibility'], ['dueDate', 'S', 'Target Date'],
+    ['actionTaken', 'T', 'Actions Taken & Results'], ['actionDone', 'U', 'Actual Completion Date'], ['newS', 'V', 'Action Results SEV'], ['newO', 'W', 'Action Results OCC'], ['newD', 'X', 'Action Results DET'], ['newRpn', 'Y', 'Action Results RPN'],
+  ],
+  pfmea: [
+    ['lineNo', 'B', 'Doc (Line) #'], ['stepLabel', 'C', 'Process Step'], ['processFunction', 'D', 'Process Description'], ['productRequirement', 'E', 'Product Requirements'], ['processRequirement', 'F', 'Process Requirements'], ['reqIds', '', 'Gereksinim ID'],
+    ['failureMode', 'G', 'Potential Failure Mode'], ['effect', 'H', 'Potential Effect(s) of Failure'], ['s', 'I', 'SEV'], ['cause', 'J', 'Potential Cause(s) of Failure'],
+    ['prevention', 'K', 'Current Prevention Controls'], ['o', 'L', 'OCC'], ['detection', 'M', 'Current Detection Controls'], ['d', 'N', 'DET'], ['so', 'O', 'SEV * OCC'], ['rpn', 'P', 'RPN'],
+    ['specialChar', 'Q', 'Classification'], ['recommendedAction', 'R', 'Recommended Action(s)'], ['owner', 'S', 'Responsibility'], ['dueDate', 'T', 'Target Date'],
+    ['actionTaken', 'U', 'Actions Taken & Results'], ['actionDone', 'V', 'Actual Completion Date'], ['newS', 'W', 'Action Result SEV'], ['newO', 'X', 'Action Result OCC'], ['newD', 'Y', 'Action Result DET'], ['newRpn', 'Z', 'Action Result RPN'],
+  ],
+};
+const SCMH_EXTRA: Record<string, Col> = {
+  item: comp('item', 'Item', (r, p) => p.structure.find((s) => s.id === (r as DfmeaRow).functionId)?.element || (r as DfmeaRow).component || '', 140, 'Yapı & Fonksiyon elemanı (bağlı fonksiyondan)'),
+  stepLabel: comp('stepLabel', 'Proses Adımı (Op)', (r) => [(r as PfmeaRow).opNo, (r as PfmeaRow).stepName].filter(Boolean).join(' '), 150, 'Proses Akışı adımı (Adım ID ile bağlanır)'),
+  actionDone,
+};
+
+const layoutCache = new Map<string, Col[]>();
+/** DFMEA / PFMEA kolonları seçili tablo düzenine göre; diğer tablolar değişmez. */
+export function tableColumns(table: TableKey, format: 'SCMH' | 'F33' | undefined): Col[] {
+  if ((table !== 'dfmea' && table !== 'pfmea') || format === 'F33') return COLUMNS[table];
+  const hit = layoutCache.get(table);
+  if (hit) return hit;
+  const base = COLUMNS[table];
+  const spec = SCMH_SPEC[table];
+  const g = SCMH_GROUPS[table];
+  const firstAction = spec.findIndex(([k]) => k === 'recommendedAction');
+  const head = spec.map(([key, letter, label], i) => {
+    const c = base.find((x) => x.key === key) ?? SCMH_EXTRA[key];
+    return { ...c, formCol: letter || undefined, formLabel: label, group: i >= firstAction ? SCMH_GROUPS.results : g, secondary: false };
+  });
+  const used = new Set(spec.map(([k]) => k));
+  // F33 formuna özgü kolonlar (tahmini S/O/D, Results) SCMH'de ikincil
+  const f33Only = new Set(['predS', 'predO', 'predD', 'predRpn', 'results']);
+  const rest = base.filter((c) => !used.has(c.key)).map((c) => ({ ...c, formCol: undefined, formLabel: undefined, group: FORM_GROUPS.app, secondary: c.secondary || f33Only.has(c.key) }));
+  const out = [...head, ...rest];
+  layoutCache.set(table, out);
+  return out;
+}

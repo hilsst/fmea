@@ -150,6 +150,7 @@ export function pfmeaFillValues(p: Project, r: PfmeaRow): Record<string, unknown
       ? procReq.join('; ')
       : step.processChars || `${NO_DATA} (proses parametresi / iş talimatı gereksinimi yok; Proses Parametreleri ekranında girin)`,
     dfIds,
+    reqIds: reqs.map((x) => x.id),
     processElement: r.cause4M === 'Machine' ? step.machine || 'Ekipman' : ELEMENT_4M[r.cause4M] ?? '',
     why1: r.cause,
     measurement: r.detection,

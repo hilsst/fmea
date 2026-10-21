@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { cellText, COLUMNS, FORM_GROUPS } from '../src/shared/columns';
+import { cellText, COLUMNS, FORM_GROUPS, tableColumns } from '../src/shared/columns';
+import { planEdits } from '../src/shared/engine';
 import { formHeader } from '../src/shared/fmeaForm';
 import { pfmeaFillValues } from '../src/shared/fmeaFill';
 import { pfmeaAreaOf } from '../src/shared/failureLib';
@@ -12,7 +13,8 @@ describe('F33.03 / F05.04 form düzeni', () => {
   for (const t of ['dfmea', 'pfmea'] as const) {
     it(`${t}: A–Z form kolonları başta, sırayla ve görünür`, () => {
       const form = COLUMNS[t].filter((c) => c.formCol);
-      expect(COLUMNS[t].slice(0, form.length)).toEqual(form);
+      const lastForm = Math.max(...form.map((c) => COLUMNS[t].indexOf(c)));
+      expect(COLUMNS[t].slice(0, lastForm + 1).every((c) => c.formCol || c.key === 'reqIds')).toBe(true);
       expect([...new Set(form.map((c) => c.formCol))]).toEqual(LETTERS);
       expect(form.every((c) => !c.secondary)).toBe(true);
       expect(form.filter((c) => c.formLabel === 'Severity').map((c) => c.key)).toEqual(['s', 'predS', 'newS']);
@@ -40,6 +42,9 @@ describe('F33.03 / F05.04 form düzeni', () => {
     expect(cellText(col('newRpn'), a as AnyRow, p)).toBe('32');
     expect(cellText(col('predRpn'), b as AnyRow, p)).toBe('');
     p.meta.partNumber = 'PO-1193';
+    expect(formHeader(p, 'dfmea').docNo).toBe('SCMH 7.2.10');
+    expect(formHeader(p, 'dfmea').largestRpn).toBeUndefined();
+    p.settings.tableFormat = 'F33';
     const h = formHeader(p, 'dfmea');
     expect(h.docNo).toBe('F33.03');
     expect(h.largestRpn).toBe(120);
@@ -73,5 +78,36 @@ describe('PFMEA gereksinimleri otomatik dolar', () => {
   });
   it('Vakum Poşetleme adımı vakum alanına düşer', () => {
     expect(pfmeaAreaOf('Vakum Poşetleme')).toBe('Vacuum Bagging');
+  });
+});
+
+describe('SCMH 7.2.10 / 7.2.11 düzeni (varsayılan)', () => {
+  it('kolonlar SCMH sırasında; F33 kolonları kaybolmaz', () => {
+    const letters = (t: 'dfmea' | 'pfmea') => tableColumns(t, undefined).filter((c) => c.formCol).map((c) => `${c.formCol}:${c.formLabel}`);
+    expect(letters('dfmea').slice(0, 5)).toEqual(['B:Doc (Line) #', 'C:Item', 'D:Function', 'E:Requirement', 'F:Potential Failure Mode']);
+    expect(letters('dfmea')).toContain('N:SEV * OCC');
+    expect(letters('dfmea').at(-1)).toBe('Y:Action Results RPN');
+    expect(letters('pfmea').slice(0, 6)).toEqual(['B:Doc (Line) #', 'C:Process Step', 'D:Process Description', 'E:Product Requirements', 'F:Process Requirements', 'G:Potential Failure Mode']);
+    expect(letters('pfmea').at(-1)).toBe('Z:Action Result RPN');
+    for (const t of ['dfmea', 'pfmea'] as const) {
+      const keys = tableColumns(t, 'SCMH').map((c) => c.key);
+      for (const k of COLUMNS[t].map((c) => c.key)) expect(keys).toContain(k);
+      expect(tableColumns(t, 'SCMH').find((c) => c.key === 'predS')!.secondary).toBe(true);
+      expect(tableColumns(t, 'F33')).toBe(COLUMNS[t]);
+    }
+  });
+});
+
+describe('PFMEA gereksinim seçimi', () => {
+  it('Gereksinim ID seçilince ürün / proses gereksinimi yazılır', () => {
+    const p = newProject();
+    p.requirements = [
+      { ...blankRow('requirements', 'REQ-001'), text: 'Kalınlık 5.00 ±0.15 mm', reqType: 'Dimensional' },
+      { ...blankRow('requirements', 'REQ-002'), text: 'Kür 120 ±5 °C', reqType: 'Process' },
+    ] as never;
+    p.pfmea = [{ ...blankRow('pfmea', 'PF-001') } as never];
+    const out = planEdits(p, [{ kind: 'set', table: 'pfmea', id: 'PF-001', field: 'reqIds', value: ['REQ-001', 'REQ-002'] }]).project.pfmea[0];
+    expect(out.productRequirement).toBe('REQ-001: Kalınlık 5.00 ±0.15 mm');
+    expect(out.processRequirement).toBe('REQ-002: Kür 120 ±5 °C');
   });
 });
