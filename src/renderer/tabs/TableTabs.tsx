@@ -19,6 +19,7 @@ import { CapabilityScreen, MsaScreen } from '../screens/Cap'; // v4-cap
 import { CapabilityPanel, KcFactorPanel } from '../screens/Screens2';
 import { DfmeaCoveragePanel } from '../screens/Risk'; // v4-risk
 import { cpCoverageGap } from '../../shared/risk'; // v4-risk
+import { formHeader } from '../../shared/fmeaForm';
 import { useStore } from '../store';
 
 type AddEdit = { kind: 'add'; table: TableKey; row: AnyRow };
@@ -306,6 +307,31 @@ function StructureTree({ project, onSelect }: { project: Project; onSelect: (ids
   );
 }
 
+/** F33.03 / F05.04 form başlığı: proje bilgilerinden otomatik dolar, Proje sekmesinden düzenlenir. */
+function FmeaFormHeader({ kind }: { kind: 'dfmea' | 'pfmea' }) {
+  const { project } = useStore();
+  const h = formHeader(project, kind);
+  return (
+    <div className="form-head" title="Başlık bilgileri Proje sekmesinden gelir">
+      <div className="fh-title">
+        <span>{h.title}</span>
+        <span className="muted">Doc. No: {h.docNo}</span>
+        {project.meta.fmeaRevision && <span className="muted">Rev: {project.meta.fmeaRevision}</span>}
+      </div>
+      {h.fields.map((f) => (
+        <div className="fh" key={f.label}>
+          <b>{f.label}:</b>
+          {f.value ? <span>{f.value}</span> : <span className="missing">VERİ YOK – Proje sekmesinde girin</span>}
+        </div>
+      ))}
+      <div className="fh">
+        <b>Largest RPN Value:</b>
+        <span>{h.largestRpn ?? '–'}</span>
+      </div>
+    </div>
+  );
+}
+
 export function DfmeaTab() {
   const { project, edit, toast } = useStore();
   const [sel, setSel] = useState<string[]>([]);
@@ -323,6 +349,7 @@ export function DfmeaTab() {
     <>
       <Grid
         table="dfmea"
+        header={<FmeaFormHeader kind="dfmea" />}
         selected={sel}
         onSelect={setSel}
         toolbar={
@@ -432,6 +459,7 @@ export function PfmeaTab() {
     <>
       <Grid
         table="pfmea"
+        header={<FmeaFormHeader kind="pfmea" />}
         selected={sel}
         onSelect={setSel}
         filter={notInCp ? (r) => cpCoverageGap(project, r as never) : undefined}

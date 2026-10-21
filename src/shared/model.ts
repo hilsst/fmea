@@ -124,6 +124,10 @@ const fmeaCommon = {
   resultBasis: '' as const,
   sDisposition: '',
   sDispositionReason: '',
+  predS: null,
+  predO: null,
+  predD: null,
+  results: '',
 };
 
 // v4-kc: 4.0 ek alanları (KC/CI modeli, SR, proses KC sorusu) kcScmh.ts'teki varsayılanlarla eklenir.

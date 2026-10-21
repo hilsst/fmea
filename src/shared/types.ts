@@ -262,6 +262,11 @@ interface FmeaCommon extends BaseRow {
   resultBasis: '' | 'Projected' | 'Actual';
   sDisposition: string;
   sDispositionReason: string;
+  // F33.03 / F05.04 form: "Recommended Actions and Predicted Risk" (Q–S) ve "Results" (V). Eski dosyalarda yoktur.
+  predS?: Score;
+  predO?: Score;
+  predD?: Score;
+  results?: string;
 }
 
 // v4-risk
