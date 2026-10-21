@@ -79,14 +79,14 @@ const FUNCTION_TYPE: Record<string, string> = {
 /** Gereksinim metninden ölçü/tolerans ve kip ifadelerini atarak eleman adı çıkarır. */
 export function elementName(text: string): string {
   const t = text
-    .replace(/\b\d+\s*[xX]\s+/g, '')
+    .replace(/(?<![\p{L}\d])\d+\s*[xX]\s+/gu, '')
     .replace(/°\s*[CF]\b/g, ' ')
     .replace(/[Ø⌀±≥≤<>]/g, ' ')
     .replace(/[-+]?\d+(?:[.,]\d+)?(?:\s*\/\s*[-+]?\d+(?:[.,]\d+)?)*/g, ' ')
-    .replace(/\b(mm|µm|um|cm|inch|in|°C|°F|deg|kg|g|min|dk|h|s|MPa|GPa|kPa|bar|psi|Pa|N|Nm|%|Ra)\b/gi, ' ')
-    .replace(/°|\bmin\.|\bmaks\.|\bmax\.|\ben az\b|\ben fazla\b/gi, ' ')
-    .replace(/\b(olmalıdır|olmalı|edilmelidir|yapılmalıdır|gereklidir|zorunludur|uygulanmalıdır|sağlamalıdır|aşmamalıdır|tutulmalıdır|shall|must|be)\b/gi, ' ')
-    .replace(/[–\-:;,/()]+/g, ' ')
+    .replace(/(?<![\p{L}\d])(mm|µm|um|cm|inch|in|°C|°F|deg|kg|g|min|dk|h|s|MPa|GPa|kPa|bar|psi|Pa|N|Nm|%|Ra)(?![\p{L}\d])/giu, ' ')
+    .replace(/°|…|(?<![\p{L}\d])(?:min\.|maks\.|max\.|en az(?![\p{L}\d])|en fazla(?![\p{L}\d]))/giu, ' ')
+    .replace(/(?<![\p{L}\d])(olmalı|gereklidir|zorunludur|shall|must|be|\p{L}+(?:malıdır|melidir)|aralığında)(?![\p{L}\d])/giu, ' ')
+    .replace(/[–\-:;,/().]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   const short = t.split(' ').slice(0, 6).join(' ');

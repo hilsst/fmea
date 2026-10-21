@@ -234,10 +234,10 @@ export function parseValueSpec(text: string): ValueSpec | null {
     const n = num(m[1]);
     return { nominal: n, lsl: round(n - num(m[3])), usl: round(n + num(m[2])), unit: m[4] ?? '', tolerance: `+${m[2]}/-${m[3]}` };
   }
-  // 6.00 – 6.10 mm  / 120-130 °C (aralık)
-  if ((m = new RegExp(`(${NUM})\\s*(?:–|-|to|ile|\\.\\.)\\s*(${NUM})\\s*${UNIT}`, 'i').exec(t))) {
-    const a = num(m[1]), b = num(m[2]);
-    if (a < b) return { nominal: null, lsl: a, usl: b, unit: m[3], tolerance: `${m[1]}–${m[2]}` };
+  // 6.00 – 6.10 mm  / 120-130 °C / -40 … +85 °C / -40 °C ile +85 °C (aralık)
+  if ((m = new RegExp(`(${NUM})\\s*(?:${UNIT}\\s*)?(?:–|-|to|ile|…|\\.{2,3})\\s*(${NUM})\\s*${UNIT}`, 'i').exec(t))) {
+    const a = num(m[1]), b = num(m[3]);
+    if ((!m[2] || m[2] === m[4]) && a < b) return { nominal: null, lsl: a, usl: b, unit: m[4], tolerance: `${m[1]}–${m[3]}` };
   }
   // min. 25 MPa / en az 25 MPa / ≥ 25
   if ((m = new RegExp(`(?:min(?:imum)?\\.?|en az|≥|>=|at least)\\s*(${NUM})\\s*${UNIT}?`, 'i').exec(t)))
@@ -280,7 +280,7 @@ export interface RequirementCandidate {
   trigger: string;
 }
 
-const TRIGGERS = /\b(shall|must|required|requires|is to be|are to be|will be|should)\b|(olmalıdır|olmalı|edilmelidir|yapılmalıdır|gereklidir|zorunludur|uygulanmalıdır|sağlamalıdır|aşmamalıdır|tutulmalıdır|[a-zçğıöşü]+(?:malı|meli)dır|[a-zçğıöşü]+(?:ecek|acak)tır|kabul edilmez|bulunmamalı|bulunmayacak)/i;
+const TRIGGERS = /\b(shall|must|required|requires|is to be|are to be|will be|should)\b|(olmalıdır|olmalı|edilmelidir|yapılmalıdır|gereklidir|zorunludur|uygulanmalıdır|sağlamalıdır|aşmamalıdır|tutulmalıdır|[a-zçğıöşü]+(?:malıdır|melidir)|[a-zçğıöşü]+(?:ecektir|acaktır)|kabul edilmez|bulunmamalı|bulunmayacak)/i;
 
 const TYPE_RULES: [RegExp, string][] = [
   [/\b(safety|emniyet|güvenlik|hazard|flammab)/i, 'Safety'],
