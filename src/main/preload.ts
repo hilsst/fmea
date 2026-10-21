@@ -33,11 +33,12 @@ const api = {
   openExternal: (url: string) => ipcRenderer.invoke('external:open', url),
   extractDoc: (p: string): Promise<{ ok: true; doc: ExtractedDoc } | { ok: false; error: string }> => ipcRenderer.invoke('doc:extract', p),
   aiStatus: (): Promise<{
-    configured: boolean; fromEnv: boolean; secureStorage: boolean; sessionOnly: boolean; provider: string;
+    configured: boolean; fromEnv: boolean; envVar: string; secureStorage: boolean; sessionOnly: boolean; provider: string; model: string;
     providers: readonly { id: string; label: string; supported: boolean }[]; online: boolean;
   }> => ipcRenderer.invoke('ai:status'),
   aiSetKey: (key: string): Promise<{ stored: 'secure' | 'session' | 'cleared' }> => ipcRenderer.invoke('ai:setKey', key),
   aiSetProvider: (id: string): Promise<string> => ipcRenderer.invoke('ai:setProvider', id),
+  aiSetModel: (model: string): Promise<string> => ipcRenderer.invoke('ai:setModel', model),
   aiClearCache: () => ipcRenderer.invoke('ai:clearCache'),
   aiRequirements: (a: unknown): Promise<AiResult & { note?: string }> => ipcRenderer.invoke('ai:requirements', a),
   aiDfmea: (a: unknown): Promise<AiResult> => ipcRenderer.invoke('ai:dfmea', a),
