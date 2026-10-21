@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { cellText, COLUMNS, FORM_GROUPS } from '../src/shared/columns';
 import { formHeader } from '../src/shared/fmeaForm';
+import { pfmeaFillValues } from '../src/shared/fmeaFill';
+import { pfmeaAreaOf } from '../src/shared/failureLib';
 import { blankRow, newProject } from '../src/shared/model';
 import type { AnyRow, DfmeaRow } from '../src/shared/types';
 
@@ -43,5 +45,33 @@ describe('F33.03 / F05.04 form düzeni', () => {
     expect(h.largestRpn).toBe(120);
     expect(h.fields.find((f) => f.label === 'Part #')!.value).toBe('PO-1193');
     expect(formHeader(p, 'pfmea')).toMatchObject({ docNo: 'F05.04', largestRpn: null });
+  });
+});
+
+describe('PFMEA gereksinimleri otomatik dolar', () => {
+  const setup = () => {
+    const p = newProject();
+    p.processSteps = [{ ...blankRow('processSteps', 'PS-001'), opNo: '10', name: 'Kalıp Hazırlığı' } as never];
+    p.dfmea = [{ ...blankRow('dfmea', 'DF-001'), requirement: 'REQ-001: RF kaybı ≤ 1.5 dB' } as DfmeaRow];
+    return p;
+  };
+  it('eşleşen gereksinim yoksa bağlı DFMEA gereksinimi, o da yoksa VERİ YOK', () => {
+    const p = setup();
+    const linked = { ...blankRow('pfmea', 'PF-001'), stepId: 'PS-001', dfIds: ['DF-001'] } as never;
+    const v = pfmeaFillValues(p, linked);
+    expect(v.productRequirement).toBe('REQ-001: RF kaybı ≤ 1.5 dB');
+    expect(String(v.processRequirement)).toMatch(/^VERİ YOK/);
+    const bare = pfmeaFillValues(p, { ...blankRow('pfmea', 'PF-002'), stepId: 'PS-001' } as never);
+    expect(String(bare.productRequirement)).toMatch(/^VERİ YOK/);
+  });
+  it('VERİ YOK yer tutucusu gerçek veri gelince değişir, elle yazılan değişmez', () => {
+    const p = setup();
+    const ph = { ...blankRow('pfmea', 'PF-001'), stepId: 'PS-001', dfIds: ['DF-001'], productRequirement: 'VERİ YOK – doğrulanmalı (x)' } as never;
+    expect(pfmeaFillValues(p, ph).productRequirement).toBe('REQ-001: RF kaybı ≤ 1.5 dB');
+    const manual = { ...blankRow('pfmea', 'PF-002'), stepId: 'PS-001', dfIds: ['DF-001'], productRequirement: 'Elle' } as never;
+    expect(pfmeaFillValues(p, manual).productRequirement).toBeUndefined();
+  });
+  it('Vakum Poşetleme adımı vakum alanına düşer', () => {
+    expect(pfmeaAreaOf('Vakum Poşetleme')).toBe('Vacuum Bagging');
   });
 });

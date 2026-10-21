@@ -621,7 +621,7 @@ function riskOnSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
     }
     if (field === 'dfIds' && p.dfIds.length) {
       const dfs = p.dfIds.map((x) => c.find<DfmeaRow>('dfmea', x)).filter(Boolean) as DfmeaRow[];
-      if (!p.productRequirement.trim()) {
+      if (!p.productRequirement.trim() || p.productRequirement.startsWith(NO_DATA)) {
         const req = dfs.map((d) => d.requirement).filter(Boolean).join('\n');
         if (req) c.set('pfmea', id, 'productRequirement', req, 'Bağlı DFMEA gereksinimi ürün gereksinimi olarak önerildi');
       }

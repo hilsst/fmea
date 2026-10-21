@@ -141,7 +141,7 @@ export function pfmeaAreaOf(name: string): string {
   const map: [RegExp, string][] = [
     [/incoming|storage|material|malzeme|thaw|çözdür|depo|kabul/, 'Material'],
     [/lay-?up|laminasyon|serim|kitting|cutting|kesim|debulk/, 'Lay-up'],
-    [/bag|torba/, 'Vacuum Bagging'],
+    [/bag|torba|vakum|poşet/, 'Vacuum Bagging'],
     [/cure|kür|autoclave|otoklav|oven|fırın/, 'Cure'],
     [/bond|yapıştır|insert/, 'Bonding'],
     [/demold|kalıptan/, 'Demolding'],
