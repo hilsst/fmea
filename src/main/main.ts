@@ -14,7 +14,7 @@ import { apqpFileName, fillApqpApplicability, fillMaturityEvidence, fillPackagin
 import type { SheetGrid } from '../shared/importmap';
 import type { Project } from '../shared/types';
 import * as ai from './ai';
-import { PROVIDERS } from './ai/provider';
+import { ENV_KEY, MODEL, OPENAI_MODEL, PROVIDERS } from './ai/provider';
 import { DEFAULT_IFS, ifsConnector, type IfsSettings } from './connectors/ifs';
 import { checkForUpdates, initUpdater, installNow, type UpdateStatus } from './updater';
 
@@ -29,7 +29,11 @@ const CONFIG = () => userFile('config.json');
 interface Config {
   /** safeStorage (işletim sistemi anahtar zinciri) ile şifrelenmiş anahtar. Düz metin/Base64 saklanmaz. */
   apiKeyEnc?: string;
+  /** Anthropic dışındaki sağlayıcıların anahtarları (aynı kural: yalnızca safeStorage ile şifreli). */
+  apiKeysEnc?: Record<string, string>;
   aiProvider?: string;
+  /** OpenAI modeli (boşsa varsayılan). */
+  openaiModel?: string;
   recent?: string[];
   ifs?: IfsSettings;
   /** IAQG SCMH şablon klasörü (şablonlar © IAQG; uygulamayla dağıtılmaz, kullanıcı sağlar). */
@@ -37,7 +41,7 @@ interface Config {
 }
 
 /** safeStorage yoksa anahtar yalnızca bu oturumun belleğinde tutulur (diske yazılmaz). */
-let sessionKey = '';
+const sessionKeys: Record<string, string> = {};
 
 function readConfig(): Config {
   try {
@@ -50,19 +54,23 @@ function writeConfig(c: Config) {
   fssync.mkdirSync(path.dirname(CONFIG()), { recursive: true });
   fssync.writeFileSync(CONFIG(), JSON.stringify(c, null, 2));
 }
-function apiKey(): string {
-  if (sessionKey) return sessionKey;
+const currentProvider = () => readConfig().aiProvider ?? 'anthropic';
+/** Her sağlayıcının anahtarı ayrı tutulur; bir sağlayıcının anahtarı diğerine gönderilmez. */
+function apiKey(provider = currentProvider()): string {
+  if (sessionKeys[provider]) return sessionKeys[provider];
   const c = readConfig();
-  if (!c.apiKeyEnc || !safeStorage.isEncryptionAvailable()) return '';
+  const enc = provider === 'anthropic' ? c.apiKeyEnc : c.apiKeysEnc?.[provider];
+  if (!enc || !safeStorage.isEncryptionAvailable()) return '';
   try {
-    return safeStorage.decryptString(Buffer.from(c.apiKeyEnc, 'base64'));
+    return safeStorage.decryptString(Buffer.from(enc, 'base64'));
   } catch {
     return '';
   }
 }
 
 function aiEnv(): ai.AiEnv {
-  return { apiKey: apiKey(), provider: readConfig().aiProvider ?? 'anthropic', cacheDir: userFile('ai-cache'), online: () => net.isOnline() };
+  const c = readConfig();
+  return { apiKey: apiKey(), provider: c.aiProvider ?? 'anthropic', model: c.openaiModel, cacheDir: userFile('ai-cache'), online: () => net.isOnline() };
 }
 
 // ---------------------------------------------------------------- doküman ayrıştırma (worker)
@@ -283,25 +291,50 @@ function registerIpc() {
   ipcMain.handle('file:open', (_e, p: string) => shell.openPath(p));
   ipcMain.handle('file:reveal', (_e, p: string) => shell.showItemInFolder(p));
 
-  ipcMain.handle('ai:status', () => ({
-    configured: !!apiKey() || !!process.env.ANTHROPIC_API_KEY,
-    fromEnv: !apiKey() && !!process.env.ANTHROPIC_API_KEY,
-    secureStorage: safeStorage.isEncryptionAvailable(),
-    sessionOnly: !!sessionKey,
-    provider: readConfig().aiProvider ?? 'anthropic',
-    providers: PROVIDERS,
-    online: net.isOnline(),
-  }));
+  ipcMain.handle('ai:status', () => {
+    const provider = currentProvider();
+    const envVar = ENV_KEY[provider] ?? '';
+    const fromEnv = !apiKey(provider) && !!envVar && !!process.env[envVar];
+    return {
+      configured: !!apiKey(provider) || fromEnv,
+      fromEnv,
+      envVar,
+      secureStorage: safeStorage.isEncryptionAvailable(),
+      sessionOnly: !!sessionKeys[provider],
+      provider,
+      providers: PROVIDERS,
+      model: provider === 'openai' ? readConfig().openaiModel || OPENAI_MODEL : provider === 'anthropic' ? MODEL : '',
+      online: net.isOnline(),
+    };
+  });
   ipcMain.handle('ai:setKey', (_e, key: string) => {
     const c = readConfig();
-    sessionKey = '';
-    delete c.apiKeyEnc;
+    const provider = c.aiProvider ?? 'anthropic';
+    delete sessionKeys[provider];
+    let enc = '';
     if (key) {
-      if (safeStorage.isEncryptionAvailable()) c.apiKeyEnc = safeStorage.encryptString(key).toString('base64');
-      else sessionKey = key; // şifreleme yoksa diske yazılmaz
+      if (safeStorage.isEncryptionAvailable()) enc = safeStorage.encryptString(key).toString('base64');
+      else sessionKeys[provider] = key; // şifreleme yoksa diske yazılmaz
+    }
+    if (provider === 'anthropic') {
+      if (enc) c.apiKeyEnc = enc;
+      else delete c.apiKeyEnc;
+    } else {
+      const keys = { ...(c.apiKeysEnc ?? {}) };
+      if (enc) keys[provider] = enc;
+      else delete keys[provider];
+      c.apiKeysEnc = keys;
     }
     writeConfig(c);
-    return { stored: key ? (sessionKey ? 'session' : 'secure') : 'cleared' };
+    return { stored: key ? (sessionKeys[provider] ? 'session' : 'secure') : 'cleared' };
+  });
+  ipcMain.handle('ai:setModel', (_e, model: string) => {
+    const c = readConfig();
+    const m = String(model ?? '').trim();
+    if (m) c.openaiModel = m;
+    else delete c.openaiModel;
+    writeConfig(c);
+    return c.openaiModel || OPENAI_MODEL;
   });
   ipcMain.handle('ai:setProvider', (_e, id: string) => {
     const c = readConfig();

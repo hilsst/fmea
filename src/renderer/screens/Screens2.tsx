@@ -511,7 +511,7 @@ export function AiReviewScreen() {
     if (!isDesktop) return toast('AI incelemesi masaüstü uygulamasında çalışır.', 'warn');
     const s = await api.aiStatus();
     if (!s.online) return toast(AI_ERROR_TEXT.OFFLINE, 'warn');
-    if (!s.configured && s.provider === 'anthropic') {
+    if (!s.configured && s.provider !== 'local') {
       window.dispatchEvent(new CustomEvent('open-settings'));
       return toast('Önce Ayarlar › AI bölümünden API anahtarını girin.', 'warn');
     }
@@ -892,7 +892,7 @@ export function SettingsScreen() {
           {isDesktop && ai && (
             <>
               <p className="small">
-                {!ai.online ? AI_ERROR_TEXT.OFFLINE : ai.configured ? (ai.fromEnv ? '✓ ANTHROPIC_API_KEY ortam değişkeninden' : ai.sessionOnly ? '✓ Anahtar yalnızca bu oturum için bellekte' : '✓ Anahtar güvenli depolamada') : '✕ Anahtar yok – AI özellikleri kapalı'}
+                {!ai.online ? AI_ERROR_TEXT.OFFLINE : ai.configured ? (ai.fromEnv ? `✓ ${ai.envVar} ortam değişkeninden` : ai.sessionOnly ? '✓ Anahtar yalnızca bu oturum için bellekte' : '✓ Anahtar güvenli depolamada') : '✕ Anahtar yok – AI özellikleri kapalı'}
               </p>
               <div className="form">
                 <label>
@@ -908,7 +908,10 @@ export function SettingsScreen() {
                     <option value="knowledge">Engineering Knowledge (bilgi ayrı etiketli)</option>
                   </select>
                 </label>
-                <label className="wide"><span>API anahtarı</span><input className="cell-input" type="password" placeholder="sk-ant-…" value={key} onChange={(e) => setKey(e.target.value)} /></label>
+                {ai.provider === 'openai' && (
+                  <label><span>Model</span><input className="cell-input" key={ai.model} defaultValue={ai.model} placeholder="gpt-5" onBlur={async (e) => { if (e.target.value.trim() !== ai.model) { await api.aiSetModel(e.target.value); setAi(await api.aiStatus()); } }} /></label>
+                )}
+                <label className="wide"><span>API anahtarı ({ai.providers.find((x) => x.id === ai.provider)?.label ?? ai.provider})</span><input className="cell-input" type="password" placeholder={ai.provider === 'openai' ? 'sk-…' : 'sk-ant-…'} value={key} onChange={(e) => setKey(e.target.value)} /></label>
               </div>
               {!ai.secureStorage && <div className="callout warn">Bu sistemde işletim sistemi şifrelemesi yok. Anahtar diske yazılmaz; uygulama kapanınca silinir.</div>}
               <div className="row-btns">

@@ -7,12 +7,14 @@ import {
 } from '../../shared/aischema';
 import { chunkDoc, estimateTokens, locText, retrieve, type ExtractedDoc, type RequirementCandidate } from '../../shared/docmodel';
 import { sha256 } from '../../shared/sha256';
-import { AiError, makeProvider, type AiProvider, type ContentBlock } from './provider';
+import { AiError, ENV_KEY, makeProvider, type AiProvider, type ContentBlock } from './provider';
 import { systemPrompt, type AiMode, type AiRole } from './roles';
 
 export interface AiEnv {
   apiKey: string;
   provider: string;
+  /** Sağlayıcıya özel model (yalnızca OpenAI için; boşsa varsayılan). */
+  model?: string;
   cacheDir: string;
   online: () => boolean;
 }
@@ -23,8 +25,9 @@ async function run(env: AiEnv, role: AiRole, mode: AiMode, content: ContentBlock
   const meta: AiRunMeta = { role, provider: env.provider || 'anthropic', model: '', at: new Date().toISOString(), mode, tokensIn: 0, tokensOut: 0, cached: false, retries: 0 };
   try {
     if (!env.online()) throw new AiError('OFFLINE', 'AI analysis requires internet connection.');
-    const provider: AiProvider = makeProvider(env.provider, env.apiKey);
-    if (provider.id === 'anthropic' && !env.apiKey && !process.env.ANTHROPIC_API_KEY) throw new AiError('NO_KEY', 'AI API anahtarı tanımlı değil. Ayarlar → AI bölümünden girin.');
+    const provider: AiProvider = makeProvider(env.provider, env.apiKey, env.model);
+    const envVar = ENV_KEY[provider.id];
+    if (envVar && !env.apiKey && !process.env[envVar]) throw new AiError('NO_KEY', 'AI API anahtarı tanımlı değil. Ayarlar → AI bölümünden girin.');
     meta.model = provider.model;
     const system = systemPrompt(role, mode);
     const key = sha256(JSON.stringify([provider.id, provider.model, system, content, schema]));

@@ -213,7 +213,7 @@ export function useAi() {
       toast(AI_ERROR_TEXT.OFFLINE, 'warn');
       return false;
     }
-    if (!s.configured && s.provider === 'anthropic') {
+    if (!s.configured && s.provider !== 'local') {
       toast('Önce Ayarlar › AI bölümünden API anahtarını girin.', 'warn');
       window.dispatchEvent(new CustomEvent('open-settings'));
       return false;
