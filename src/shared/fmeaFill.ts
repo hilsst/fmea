@@ -13,9 +13,15 @@ const empty = (v: unknown) => v == null || v === '' || (Array.isArray(v) && v.le
 const clean = (s: string) => s.replace(/\s*\(AI ÖNERİSİ[^)]*\)/g, '').trim();
 
 /** Sadece boş alanlar için değer döndürür. */
+const isNoData = (v: unknown) => typeof v === 'string' && v.startsWith(NO_DATA);
+
 function onlyEmpty<T extends object>(row: T, vals: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(vals)) if (!empty(v) && empty((row as Record<string, unknown>)[k])) out[k] = v;
+  for (const [k, v] of Object.entries(vals)) {
+    const cur = (row as Record<string, unknown>)[k];
+    // "VERİ YOK" yer tutucusu gerçek veri bulununca değiştirilir; elle yazılmış değerlere dokunulmaz.
+    if (!empty(v) && (empty(cur) || (isNoData(cur) && !isNoData(v)))) out[k] = v;
+  }
   return out;
 }
 
@@ -131,11 +137,20 @@ export function pfmeaFillValues(p: Project, r: PfmeaRow): Record<string, unknown
     ...reqs.filter((x) => PROCESS_REQ.has(x.reqType)).map(reqText),
   ];
   const dfIds = p.dfmea.filter((d) => d.reqIds.some((id) => product.some((x) => x.id === id))).map((d) => d.id).slice(0, 6);
+  // Ürün gereksinimi: adımla eşleşen gereksinimler → bağlı DFMEA gereksinimi → adımın ürün karakteristikleri → VERİ YOK.
+  const linkedDf = (r.dfIds?.length ? r.dfIds : dfIds).map((id) => p.dfmea.find((d) => d.id === id)).filter((d): d is DfmeaRow => !!d?.requirement?.trim());
   const vals: Record<string, unknown> = {
     processFunction: PROCESS_FUNCTION[area] ?? (step.description || `${step.name} operasyonunu iş talimatına göre gerçekleştirmek`),
-    productRequirement: product.length ? product.map(reqText).join('; ') : step.productChars || '',
-    processRequirement: procReq.length ? procReq.join('; ') : step.processChars || '',
+    productRequirement: product.length
+      ? product.map(reqText).join('; ')
+      : linkedDf.length
+        ? [...new Set(linkedDf.map((d) => d.requirement.trim()))].join('; ')
+        : step.productChars || `${NO_DATA} (bu adıma bağlı ürün gereksinimi bulunamadı; Gereksinimler veya Proses Akışı ürün karakteristiği)`,
+    processRequirement: procReq.length
+      ? procReq.join('; ')
+      : step.processChars || `${NO_DATA} (proses parametresi / iş talimatı gereksinimi yok; Proses Parametreleri ekranında girin)`,
     dfIds,
+    reqIds: reqs.map((x) => x.id),
     processElement: r.cause4M === 'Machine' ? step.machine || 'Ekipman' : ELEMENT_4M[r.cause4M] ?? '',
     why1: r.cause,
     measurement: r.detection,

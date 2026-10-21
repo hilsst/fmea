@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { cellText, COLUMNS, type Col } from '../../shared/columns';
+import { cellText, tableColumns, type Col } from '../../shared/columns';
 import { blankRow, nextId } from '../../shared/model';
 import { riskLevelOf } from '../../shared/risk'; // v4-risk
 import { changesSinceApproval, moveRows, moveRowsTo, TABLE_APPROVE_LABEL } from '../../shared/rowOrder';
@@ -20,9 +20,11 @@ interface GridProps {
   onSelect?: (ids: string[]) => void;
   /** v4-kc: silme engeli; mesaj döndürürse satırlar silinmez. */
   canDelete?: (ids: string[]) => string | null;
+  /** Araç çubuğunun üstünde gösterilen başlık (örn. F33.03 / F05.04 form başlığı). */
+  header?: ReactNode;
 }
 
-export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: selProp, onSelect, canDelete }: GridProps) {
+export function Grid({ table, header, toolbar, defaults, filter, emptyHint, selected: selProp, onSelect, canDelete }: GridProps) {
   const { project, edit, toast, confirm, mutate } = useStore();
   const [dragId, setDragId] = useState<string | null>(null);
   const [q, setQ] = useState('');
@@ -36,17 +38,30 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
   useEffect(() => setLimit(PAGE), [table, q, sort]);
 
   const std = project.settings.scoringStandard ?? 'AIAG-VDA'; // v4-kc: kolonun puanlama standardı
-  const cols = COLUMNS[table].filter((c) => (all || !c.secondary) && (!c.mode || c.mode === std));
+  const layout = tableColumns(table, project.settings.tableFormat);
+  const cols = layout.filter((c) => (all || !c.secondary) && (!c.mode || c.mode === std));
   const rows = project[table] as AnyRow[];
+  // Form bölümleri: art arda aynı gruptaki kolonlar tek başlık bandında birleşir.
+  const bands = useMemo(() => {
+    if (!cols.some((c) => c.group)) return [];
+    const out: { group: string; span: number }[] = [];
+    for (const c of cols) {
+      const g = c.group ?? '';
+      const last = out[out.length - 1];
+      if (last && last.group === g) last.span++;
+      else out.push({ group: g, span: 1 });
+    }
+    return out;
+  }, [cols]);
 
   const visible = useMemo(() => {
     let out = filter ? rows.filter(filter) : rows;
     if (q.trim()) {
       const n = q.toLocaleLowerCase('tr');
-      out = out.filter((r) => r.id.toLowerCase().includes(n) || COLUMNS[table].some((c) => cellText(c, r, project).toLocaleLowerCase('tr').includes(n)));
+      out = out.filter((r) => r.id.toLowerCase().includes(n) || layout.some((c) => cellText(c, r, project).toLocaleLowerCase('tr').includes(n)));
     }
     if (sort) {
-      const col = COLUMNS[table].find((c) => c.key === sort.key)!;
+      const col = layout.find((c) => c.key === sort.key)!;
       out = [...out].sort((a, b) => {
         const av = cellText(col, a, project);
         const bv = cellText(col, b, project);
@@ -131,6 +146,7 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
 
   return (
     <div className="grid-wrap">
+      {header}
       <div className="grid-toolbar">
         <button className="btn primary" onClick={addRow}>
           + Satır ekle
@@ -168,7 +184,18 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
       <div className="grid-scroll" onScroll={onScroll}>
         <table className="grid">
           <thead>
-            <tr>
+            {bands.length > 0 && (
+              <tr className="bands">
+                <th className="sticky-col sel" />
+                <th className="sticky-col id" />
+                {bands.map((b, i) => (
+                  <th key={i} colSpan={b.span} className={`band band-${i % 2}`} title={b.group}>
+                    {b.group}
+                  </th>
+                ))}
+              </tr>
+            )}
+            <tr className={bands.length ? 'under-bands' : ''}>
               <th className="sticky-col sel">
                 <input
                   type="checkbox"
@@ -181,11 +208,12 @@ export function Grid({ table, toolbar, defaults, filter, emptyHint, selected: se
                 <th
                   key={c.key}
                   style={{ minWidth: c.width, width: c.width }}
-                  title={[c.help, c.derived ? `Kaynak ekran: ${c.derived}` : ''].filter(Boolean).join('\n')}
+                  title={[c.formLabel ? `${c.formLabel} – ${c.label}` : '', c.help, c.derived ? `Kaynak ekran: ${c.derived}` : ''].filter(Boolean).join('\n')}
                   onClick={() => setSort((s) => (s?.key === c.key ? (s.dir === 1 ? { key: c.key, dir: -1 } : null) : { key: c.key, dir: 1 }))}
                   className={c.derived ? 'derived' : c.type === 'computed' ? 'computed' : ''}
                 >
-                  {c.label}
+                  {c.formCol && <span className="form-col">{c.formCol}</span>}
+                  {c.formLabel ?? c.label}
                   {c.help && <span className="info">ⓘ</span>}
                   {sort?.key === c.key && <span className="sort">{sort.dir === 1 ? '▲' : '▼'}</span>}
                 </th>

@@ -118,6 +118,8 @@ export interface Settings {
   reasonFields: string[];
   /** Puanlama/önceliklendirme standardı. SCMH: RPN eşiği yok, S 9–10 her zaman incelenir. */
   scoringStandard: 'SCMH' | 'AIAG-VDA';
+  /** DFMEA / PFMEA ekran ve Excel kolon düzeni: SCMH 7.2.10 / 7.2.11 (varsayılan) veya şirket formu F33.03 / F05.04. */
+  tableFormat?: 'SCMH' | 'F33';
   // v4-kc: KC/CI numaralandırma ({PN}, {nnn}); SCMH 7.2.17 §1.2.1.
   kcNumbering: string;
   ciNumbering: string;
@@ -262,6 +264,11 @@ interface FmeaCommon extends BaseRow {
   resultBasis: '' | 'Projected' | 'Actual';
   sDisposition: string;
   sDispositionReason: string;
+  // F33.03 / F05.04 form: "Recommended Actions and Predicted Risk" (Q–S) ve "Results" (V). Eski dosyalarda yoktur.
+  predS?: Score;
+  predO?: Score;
+  predD?: Score;
+  results?: string;
 }
 
 // v4-risk
@@ -348,6 +355,8 @@ export interface PfmeaRow extends FmeaCommon {
   designActionRequest: boolean;
   outputId: string;
   causeInputIds: string[];
+  /** Gereksinimler ekranından doğrudan bağlanan gereksinimler; ürün / proses gereksinimi metnini doldurur. */
+  reqIds?: string[];
 }
 
 /** v4-risk: PFD adım girdisi / çıktısı (PF webinar p14, p20, p22). */

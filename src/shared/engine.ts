@@ -130,6 +130,18 @@ class Ctx {
 
 // ---------------------------------------------------------------- yardımcılar
 
+const PROCESS_REQ_TYPES = new Set(['Manufacturing', 'Process', 'Inspection']);
+
+/** PFMEA'ya bağlı gereksinimler: üretim / proses / muayene tipi → proses gereksinimi, diğerleri → ürün gereksinimi. */
+function pfmeaReqText(c: Ctx, p: PfmeaRow, reason: string) {
+  const reqs = (p.reqIds ?? []).map((rid) => c.find<RequirementRow>('requirements', rid)).filter(Boolean) as RequirementRow[];
+  const text = (xs: RequirementRow[]) => xs.map((r) => `${r.id}: ${r.text}`).join('\n');
+  const proc = reqs.filter((r) => PROCESS_REQ_TYPES.has(r.reqType));
+  const prod = reqs.filter((r) => !PROCESS_REQ_TYPES.has(r.reqType));
+  if (prod.length) c.set('pfmea', p.id, 'productRequirement', text(prod), reason);
+  if (proc.length) c.set('pfmea', p.id, 'processRequirement', text(proc), reason);
+}
+
 function requirementText(c: Ctx, reqIds: string[]) {
   return reqIds
     .map((rid) => c.find<AnyRow & { text: string }>('requirements', rid))
@@ -372,6 +384,8 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
       if (REQ_AUTO_INPUTS.includes(field)) autofillRequirement(c, id);
       if ((REQ_AUTO_FIELDS as readonly string[]).includes(field)) keepOrReleaseAuto(c, id, field, e.to);
       if (field === 'text' || field === 'acceptance' || field === 'lsl' || field === 'usl' || field === 'nominal' || field === 'unit' || field === 'tolerance') {
+        if (field === 'text')
+          for (const pf of c.rows<PfmeaRow>('pfmea').filter((x) => x.reqIds?.includes(id))) pfmeaReqText(c, pf, `${id} gereksinim metni değişti`);
         for (const d of c.rows<DfmeaRow>('dfmea').filter((d) => d.reqIds.includes(id))) {
           c.set('dfmea', d.id, 'requirement', requirementText(c, d.reqIds), `${id} gereksinim metni değişti`);
           if (!fresh) c.set('dfmea', d.id, 'reassess', `FMEA Reassessment Required – ${id} değişti (${today()})`, `${id} değişti`);
@@ -413,6 +427,7 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
     }
     case 'pfmea': {
       const p = c.find<PfmeaRow>('pfmea', id)!;
+      if (field === 'reqIds') pfmeaReqText(c, p, 'Gereksinim listesinden bağlandı');
       if (field === 'stepId') {
         const st = c.find<AnyRow & { opNo: string; name: string }>('processSteps', p.stepId);
         c.set('pfmea', id, 'opNo', st?.opNo ?? '', 'Proses adımı bağlandı');
@@ -621,7 +636,7 @@ function riskOnSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
     }
     if (field === 'dfIds' && p.dfIds.length) {
       const dfs = p.dfIds.map((x) => c.find<DfmeaRow>('dfmea', x)).filter(Boolean) as DfmeaRow[];
-      if (!p.productRequirement.trim()) {
+      if (!p.productRequirement.trim() || p.productRequirement.startsWith(NO_DATA)) {
         const req = dfs.map((d) => d.requirement).filter(Boolean).join('\n');
         if (req) c.set('pfmea', id, 'productRequirement', req, 'Bağlı DFMEA gereksinimi ürün gereksinimi olarak önerildi');
       }
