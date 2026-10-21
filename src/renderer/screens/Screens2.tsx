@@ -145,6 +145,29 @@ export function ProductTypeCard() {
 
 const LEVELS = ['H', 'M', 'L'] as const;
 
+/** DFMEA / PFMEA ekran ve Excel kolon düzeni (Ayarlar ve Risk ekranlarında). */
+export function TableFormatSetting({ first = false }: { first?: boolean }) {
+  const { project: p, mutate } = useStore();
+  return (
+    <>
+      <h3 style={first ? undefined : { marginTop: 14 }}>DFMEA / PFMEA tablo düzeni</h3>
+      <div className="row-btns">
+        {([['SCMH', 'IAQG SCMH 7.2.10 / 7.2.11', 'Item, Function, Requirement … SEV×OCC, RPN, Classification, Action Results'], ['F33', 'Şirket formu F33.03 / F05.04', 'Op. (Line) #, Process Step # … Predicted Risk ve Action Results Achieved']] as const).map(([k, label, hint]) => (
+          <label key={k} className="check-row" title={hint}>
+            <input
+              type="radio"
+              checked={(p.settings.tableFormat ?? 'SCMH') === k}
+              onChange={() => mutate((d) => { d.settings.tableFormat = k; }, { kind: 'Modified', table: 'settings', id: 'tableFormat', field: 'tableFormat', from: p.settings.tableFormat ?? 'SCMH', to: k, comment: 'DFMEA/PFMEA tablo düzeni' })}
+            />{' '}
+            <b>{label}</b>
+          </label>
+        ))}
+      </div>
+      <p className="muted small">Yalnızca ekran ve Excel kolon sırasını değiştirir; veriler, otomatik doldurma, onay ve puanlama kuralları aynı kalır.</p>
+    </>
+  );
+}
+
 export function RiskScreen() {
   const { project: p, mutate, confirm } = useStore();
   const custom = !!p.scoring.apTable;
@@ -226,20 +249,7 @@ export function RiskScreen() {
           <label className="check-row"><input type="radio" checked={scmh} onChange={() => setStandard('SCMH')} /> <b>IAQG SCMH</b> (DFMEA 7.2.10 / PFMEA 7.2.11 D/P-SEV, OCC, DET tabloları)</label>
           <label className="check-row"><input type="radio" checked={!scmh} onChange={() => setStandard('AIAG-VDA')} /> <b>AIAG-VDA 2019</b> (Action Priority)</label>
         </div>
-        <h3 style={{ marginTop: 14 }}>DFMEA / PFMEA tablo düzeni</h3>
-        <div className="row-btns">
-          {([['SCMH', 'IAQG SCMH 7.2.10 / 7.2.11', 'Item, Function, Requirement … SEV×OCC, RPN, Classification, Action Results'], ['F33', 'Şirket formu F33.03 / F05.04', 'Op. (Line) #, Process Step # … Predicted Risk ve Action Results Achieved']] as const).map(([k, label, hint]) => (
-            <label key={k} className="check-row" title={hint}>
-              <input
-                type="radio"
-                checked={(p.settings.tableFormat ?? 'SCMH') === k}
-                onChange={() => mutate((d) => { d.settings.tableFormat = k; }, { kind: 'Modified', table: 'settings', id: 'tableFormat', field: 'tableFormat', from: p.settings.tableFormat ?? 'SCMH', to: k, comment: 'DFMEA/PFMEA tablo düzeni' })}
-              />{' '}
-              <b>{label}</b>
-            </label>
-          ))}
-        </div>
-        <p className="muted small">Yalnızca ekran ve Excel kolon sırasını değiştirir; veriler, otomatik doldurma, onay ve puanlama kuralları aynı kalır.</p>
+        <TableFormatSetting />
         {scmh
           ? <div className="callout">SCMH kuralı: RPN eşiği yoktur. S 9–10 olan her satır RPN’den bağımsız incelenir; ardından RPN ve S×O’ya göre önceliklendirilir.</div>
           : <div className="callout warn"><b>{RPN_WARNING}</b> Öncelik: emniyet/regülasyon → yüksek severity → KC → AP → RPN.</div>}
@@ -860,6 +870,9 @@ export function SettingsScreen() {
 
   return (
     <div className="page">
+      <section className="card">
+        <TableFormatSetting first />
+      </section>
       <div className="two-col">
         <section className="card">
           <h3>Kullanıcı</h3>
