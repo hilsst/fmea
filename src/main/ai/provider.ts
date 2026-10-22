@@ -37,6 +37,9 @@ export interface AiProvider {
 
 export const MODEL = 'claude-opus-5-5';
 
+/** Yapılandırılmış çıktı dilbilgisi sınırını aşan model+şema anahtarları (oturum boyunca biçimsiz gönderilir). */
+const GRAMMAR_TOO_LARGE = new Set<string>();
+
 /** 4.5.1: seçilebilir Claude modelleri (fiyat: girdi / çıktı, 1M token başına USD). */
 export const ANTHROPIC_MODELS = [
   { id: 'claude-opus-5-5', label: 'Opus 5.5 – en iyi kalite ($4 / $20)' },
@@ -66,21 +69,33 @@ export class AnthropicProvider implements AiProvider {
       messages.push({ role: 'assistant', content: repair.previous });
       messages.push({ role: 'user', content: `Önceki yanıt şemaya uymadı:\n${repair.errors.join('\n')}\nAynı içeriği şemaya tam uyan JSON olarak yeniden ver.` });
     }
+    const send = (format: boolean) =>
+      client.beta.messages
+        .stream(
+          {
+            model: this.model,
+            max_tokens: 32000,
+            system: format ? system : `${system}\n\nYANIT BİÇİMİ: Yalnızca aşağıdaki JSON şemasına tam uyan tek bir JSON nesnesi döndür; açıklama veya kod bloğu ekleme.\n${JSON.stringify(schema)}`,
+            // Sunucu taraflı yedek model yalnızca Opus için; Haiku 5.5'te yok.
+            ...(this.model.startsWith('claude-opus') ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
+            output_config: format ? { effort: 'high', format: { type: 'json_schema', schema } } : { effort: 'high' },
+            messages,
+          },
+          { timeout: 15 * 60 * 1000 },
+        )
+        .finalMessage();
+    const schemaKey = `${this.model}|${JSON.stringify(schema).length}|${Object.keys((schema.properties ?? {}) as object).join(',')}`;
     let res: Anthropic.Beta.BetaMessage;
     try {
-      const stream = client.beta.messages.stream(
-        {
-          model: this.model,
-          max_tokens: 32000,
-          system,
-          // Sunucu taraflı yedek model yalnızca Opus için; Haiku 5.5'te yok.
-          ...(this.model.startsWith('claude-opus') ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
-          output_config: { effort: 'high', format: { type: 'json_schema', schema } },
-          messages,
-        },
-        { timeout: 15 * 60 * 1000 },
-      );
-      res = await stream.finalMessage();
+      try {
+        res = await send(!GRAMMAR_TOO_LARGE.has(schemaKey));
+      } catch (err) {
+        // Büyük şemalarda yapılandırılmış çıktı dilbilgisi sınırı aşılabilir (400). Şemayı talimata koyup
+        // biçim kısıtı olmadan bir kez daha denenir; yanıt yine yerelde doğrulanır (index.ts).
+        if (!(err instanceof Anthropic.BadRequestError && /grammar is too large|schema is too complex|too many strict/i.test(err.message))) throw err;
+        GRAMMAR_TOO_LARGE.add(schemaKey);
+        res = await send(false);
+      }
     } catch (err) {
       if (err instanceof Anthropic.APIConnectionTimeoutError) throw new AiError('TIMEOUT', 'AI isteği zaman aşımına uğradı.');
       if (err instanceof Anthropic.APIConnectionError) throw new AiError('OFFLINE', 'AI analysis requires internet connection.');
