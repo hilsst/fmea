@@ -1,4 +1,4 @@
-// AIProvider soyutlaması (§53). Anthropic bağlı; OpenAI ve yerel model arayüzü hazır, bağlantısı NOT SUPPORTED.
+// AIProvider soyutlaması (§53). Anthropic ve OpenAI bağlı; yerel model arayüzü hazır, bağlantısı NOT SUPPORTED.
 import Anthropic from '@anthropic-ai/sdk';
 import type { AiErrorKind, Json } from '../../shared/aischema';
 
@@ -37,11 +37,20 @@ export interface AiProvider {
 
 export const MODEL = 'claude-opus-5-5';
 
+/** Yapılandırılmış çıktı dilbilgisi sınırını aşan model+şema anahtarları (oturum boyunca biçimsiz gönderilir). */
+const GRAMMAR_TOO_LARGE = new Set<string>();
+
+/** 4.5.1: seçilebilir Claude modelleri (fiyat: girdi / çıktı, 1M token başına USD). */
+export const ANTHROPIC_MODELS = [
+  { id: 'claude-opus-5-5', label: 'Opus 5.5 – en iyi kalite ($4 / $20)' },
+  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5 – dengeli ($2 / $10)' },
+  { id: 'claude-haiku-5-5', label: 'Haiku 5.5 – en ucuz ($0.10 / $0.50)' },
+] as const;
+
 export class AnthropicProvider implements AiProvider {
   id = 'anthropic' as const;
   label = 'Anthropic Claude';
-  model = MODEL;
-  constructor(private apiKey: string) {}
+  constructor(private apiKey: string, public model = MODEL) {}
 
   async complete({ system, content, schema, repair }: CompleteArgs): Promise<CompleteResult> {
     const client = new Anthropic(this.apiKey ? { apiKey: this.apiKey } : {});
@@ -60,21 +69,33 @@ export class AnthropicProvider implements AiProvider {
       messages.push({ role: 'assistant', content: repair.previous });
       messages.push({ role: 'user', content: `Önceki yanıt şemaya uymadı:\n${repair.errors.join('\n')}\nAynı içeriği şemaya tam uyan JSON olarak yeniden ver.` });
     }
+    const send = (format: boolean) =>
+      client.beta.messages
+        .stream(
+          {
+            model: this.model,
+            max_tokens: 32000,
+            system: format ? system : `${system}\n\nYANIT BİÇİMİ: Yalnızca aşağıdaki JSON şemasına tam uyan tek bir JSON nesnesi döndür; açıklama veya kod bloğu ekleme.\n${JSON.stringify(schema)}`,
+            // Sunucu taraflı yedek model yalnızca Opus için; Haiku 5.5'te yok.
+            ...(this.model.startsWith('claude-opus') ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
+            output_config: format ? { effort: 'high', format: { type: 'json_schema', schema } } : { effort: 'high' },
+            messages,
+          },
+          { timeout: 15 * 60 * 1000 },
+        )
+        .finalMessage();
+    const schemaKey = `${this.model}|${JSON.stringify(schema).length}|${Object.keys((schema.properties ?? {}) as object).join(',')}`;
     let res: Anthropic.Beta.BetaMessage;
     try {
-      const stream = client.beta.messages.stream(
-        {
-          model: this.model,
-          max_tokens: 32000,
-          system,
-          betas: ['server-side-fallback-2026-07-01'],
-          fallbacks: 'default',
-          output_config: { effort: 'high', format: { type: 'json_schema', schema } },
-          messages,
-        },
-        { timeout: 15 * 60 * 1000 },
-      );
-      res = await stream.finalMessage();
+      try {
+        res = await send(!GRAMMAR_TOO_LARGE.has(schemaKey));
+      } catch (err) {
+        // Büyük şemalarda yapılandırılmış çıktı dilbilgisi sınırı aşılabilir (400). Şemayı talimata koyup
+        // biçim kısıtı olmadan bir kez daha denenir; yanıt yine yerelde doğrulanır (index.ts).
+        if (!(err instanceof Anthropic.BadRequestError && /grammar is too large|schema is too complex|too many strict/i.test(err.message))) throw err;
+        GRAMMAR_TOO_LARGE.add(schemaKey);
+        res = await send(false);
+      }
     } catch (err) {
       if (err instanceof Anthropic.APIConnectionTimeoutError) throw new AiError('TIMEOUT', 'AI isteği zaman aşımına uğradı.');
       if (err instanceof Anthropic.APIConnectionError) throw new AiError('OFFLINE', 'AI analysis requires internet connection.');
@@ -89,21 +110,97 @@ export class AnthropicProvider implements AiProvider {
   }
 }
 
+export const OPENAI_MODEL = 'gpt-5';
+const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
+
+type OpenAiPart =
+  | { type: 'text'; text: string }
+  | { type: 'file'; file: { filename: string; file_data: string } }
+  | { type: 'image_url'; image_url: { url: string } };
+
+interface OpenAiResponse {
+  model?: string;
+  choices?: { finish_reason?: string; message?: { content?: string | null; refusal?: string | null } }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  error?: { message?: string };
+}
+
+/** OpenAI Chat Completions (SDK'sız, fetch). Şema doğrulama + yeniden deneme ve önbellek ortak katmanda (index.ts). */
+export class OpenAiProvider implements AiProvider {
+  id = 'openai' as const;
+  label = 'OpenAI';
+  constructor(private apiKey: string, public model = OPENAI_MODEL) {}
+
+  async complete({ system, content, schema, repair }: CompleteArgs): Promise<CompleteResult> {
+    const key = this.apiKey || process.env.OPENAI_API_KEY || '';
+    if (!key) throw new AiError('NO_KEY', 'OpenAI API anahtarı tanımlı değil. Ayarlar → AI bölümünden girin.');
+    const parts: OpenAiPart[] = content.map((b) =>
+      b.type === 'text'
+        ? { type: 'text', text: b.text }
+        : b.type === 'pdf'
+          ? { type: 'file', file: { filename: `${b.title || 'dokuman'}.pdf`.replace(/(\.pdf)+$/i, '.pdf'), file_data: `data:application/pdf;base64,${b.data}` } }
+          : { type: 'image_url', image_url: { url: `data:${b.mediaType};base64,${b.data}` } },
+    );
+    const messages: unknown[] = [
+      { role: 'system', content: system },
+      { role: 'user', content: parts },
+    ];
+    if (repair) {
+      messages.push({ role: 'assistant', content: repair.previous });
+      messages.push({ role: 'user', content: `Önceki yanıt şemaya uymadı:\n${repair.errors.join('\n')}\nAynı içeriği şemaya tam uyan JSON olarak yeniden ver.` });
+    }
+    const body = {
+      model: this.model,
+      max_completion_tokens: 32000,
+      messages,
+      // strict:false – uygulama şemaları OpenAI strict kısıtlarına (tüm alanlar zorunlu vb.) uymayabilir; doğrulama yine yerelde yapılır.
+      response_format: { type: 'json_schema', json_schema: { name: 'fmea_studio_output', schema, strict: false } },
+    };
+    let resp: Response;
+    try {
+      resp = await fetch(OPENAI_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15 * 60 * 1000),
+      });
+    } catch (err) {
+      if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) throw new AiError('TIMEOUT', 'AI isteği zaman aşımına uğradı.');
+      throw new AiError('OFFLINE', 'AI analysis requires internet connection.');
+    }
+    let res: OpenAiResponse;
+    try {
+      res = (await resp.json()) as OpenAiResponse;
+    } catch {
+      res = {};
+    }
+    if (resp.status === 401) throw new AiError('NO_KEY', 'OpenAI API anahtarı geçersiz (401).');
+    if (!resp.ok) throw new AiError('API_ERROR', `AI servisi hata döndürdü (${resp.status}): ${res.error?.message ?? resp.statusText}`);
+    const choice = res.choices?.[0];
+    if (choice?.message?.refusal || choice?.finish_reason === 'content_filter') throw new AiError('REFUSAL', 'AI bu isteği yanıtlamadı (refusal). İçeriği gözden geçirip tekrar deneyin.');
+    if (choice?.finish_reason === 'length') throw new AiError('TRUNCATED', 'Yanıt uzunluk sınırında kesildi. Daha küçük bir doküman veya daha dar kapsamla deneyin.');
+    return { text: choice?.message?.content ?? '', model: res.model ?? this.model, tokensIn: res.usage?.prompt_tokens ?? 0, tokensOut: res.usage?.completion_tokens ?? 0 };
+  }
+}
+
 class NotSupportedProvider implements AiProvider {
-  constructor(public id: 'openai' | 'local', public label: string, public model = '') {}
+  constructor(public id: 'local', public label: string, public model = '') {}
   async complete(): Promise<CompleteResult> {
-    throw new AiError('NOT_SUPPORTED', `${this.label}: NOT SUPPORTED – bu sağlayıcının bağlantısı bu sürümde yok. Arayüz hazırdır; Anthropic Claude kullanın.`);
+    throw new AiError('NOT_SUPPORTED', `${this.label}: NOT SUPPORTED – bu sağlayıcının bağlantısı bu sürümde yok. Arayüz hazırdır; Anthropic Claude veya OpenAI kullanın.`);
   }
 }
 
 export const PROVIDERS = [
   { id: 'anthropic', label: 'Anthropic Claude', supported: true },
-  { id: 'openai', label: 'OpenAI (NOT SUPPORTED)', supported: false },
+  { id: 'openai', label: 'OpenAI', supported: true },
   { id: 'local', label: 'Yerel model (NOT SUPPORTED)', supported: false },
 ] as const;
 
-export function makeProvider(id: string, apiKey: string): AiProvider {
-  if (id === 'openai') return new NotSupportedProvider('openai', 'OpenAI');
+/** Sağlayıcının ortam değişkeni (anahtar uygulamada kayıtlı değilse kullanılır). */
+export const ENV_KEY: Record<string, string> = { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY' };
+
+export function makeProvider(id: string, apiKey: string, model?: string): AiProvider {
+  if (id === 'openai') return new OpenAiProvider(apiKey, model || OPENAI_MODEL);
   if (id === 'local') return new NotSupportedProvider('local', 'Yerel model');
-  return new AnthropicProvider(apiKey);
+  return new AnthropicProvider(apiKey, ANTHROPIC_MODELS.some((m) => m.id === model) ? model : MODEL);
 }

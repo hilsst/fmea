@@ -95,6 +95,19 @@ h1, h2, h3, h4 { margin: 0; }
 .grid th.computed { color: #5a3d8f; }
 .grid th .info { margin-left: 4px; font-size: 10px; opacity: 0.55; }
 .grid th .sort { margin-left: 4px; font-size: 9px; }
+/* F33.03 / F05.04 form başlık bantları */
+.grid tr.bands th { top: 0; height: 26px; box-sizing: border-box; padding: 4px 8px; font-size: 11px; text-transform: none; cursor: default; white-space: nowrap; }
+.grid tr.bands th.band-0 { background: #dfe7f3; }
+.grid tr.bands th.band-1 { background: #e9e2f3; }
+.grid tr.under-bands th { top: 26px; }
+.grid th .form-col { display: inline-block; min-width: 14px; margin-right: 5px; padding: 0 3px; border-radius: 3px; background: #d4dceb; color: #43506a; font-size: 10px; text-align: center; }
+.form-head { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 18px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 12px; }
+.form-head .fh-title { grid-column: 1 / -1; display: flex; gap: 12px; align-items: baseline; font-weight: 600; color: var(--navy); margin-bottom: 4px; }
+.form-head .fh-title .muted { font-weight: 400; }
+.form-head .fh { display: flex; gap: 6px; min-width: 0; }
+.form-head .fh b { font-weight: 600; color: #5b6b86; white-space: nowrap; }
+.form-head .fh span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.form-head .fh .missing { color: #a36a00; }
 .grid td { border-bottom: 1px solid var(--line); border-right: 1px solid #eef1f6; padding: 0; vertical-align: top; background: #fff; }
 .grid tr:hover td { background: #fafcff; }
 .grid tr.selected td { background: var(--accent-soft); }
@@ -372,3 +385,24 @@ tr.crit td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .pop-item.btnlike { display: block; width: 100%; text-align: left; border: none; background: none; cursor: pointer; }
 .pop-item.on { background: var(--accent-soft); font-weight: 600; }
 .chips.ref { cursor: pointer; min-height: 22px; }
+.ask-msg { white-space: pre-wrap; line-height: 1.45; margin: 0 0 8px; }
+.ask-input { width: 100%; border: 1px solid var(--line-2); border-radius: 6px; }
+.grid td.sticky-col.id[draggable='true'] { cursor: grab; }
+.grid tr.drop-ok:hover td { box-shadow: inset 0 2px 0 var(--accent); }
+.check.table-approval { padding: 3px 8px; border: 1px solid var(--line-2); border-radius: 6px; font-weight: 600; gap: 6px; }
+.check.table-approval.on { color: var(--green); border-color: var(--green); }
+.check.table-approval.stale { color: var(--amber); border-color: var(--amber); }
+.quick-reasons { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+.tree-node .tree-acts { display: none; margin-left: auto; gap: 2px; }
+.tree-node:hover .tree-acts { display: inline-flex; }
+.tree-node.pending b { color: var(--amber); }
+.tree .fn-list { list-style: none; padding-left: 18px; margin: 0 0 4px; font-size: 12px; }
+.tree .fn-list .rid { font-size: 10px; opacity: 0.6; }
+/* 4.4.0 proses akışı şablon seçimi */
+.flow-picker .row-btns { flex-wrap: wrap; gap: 4px 16px; }
+.flow-picker .form-inline { display: flex; gap: 8px; align-items: center; }
+.flow-picker .form-inline select { max-width: 280px; }
+/* 4.4.1: FMEA tabloları pencereyi doldurur; altındaki panel sayfa kaydırılınca görünür */
+.content > .grid-wrap > .grid-scroll { min-height: 300px; }
+details.card.coverage { margin: 6px 0; padding: 6px 14px; flex: none; }
+details.card.coverage summary { cursor: pointer; display: flex; gap: 8px; align-items: center; }

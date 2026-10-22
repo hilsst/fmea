@@ -66,8 +66,8 @@ export function TextCell({ value, readonly, onCommit, multiline, type = 'text' }
 }
 
 function scoreList(project: Project, key: string): ScoringEntry[] {
-  if (key === 's' || key === 'newS') return project.scoring.severity;
-  if (key === 'o' || key === 'newO') return project.scoring.occurrence;
+  if (key === 's' || key === 'newS' || key === 'predS') return project.scoring.severity;
+  if (key === 'o' || key === 'newO' || key === 'predO') return project.scoring.occurrence;
   return project.scoring.detection;
 }
 

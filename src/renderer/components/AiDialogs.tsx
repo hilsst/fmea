@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
+import { approvedExamples, exampleProposalData, expertBrief, type ExampleKind } from '../../shared/expert';
+import { materialFamily } from '../../shared/failureLib';
 import { AI_ERROR_TEXT, LOW_CONF_TEXT, type AiResult } from '../../shared/aischema';
 import { findRequirementCandidates, locText, type ExtractedDoc } from '../../shared/docmodel';
 import { COMPOSITE_KB, isComposite } from '../../shared/kb';
@@ -9,6 +11,11 @@ import { sha256 } from '../../shared/sha256';
 import type { AnyRow, DocumentRow, Project } from '../../shared/types';
 import { api, isDesktop } from '../api';
 import { useStore } from '../store';
+
+/** 4.5.0: örnek seçimi için sorgu; bu projenin onaylı satırları da aday olur. */
+function exampleQuery(p: Project, kind: ExampleKind, target: string) {
+  return { kind, family: materialFamily(p), text: target, local: approvedExamples(p) };
+}
 
 export function projectContext(p: Project): string {
   const lines: string[] = [];
@@ -75,7 +82,7 @@ export function ProposalDialog({ initial, onClose }: { initial: ProposalSet; onC
         <div className="modal-head">
           <div className="icon ai">✦</div>
           <div>
-            <h2>AI önerileri – her birini kabul edin, düzenleyin veya reddedin</h2>
+            <h2>{set.meta.provider === 'local' ? 'Örnek kütüphanesi önerileri' : 'AI önerileri'} – her birini kabul edin, düzenleyin veya reddedin</h2>
             <p>
               {set.meta.role} · {set.meta.model || set.meta.provider} · {set.meta.mode === 'strict' ? 'Strict Engineering Mode' : 'Engineering Knowledge Mode'}
               {set.meta.cached ? ' · önbellekten' : ''} · {set.meta.tokensIn + set.meta.tokensOut} token. Kabul edilenler “AI Proposed” eklenir; onay mühendisindir.
@@ -213,7 +220,7 @@ export function useAi() {
       toast(AI_ERROR_TEXT.OFFLINE, 'warn');
       return false;
     }
-    if (!s.configured && s.provider === 'anthropic') {
+    if (!s.configured && s.provider !== 'local') {
       toast('Önce Ayarlar › AI bölümünden API anahtarını girin.', 'warn');
       window.dispatchEvent(new CustomEvent('open-settings'));
       return false;
@@ -280,20 +287,44 @@ export function useAi() {
   const suggestDfmea = async (fnIds: string[]) => {
     const fns = project.structure.filter((s) => fnIds.length === 0 || fnIds.includes(s.id)).filter((s) => s.function);
     if (!fns.length) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
+    const target = 'Hedef fonksiyonlar:\n' + fns.map((f) => `${f.id}: ${f.element} → ${f.function} (REQ: ${f.reqIds.join(', ')})`).join('\n');
     await run('DFMEA önerileri hazırlanıyor…', 'dfmea', fns.map((f) => f.id).join(', '), () =>
-      api.aiDfmea({ context: projectContext(project), target: 'Hedef fonksiyonlar:\n' + fns.map((f) => `${f.id}: ${f.element} → ${f.function} (REQ: ${f.reqIds.join(', ')})`).join('\n'), mode }),
+      api.aiDfmea({ context: projectContext(project), target, mode, expert: expertBrief(project, 'dfmea'), exampleQuery: exampleQuery(project, 'dfmea', target) }),
     );
   };
 
   const suggestPfmea = async (stepIds: string[]) => {
     const steps = project.processSteps.filter((s) => stepIds.length === 0 || stepIds.includes(s.id));
     if (!steps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
-    const composite = isComposite(project.settings.productType) || steps.some((s) => s.specialProcess)
+    // 4.5.0: kompozit bilgi tabanı yalnız kompozit parçada (eskiden özel proses adımı olan her parçaya gidiyordu)
+    const composite = materialFamily(project) === 'composite' || (isComposite(project.settings.productType) && materialFamily(project) !== 'metal')
       ? COMPOSITE_KB.map((k) => `${k.area}: hata modları ${k.failureModes.join(', ')}; tipik nedenler ${k.causes.join(', ')}; parametreler ${k.parameters.join(', ')}`).join('\n')
-      : '(ürün tipi kompozit değil)';
+      : '';
+    const target = 'Hedef proses adımları:\n' + steps.map((s) => `${s.id}: Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${s.description}`).join('\n');
     await run('PFMEA önerileri hazırlanıyor…', 'pfmea', steps.map((s) => s.id).join(', '), () =>
-      api.aiPfmea({ context: projectContext(project), composite, target: 'Hedef proses adımları:\n' + steps.map((s) => `${s.id}: Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${s.description}`).join('\n'), mode }),
+      api.aiPfmea({ context: projectContext(project), composite, target, mode, expert: expertBrief(project, 'pfmea', steps.map((s) => s.id)), exampleQuery: exampleQuery(project, 'pfmea', target) }),
     );
+  };
+
+  /** 4.6.0: AI'sız – onaylı örnek kütüphanesinden benzer satırları önerir; internet / API anahtarı gerekmez. */
+  const suggestFromExamples = async (kind: ExampleKind) => {
+    if (kind === 'dfmea' && !project.structure.some((s) => s.function)) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
+    if (kind === 'pfmea' && !project.processSteps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
+    const pool = await api.examplesList();
+    if (!pool.length) return toast('Örnek kütüphanesi boş. Onaylı (Approved / Engineer Reviewed) satırları olan projeleri açıp kaydedin.', 'warn');
+    const data = exampleProposalData(project, kind, pool);
+    if (!data.rows.length) return toast(`Kütüphanede (${pool.length} örnek) bu projeye yeterince benzeyen ${kind.toUpperCase()} örneği bulunamadı.`, 'warn');
+    const meta = { role: 'Örnek kütüphanesi', provider: 'local', model: 'onaylı örnekler (AI yok)', at: new Date().toISOString(), mode, tokensIn: 0, tokensOut: 0, cached: false, retries: 0 };
+    const set = buildProposals(project, kind, data, meta, {
+      inputs: `Örnek kütüphanesi (${pool.length} satır)`,
+      note: 'Bu öneriler AI kullanmadan, daha önce onayladığınız benzer satırlardan getirildi. Metin ve S/O/D başka parçadan geldiği için her satırı bu parçaya göre düzeltin.',
+    });
+    set.items.forEach((it, i) => {
+      const src = String(data.rows[i]?.exampleSource ?? '');
+      it.row = { ...it.row, origin: 'similar', source: `Örnek kütüphanesi: ${src}` };
+      it.warnings = [`Kaynak örnek: ${src}`, ...it.warnings];
+    });
+    setProposal(set);
   };
 
   const dialogs = (
@@ -313,7 +344,7 @@ export function useAi() {
     </>
   );
 
-  return { extractRequirements, suggestDfmea, suggestPfmea, dialogs, busy: !!busy };
+  return { extractRequirements, suggestDfmea, suggestPfmea, suggestFromExamples, dialogs, busy: !!busy };
 }
 
 export function PasteTextDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (t: string) => void }) {

@@ -212,36 +212,49 @@ export interface ValueSpec {
 }
 
 const NUM = String.raw`[-+]?\d+(?:[.,]\d+)?`;
-const UNIT = String.raw`(?:(N·m|Nm|kN|MPa|GPa|kPa|mbar|inHg|psi|bar|Pa|mm|µm|um|μm|cm|inch|in|°C|°F|deg|°|kg|min|g|%|h|s|Ra|N|m)(?![A-Za-z]))`;
+const UNIT = String.raw`(?:(N·m|Nm|kN|MPa|GPa|kPa|mbar|inHg|psi|bar|Pa|mm|µm|um|μm|cm|inch|in|°C|°F|deg|°|kg|min|g|%|h|saat|dk|s|Ra|N|m)(?![A-Za-zçğıöşüÇĞİÖŞÜ]))`;
 const num = (s: string) => Number(s.replace(',', '.'));
 
 /** Metindeki ilk ölçü/tolerans ifadesini çözer. Bulamazsa null; tahmin yapmaz. */
 export function parseValueSpec(text: string): ValueSpec | null {
   const t = text.replace(/\s+/g, ' ');
   let m: RegExpExecArray | null;
+  // pah: 0.5 × 45° ±0.2 mm
+  if ((m = new RegExp(`(${NUM})\\s*[×xX]\\s*${NUM}\\s*°\\s*(?:±|\\+/-)\\s*(${NUM})\\s*${UNIT}?`, 'i').exec(t))) {
+    const n = num(m[1]), d = num(m[2]);
+    return { nominal: n, lsl: round(n - d), usl: round(n + d), unit: m[3] ?? '', tolerance: `±${m[2]}` };
+  }
   // 2.00 ± 0.10 mm  /  Ø6.00 ±0.05
   if ((m = new RegExp(`(?:Ø|⌀)?\\s*(${NUM})\\s*(?:±|\\+/-|\\+-)\\s*(${NUM})\\s*${UNIT}?`, 'i').exec(t))) {
     const n = num(m[1]), d = num(m[2]);
     return { nominal: n, lsl: round(n - d), usl: round(n + d), unit: m[3] ?? '', tolerance: `±${m[2]}` };
   }
-  // 6.00 +0.10/-0.00  veya 6.00 +0.10 -0.05
-  if ((m = new RegExp(`(${NUM})\\s*\\+\\s*(${NUM})\\s*/?\\s*-\\s*(${NUM})\\s*${UNIT}?`, 'i').exec(t))) {
+  // 6.00 +0.10/-0.00, 6.00 +0.10 -0.05 veya 10.00 +0.10 / 0.00 (işaretsiz alt sapma)
+  if ((m = new RegExp(`(${NUM})\\s*\\+\\s*(${NUM})\\s*(?:/\\s*-?|-)\\s*(${NUM})\\s*${UNIT}?`, 'i').exec(t))) {
     const n = num(m[1]);
     return { nominal: n, lsl: round(n - num(m[3])), usl: round(n + num(m[2])), unit: m[4] ?? '', tolerance: `+${m[2]}/-${m[3]}` };
   }
-  // 6.00 – 6.10 mm  / 120-130 °C (aralık)
-  if ((m = new RegExp(`(${NUM})\\s*(?:–|-|to|ile|\\.\\.)\\s*(${NUM})\\s*${UNIT}`, 'i').exec(t))) {
-    const a = num(m[1]), b = num(m[2]);
-    if (a < b) return { nominal: null, lsl: a, usl: b, unit: m[3], tolerance: `${m[1]}–${m[2]}` };
+  // 6.00 – 6.10 mm  / 120-130 °C / -40 … +85 °C / -40 °C ile +85 °C (aralık)
+  if ((m = new RegExp(`(${NUM})\\s*(?:${UNIT}\\s*)?(?:–|-|to|ile|…|\\.{2,3})\\s*(${NUM})\\s*${UNIT}`, 'i').exec(t))) {
+    const a = num(m[1]), b = num(m[3]);
+    if ((!m[2] || m[2] === m[4]) && a < b) return { nominal: null, lsl: a, usl: b, unit: m[4], tolerance: `${m[1]}–${m[3]}` };
   }
   // min. 25 MPa / en az 25 MPa / ≥ 25
   if ((m = new RegExp(`(?:min(?:imum)?\\.?|en az|≥|>=|at least)\\s*(${NUM})\\s*${UNIT}?`, 'i').exec(t)))
     return { nominal: null, lsl: num(m[1]), usl: null, unit: m[2] ?? '', tolerance: `min ${m[1]}` };
+  // ≤ %2 / en az %60 (yüzde işareti önde)
+  if ((m = new RegExp(`(≤|<=|max(?:imum)?\\.?|en fazla|maksimum|≥|>=|min(?:imum)?\\.?|en az)\\s*%\\s*(${NUM})`, 'i').exec(t))) {
+    const lo = /≥|>=|min|en az/i.test(m[1]);
+    return { nominal: null, lsl: lo ? num(m[2]) : null, usl: lo ? null : num(m[2]), unit: '%', tolerance: `${lo ? 'min' : 'max'} ${m[2]}` };
+  }
   if ((m = new RegExp(`(?:max(?:imum)?\\.?|en fazla|≤|<=|not exceed|maksimum)\\s*(${NUM})\\s*${UNIT}?`, 'i').exec(t)))
     return { nominal: null, lsl: null, usl: num(m[1]), unit: m[2] ?? '', tolerance: `max ${m[1]}` };
   // tek değer + birim (tolerans yok)
   if ((m = new RegExp(`(?:Ø|⌀)?\\s*(${NUM})\\s*${UNIT}\\b`, 'i').exec(t)))
     return { nominal: num(m[1]), lsl: null, usl: null, unit: m[2], tolerance: '' };
+  // yalnızca tolerans (±2°): nominal başka yerde
+  if ((m = new RegExp(`(?:±|\\+/-)\\s*(${NUM})\\s*${UNIT}?`, 'i').exec(t)))
+    return { nominal: null, lsl: null, usl: null, unit: m[2] ?? '', tolerance: `±${m[1]}` };
   return null;
 }
 
@@ -267,14 +280,14 @@ export interface RequirementCandidate {
   trigger: string;
 }
 
-const TRIGGERS = /\b(shall|must|required|requires|is to be|are to be|will be|should)\b|(olmalıdır|olmalı|edilmelidir|yapılmalıdır|gereklidir|zorunludur|uygulanmalıdır|sağlamalıdır|aşmamalıdır|tutulmalıdır)/i;
+const TRIGGERS = /\b(shall|must|required|requires|is to be|are to be|will be|should)\b|(olmalıdır|olmalı|edilmelidir|yapılmalıdır|gereklidir|zorunludur|uygulanmalıdır|sağlamalıdır|aşmamalıdır|tutulmalıdır|[a-zçğıöşü]+(?:malıdır|melidir)|[a-zçğıöşü]+(?:ecektir|acaktır)|kabul edilmez|bulunmamalı|bulunmayacak)/i;
 
 const TYPE_RULES: [RegExp, string][] = [
   [/\b(safety|emniyet|güvenlik|hazard|flammab)/i, 'Safety'],
   [/\b(regulat|yasal|reach|rohs|faa|easa|far\s?25|cs-25|mevzuat)/i, 'Regulatory'],
+  [/\b(cure|autoclave|bond|lay-?up|vacuum|kür|otoklav|vakum|surface prep|paint|coat|anodiz|primer|heat treat)/i, 'Process'],
   [/\b(temperature|humidity|salt|uv|altitude|vibration|nem|sıcaklık|titreşim|rain|erosion|lightning)/i, 'Environmental'],
   [/\b(material|prepreg|resin|fiber|fibre|adhesive|core|honeycomb|malzeme|reçine|elyaf|yapıştırıcı|alloy|aluminium|aluminum|titanium)/i, 'Material'],
-  [/\b(cure|autoclave|bond|lay-?up|vacuum|kür|otoklav|vakum|surface prep|paint|coat|anodiz|primer|heat treat)/i, 'Process'],
   [/\b(inspect|ndt|ultrason|x-ray|muayene|tap test|cmm)/i, 'Inspection'],
   [/\b(interface|mating|arayüz|montaj|fastener|connector)/i, 'Interface'],
   [/\b(mtbf|life|ömür|reliab|güvenilir|fatigue|yorulma|cycles)/i, 'Reliability'],
@@ -288,30 +301,163 @@ export function classifyRequirement(text: string): string {
 }
 
 /** Değerin hangi karakteristiğe ait olduğu – yalnızca metinde geçen kelimeden; yoksa boş. */
-const CHAR_WORDS = /(thickness|kalınlık|diameter|çap|hole|delik|flatness|düzlemsellik|position|pozisyon|length|uzunluk|width|genişlik|roughness|pürüzlülük|temperature|sıcaklık|pressure|basınç|vacuum|vakum|torque|tork|weight|ağırlık|coating|kaplama|bondline|transmission loss|strength|dayanım|porosity|gözeneklilik|void|cure time|dwell|ramp rate)/i;
+const CHAR_WORDS = /(thickness|kalınlık|diameter|çap|\\bhole\\b|delik|flatness|düzlemsellik|position|pozisyon|length|uzunluk|width|genişlik|roughness|pürüzlülük|temperature|sıcaklık|pressure|basınç|vacuum|vakum|torque|tork|weight|ağırlık|coating|kaplama|bondline|transmission loss|strength|dayanım|porosity|gözeneklilik|porozite|void|cure time|dwell|ramp rate|radyüs|radius|dikliğ|diklik|perpendicular|pah|chamfer|fiber açı|açı toleransı|out-time|ısıtma hızı|kür süresi|ply sayısı|tg\b)/i;
+
+// ───────── Metin birimleri: Markdown tablo satırı, madde listesi, başlık / giriş bağlamı ─────────
+
+interface ReqUnit {
+  text: string;
+  block: DocBlock;
+  loc: DocLoc;
+  /** Tablo satırı: tetik kelimesi olmasa da gereksinimdir. */
+  forced?: boolean;
+  characteristic?: string;
+  spec?: ValueSpec | null;
+  /** Karakteristik aramasında kullanılan başlık / giriş metni. */
+  context?: string;
+}
+
+/** Markdown vurgu işaretlerini ve satır sonu boşluklarını temizler. */
+export function cleanMd(t: string): string {
+  return t.replace(/\*\*|__|`/g, '').replace(/[ \t]+$/gm, '').trim();
+}
+
+const BULLET = /^\s*(?:[-*•·]|\d{1,2}[.)])\s+/;
+const isTableLine = (l: string) => /^\s*\|.*\|\s*$/.test(l);
+const cells = (l: string) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+const startsLower = (t: string) => /^[a-zçğıöşü]/.test(t);
+/** Başlık: numarasız (büyük harf korunur; Türkçe küçültme İngilizce kelimeleri bozar). */
+const headingTitle = (t: string) => cleanMd(t).replace(/^(?:\d{1,2}\.)*\d{1,2}\.?\s+/, '').trim();
+const withLine = (loc: DocLoc, add: number): DocLoc => (loc.line != null ? { ...loc, line: loc.line + add } : loc);
+
+/** Tablo satırı: Nominal + Tolerans kolonları varsa tek değer olarak birleştirilir. */
+function tableUnits(b: DocBlock, lines: string[], heading: string): ReqUnit[] {
+  const rows = lines.map((l, i) => ({ c: cells(l), i })).filter((r) => !r.c.every((x) => /^:?-{2,}:?$/.test(x) || x === ''));
+  if (rows.length < 2) return [];
+  const head = rows[0].c.map((h) => h.toLocaleLowerCase('tr'));
+  const nomI = head.findIndex((h) => /nominal/.test(h));
+  const tolI = head.findIndex((h) => /tolerans|tolerance/.test(h));
+  return rows.slice(1).map(({ c, i }) => {
+    const name = c[0] ?? '';
+    let text: string;
+    let spec: ValueSpec | null;
+    if (nomI > 0 && tolI > 0) {
+      const nom = c[nomI] ?? '';
+      const tol = c[tolI] ?? '';
+      text = `${name}: ${nom} ${tol}`.trim();
+      const n = new RegExp(`(?:Ø|⌀|R)?\\s*(${NUM})\\s*${UNIT}?`, 'i').exec(nom);
+      const unit = n?.[2] ?? new RegExp(`${UNIT}`, 'i').exec(tol)?.[1] ?? '';
+      const tolNum = tol.replace(new RegExp(`\\s*${UNIT}`, 'gi'), '');
+      spec = /^[±+]/.test(tolNum.trim()) && n ? parseValueSpec(`${n[1]} ${tolNum} ${unit}`) : parseValueSpec(tol) ?? parseValueSpec(nom);
+      if (spec && !spec.unit) spec = { ...spec, unit };
+    } else {
+      text = `${heading ? `${heading} – ` : ''}${c.map((x, k) => (k && rows[0].c[k] ? `${rows[0].c[k]}: ${x}` : x)).join('; ')}`;
+      spec = parseValueSpec(text);
+    }
+    return { text, block: b, loc: withLine(b.loc, i), forced: true, characteristic: name, spec, context: heading };
+  });
+}
+
+function reqUnits(doc: ExtractedDoc): ReqUnit[] {
+  const out: ReqUnit[] = [];
+  const titles: string[] = []; // başlık seviyelerine göre
+  let lead = ''; // ":" ile biten son giriş cümlesi
+  const blocks = doc.blocks;
+  const ctx = () => {
+    const t = titles.filter(Boolean);
+    return t.slice(-2).join(' / ');
+  };
+  for (let k = 0; k < blocks.length; k++) {
+    const b = blocks[k];
+    if (b.cadSource) {
+      out.push({ text: b.text, block: b, loc: b.loc });
+      continue;
+    }
+    if (b.kind === 'heading') {
+      const lvl = b.level ?? 1;
+      titles.length = Math.max(0, lvl - 1);
+      titles[lvl - 1] = headingTitle(b.text);
+      lead = '';
+      continue;
+    }
+    const text = cleanMd(b.text);
+    if (!text) continue;
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    const heading = ctx();
+    const label = [heading, lead].filter(Boolean).join(' – ');
+    // Markdown tablosu
+    if (lines.length >= 2 && lines.filter(isTableLine).length >= 2) {
+      out.push(...tableUnits(b, lines.filter(isTableLine), heading));
+      continue;
+    }
+    // Madde listesi
+    if (lines.length >= 1 && lines.every((l) => BULLET.test(l))) {
+      const items = lines.map((l) => l.replace(BULLET, '').replace(/[,;]\s*$/, '').trim());
+      const next = blocks[k + 1];
+      const closing = next && next.kind !== 'heading' && startsLower(cleanMd(next.text)) && cleanMd(next.text).length < 160 ? cleanMd(next.text) : '';
+      if (closing) {
+        // "… şunlar: a, b, c bulunmamalıdır." → tek gereksinim (şartnamedeki gibi)
+        out.push({ text: `${lead || heading}${lead || heading ? ': ' : ''}${items.join(', ')} ${closing}`, block: b, loc: b.loc, context: heading });
+        k++;
+      } else
+        items.forEach((it, i) => out.push({ text: label ? `${label}: ${it}` : it, block: b, loc: withLine(b.loc, i), context: heading }));
+      lead = '';
+      continue;
+    }
+    // Giriş cümlesi ("Kabul:", "Tipik olarak:") – sonraki birime bağlam olur
+    if (/:$/.test(text) && text.length <= 120 && lines.length === 1) {
+      lead = text.slice(0, -1).trim();
+      continue;
+    }
+    // Yalnızca değer içeren satır ("R10.00 ±0.50 mm") – başlık ve giriş bağlamıyla
+    const letters = text.replace(/[^A-Za-zçğıöşüÇĞİÖŞÜ]/g, '').length;
+    if (text.length <= 60 && lines.length === 1 && parseValueSpec(text) && letters <= 12) {
+      let full = `${label}${label ? ': ' : ''}${text}`;
+      const next = blocks[k + 1];
+      if (next && next.kind !== 'heading' && startsLower(cleanMd(next.text))) {
+        full += ` ${cleanMd(next.text).split('\n')[0]}`;
+        k++;
+      }
+      // Değer ayrı satıra yazılmışsa şartname onu gereksinim olarak vurgulamıştır
+      out.push({ text: full, block: b, loc: b.loc, spec: parseValueSpec(text), context: heading, forced: !!label });
+      lead = '';
+      continue;
+    }
+    // Küçük harfle başlayan devam satırı ("olabilir.", "ve … doğrulanmalıdır.") önceki birime eklenir
+    const last = out[out.length - 1];
+    if (startsLower(text)) {
+      if (last && last.block === blocks[k - 1]) last.text += ` ${lines.join(' ')}`;
+      continue;
+    }
+    out.push({ text: lead ? `${label}: ${text}` : text, block: b, loc: b.loc, context: heading });
+    lead = '';
+  }
+  return out;
+}
 
 export function findRequirementCandidates(doc: ExtractedDoc): RequirementCandidate[] {
   const out: RequirementCandidate[] = [];
   const seen = new Set<string>();
-  for (const b of doc.blocks) {
+  for (const u of reqUnits(doc)) {
+    const b = u.block;
     if (b.kind === 'email-header' || b.kind === 'attachment' || b.kind === 'entity') continue;
     // Uzun paragrafları cümlelere böl
-    const sentences = b.text.length > 300 ? b.text.split(/(?<=[.;])\s+(?=[A-ZÇĞİÖŞÜ0-9])/) : [b.text];
+    const sentences = u.text.length > 300 && !u.forced ? u.text.split(/(?<=[.;])\s+(?=[A-ZÇĞİÖŞÜ0-9])/) : [u.text];
     for (const s of sentences) {
       const text = s.trim();
       if (text.length < 8) continue;
       const trig = TRIGGERS.exec(text);
-      const spec = parseValueSpec(text);
+      const spec = u.spec !== undefined && sentences.length === 1 ? u.spec : parseValueSpec(text);
       const isDim = b.kind === 'dimension';
-      if (!trig && !isDim && !(spec && (spec.lsl != null || spec.usl != null) && b.kind !== 'quoted')) continue;
+      if (!u.forced && !trig && !isDim && !(spec && (spec.lsl != null || spec.usl != null) && b.kind !== 'quoted')) continue;
       const key = text.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-      const ch = CHAR_WORDS.exec(text);
+      const ch = u.characteristic ? null : CHAR_WORDS.exec(text) ?? (u.context ? CHAR_WORDS.exec(u.context) : null);
       // Güven: tetik + değer + konum net ise High; yalnızca tetik ise Medium; alıntı / belirsiz ise Low
-      let confidence: RequirementCandidate['confidence'] = trig && spec ? 'High' : trig || isDim ? 'Medium' : 'Low';
+      let confidence: RequirementCandidate['confidence'] = (trig || u.forced) && spec ? 'High' : trig || isDim || u.forced ? 'Medium' : 'Low';
       if (b.kind === 'quoted') confidence = 'Low';
-      let trigger = trig ? trig[0] : isDim ? 'drawing dimension' : 'numeric limit';
+      let trigger = trig ? trig[0] : u.forced ? 'table row' : isDim ? 'drawing dimension' : 'numeric limit';
       // CAD: yalnızca ölçü blokları aday olur. PMI toleranslı → High; nominal geometri → Medium; sezgisel → Low.
       if (b.cadSource) {
         if (!isDim) continue;
@@ -321,15 +467,15 @@ export function findRequirementCandidates(doc: ExtractedDoc): RequirementCandida
       }
       out.push({
         text,
-        characteristic: ch ? ch[1] : '',
+        characteristic: u.characteristic || (ch ? ch[1] : ''),
         nominal: spec?.nominal ?? null,
         lsl: spec?.lsl ?? null,
         usl: spec?.usl ?? null,
         unit: spec?.unit ?? '',
         tolerance: spec?.tolerance ?? '',
-        reqType: classifyRequirement(text),
+        reqType: classifyRequirement(u.context ? `${text} ${u.context}` : text),
         evidence: text.length > 400 ? text.slice(0, 400) + '…' : text,
-        loc: b.loc,
+        loc: u.loc,
         blockId: b.id,
         confidence,
         trigger,

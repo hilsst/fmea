@@ -7,12 +7,14 @@ import {
 } from '../../shared/aischema';
 import { chunkDoc, estimateTokens, locText, retrieve, type ExtractedDoc, type RequirementCandidate } from '../../shared/docmodel';
 import { sha256 } from '../../shared/sha256';
-import { AiError, makeProvider, type AiProvider, type ContentBlock } from './provider';
+import { AiError, ENV_KEY, makeProvider, type AiProvider, type ContentBlock } from './provider';
 import { systemPrompt, type AiMode, type AiRole } from './roles';
 
 export interface AiEnv {
   apiKey: string;
   provider: string;
+  /** Sağlayıcıya özel model (yalnızca OpenAI için; boşsa varsayılan). */
+  model?: string;
   cacheDir: string;
   online: () => boolean;
 }
@@ -23,8 +25,9 @@ async function run(env: AiEnv, role: AiRole, mode: AiMode, content: ContentBlock
   const meta: AiRunMeta = { role, provider: env.provider || 'anthropic', model: '', at: new Date().toISOString(), mode, tokensIn: 0, tokensOut: 0, cached: false, retries: 0 };
   try {
     if (!env.online()) throw new AiError('OFFLINE', 'AI analysis requires internet connection.');
-    const provider: AiProvider = makeProvider(env.provider, env.apiKey);
-    if (provider.id === 'anthropic' && !env.apiKey && !process.env.ANTHROPIC_API_KEY) throw new AiError('NO_KEY', 'AI API anahtarı tanımlı değil. Ayarlar → AI bölümünden girin.');
+    const provider: AiProvider = makeProvider(env.provider, env.apiKey, env.model);
+    const envVar = ENV_KEY[provider.id];
+    if (envVar && !env.apiKey && !process.env[envVar]) throw new AiError('NO_KEY', 'AI API anahtarı tanımlı değil. Ayarlar → AI bölümünden girin.');
     meta.model = provider.model;
     const system = systemPrompt(role, mode);
     const key = sha256(JSON.stringify([provider.id, provider.model, system, content, schema]));
@@ -129,17 +132,23 @@ ${local || '(aday yok)'}
   return { ...r, note: prepared.note };
 }
 
-export function suggestDfmea(env: AiEnv, a: { context: string; target: string; mode: AiMode }) {
+/** 4.5.0: uzman modu talimatı ve onaylı örnekler (expert.ts); boşsa eklenmez. */
+const extra = (a: { expert?: string; examples?: string }): ContentBlock[] =>
+  [a.expert, a.examples].filter((t): t is string => !!t?.trim()).map((text) => ({ type: 'text', text }));
+
+export function suggestDfmea(env: AiEnv, a: { context: string; target: string; mode: AiMode; expert?: string; examples?: string }) {
   return run(env, 'FMEA Generator', a.mode, [
     { type: 'text', text: a.context },
+    ...extra(a),
     { type: 'text', text: `GÖREV: Aşağıdaki fonksiyon(lar) için DFMEA satırları öner. functionId ve reqIds yukarıdaki ID’lerden seçilir. Her S/O/D için sWhy/oWhy/dWhy gerekçesi ver (puanlama kriter tablosuna atıf). Mevcut hata modlarını tekrarlama. Bir fonksiyon için tam kayıp, kısmi, aralıklı, istenmeyen fonksiyon hata modlarını değerlendir.\n${a.target}` },
   ], DFMEA_SCHEMA);
 }
 
-export function suggestPfmea(env: AiEnv, a: { context: string; target: string; composite: string; mode: AiMode }) {
+export function suggestPfmea(env: AiEnv, a: { context: string; target: string; composite: string; mode: AiMode; expert?: string; examples?: string }) {
   return run(env, 'Process Analyst', a.mode, [
     { type: 'text', text: a.context },
-    { type: 'text', text: `GÖREV: Aşağıdaki proses adım(lar)ı için PFMEA satırları öner. dfIds ilgili DFMEA ID’leri. cause4M zorunlu; why dizisi 5 Neden (en fazla 5), rootCause sistem zafiyeti olmalı. Özel proseslerde params listesine izlenmesi gereken parametreleri ekle (limit yazma).\nKompozit bilgi tabanı (ENGINEERING KNOWLEDGE):\n${a.composite}\nMevcut hata modlarını tekrarlama.\n${a.target}` },
+    ...extra(a),
+    { type: 'text', text: `GÖREV: Aşağıdaki proses adım(lar)ı için PFMEA satırları öner. dfIds ilgili DFMEA ID’leri. cause4M zorunlu; why dizisi 5 Neden (en fazla 5), rootCause sistem zafiyeti olmalı. Özel proseslerde params listesine izlenmesi gereken parametreleri ekle (limit yazma).${a.composite ? `\nKompozit bilgi tabanı (ENGINEERING KNOWLEDGE):\n${a.composite}` : ''}\nMevcut hata modlarını tekrarlama.\n${a.target}` },
   ], PFMEA_SCHEMA);
 }
 

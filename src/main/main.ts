@@ -8,11 +8,17 @@ import type { ExtractedDoc } from '../shared/docmodel';
 import { buildWorkbook } from '../shared/excel';
 import { buildWorkbookV2 } from '../shared/excel2';
 import { buildScmhPackage, scmhFileName, SCMH_TEMPLATE_FILES, type ScmhKind } from '../shared/scmh';
+import { buildKcForm, kcFormFileName, KC_FORM_TEMPLATE_FILE } from '../shared/kcForm'; // v4-kc
+import { cpPhaseVariants } from '../shared/apqp'; // v4-apqp
+import { apqpFileName, fillApqpApplicability, fillMaturityEvidence, fillPackagingForm, findApqpTemplate, type ApqpTemplateKind } from '../shared/apqpExport'; // v4-apqp
 import type { SheetGrid } from '../shared/importmap';
 import type { Project } from '../shared/types';
+import { approvedExamples, formatExamples, mergeExamples, pickExamples, type ExampleKind, type ExampleRow } from '../shared/expert';
+import type { MaterialFamily } from '../shared/failureLib';
 import * as ai from './ai';
-import { PROVIDERS } from './ai/provider';
+import { ANTHROPIC_MODELS, ENV_KEY, MODEL, OPENAI_MODEL, PROVIDERS } from './ai/provider';
 import { DEFAULT_IFS, ifsConnector, type IfsSettings } from './connectors/ifs';
+import { checkForUpdates, initUpdater, installNow, type UpdateStatus } from './updater';
 
 let win: BrowserWindow | null = null;
 let dirty = false;
@@ -20,12 +26,45 @@ let forceClose = false;
 
 const userFile = (name: string) => path.join(app.getPath('userData'), name);
 const RECOVERY = () => userFile('recovery.fmea.json');
+/** 4.5.0: onaylı FMEA satırlarından yerel örnek kütüphanesi (AI'a şirket tarzı örneği olarak gider; buluta yalnızca seçilen örnekler gider). */
+const EXAMPLES = () => userFile('fmea-examples.json');
+type ExampleQuery = { kind: ExampleKind; family: MaterialFamily; text: string; local: ExampleRow[] };
+
+async function readExamples(): Promise<ExampleRow[]> {
+  try {
+    return JSON.parse(await fs.readFile(EXAMPLES(), 'utf8')) as ExampleRow[];
+  } catch {
+    return [];
+  }
+}
+
+/** Projenin onaylı satırlarını kütüphaneye yazar; bu projeden olup artık onaylı olmayan satırları çıkarır. */
+async function storeExamples(p: Project) {
+  const rows = approvedExamples(p);
+  const project = (p.meta.partNumber || p.meta.name || 'proje').replace(/\s+/g, ' ').trim();
+  const keep = new Set(rows.map((r) => r.key));
+  const lib = (await readExamples()).filter((x) => x.project !== project || keep.has(x.key));
+  await fs.writeFile(EXAMPLES(), JSON.stringify(mergeExamples(lib, rows)), 'utf8');
+}
+
+async function examplesFor(q?: ExampleQuery): Promise<string> {
+  if (!q) return '';
+  const local = new Set(q.local.map((x) => x.key));
+  const pool = [...q.local, ...(await readExamples()).filter((x) => !local.has(x.key))];
+  return formatExamples(pickExamples(pool, q.kind, q.family, q.text));
+}
 const CONFIG = () => userFile('config.json');
 
 interface Config {
   /** safeStorage (işletim sistemi anahtar zinciri) ile şifrelenmiş anahtar. Düz metin/Base64 saklanmaz. */
   apiKeyEnc?: string;
+  /** Anthropic dışındaki sağlayıcıların anahtarları (aynı kural: yalnızca safeStorage ile şifreli). */
+  apiKeysEnc?: Record<string, string>;
   aiProvider?: string;
+  /** OpenAI modeli (boşsa varsayılan). */
+  openaiModel?: string;
+  /** Claude modeli (4.5.1; boşsa Opus 5.5). */
+  anthropicModel?: string;
   recent?: string[];
   ifs?: IfsSettings;
   /** IAQG SCMH şablon klasörü (şablonlar © IAQG; uygulamayla dağıtılmaz, kullanıcı sağlar). */
@@ -33,7 +72,7 @@ interface Config {
 }
 
 /** safeStorage yoksa anahtar yalnızca bu oturumun belleğinde tutulur (diske yazılmaz). */
-let sessionKey = '';
+const sessionKeys: Record<string, string> = {};
 
 function readConfig(): Config {
   try {
@@ -46,19 +85,23 @@ function writeConfig(c: Config) {
   fssync.mkdirSync(path.dirname(CONFIG()), { recursive: true });
   fssync.writeFileSync(CONFIG(), JSON.stringify(c, null, 2));
 }
-function apiKey(): string {
-  if (sessionKey) return sessionKey;
+const currentProvider = () => readConfig().aiProvider ?? 'anthropic';
+/** Her sağlayıcının anahtarı ayrı tutulur; bir sağlayıcının anahtarı diğerine gönderilmez. */
+function apiKey(provider = currentProvider()): string {
+  if (sessionKeys[provider]) return sessionKeys[provider];
   const c = readConfig();
-  if (!c.apiKeyEnc || !safeStorage.isEncryptionAvailable()) return '';
+  const enc = provider === 'anthropic' ? c.apiKeyEnc : c.apiKeysEnc?.[provider];
+  if (!enc || !safeStorage.isEncryptionAvailable()) return '';
   try {
-    return safeStorage.decryptString(Buffer.from(c.apiKeyEnc, 'base64'));
+    return safeStorage.decryptString(Buffer.from(enc, 'base64'));
   } catch {
     return '';
   }
 }
 
 function aiEnv(): ai.AiEnv {
-  return { apiKey: apiKey(), provider: readConfig().aiProvider ?? 'anthropic', cacheDir: userFile('ai-cache'), online: () => net.isOnline() };
+  const c = readConfig();
+  return { apiKey: apiKey(), provider: c.aiProvider ?? 'anthropic', model: (c.aiProvider ?? 'anthropic') === 'openai' ? c.openaiModel : c.anthropicModel, cacheDir: userFile('ai-cache'), online: () => net.isOnline() };
 }
 
 // ---------------------------------------------------------------- doküman ayrıştırma (worker)
@@ -97,6 +140,8 @@ function addRecent(file: string) {
 function send(channel: string, ...args: unknown[]) {
   win?.webContents.send(channel, ...args);
 }
+
+const sendUpdate = (s: UpdateStatus) => send('update', s);
 
 function createWindow() {
   win = new BrowserWindow({
@@ -163,7 +208,7 @@ function buildMenu() {
         { label: 'Farklı Kaydet…', accelerator: 'CmdOrCtrl+Shift+S', click: m('saveAs') },
         { type: 'separator' },
         { label: 'Excel’e Aktar (2.0, 14 sayfa)…', accelerator: 'CmdOrCtrl+E', click: m('export2') },
-        { label: 'SCMH Paketi (PFD, DFMEA, PFMEA, Kontrol Planı)…', accelerator: 'CmdOrCtrl+Shift+E', click: m('scmh') },
+        { label: 'SCMH Paketi (PFD, DFMEA, PFMEA, Kontrol Planı, KC Formu)…', accelerator: 'CmdOrCtrl+Shift+E', click: m('scmh') },
         { label: 'Excel’e Aktar (1.0 biçimi)…', click: m('export') },
         { label: 'Excel FMEA İçe Aktar…', click: m('import') },
         { label: 'İnceleme Raporu (PDF / HTML)…', click: m('report') },
@@ -203,6 +248,7 @@ function buildMenu() {
       label: 'Yardım',
       submenu: [
         { label: 'Kullanım Kılavuzu', click: m('help') },
+        { label: 'Güncellemeleri Denetle', click: () => checkForUpdates(true, sendUpdate) },
         { label: 'Hakkında', click: () => dialog.showMessageBox(win!, { title: 'FMEA Studio', message: `FMEA Studio ${app.getVersion()}`, detail: 'DFMEA / PFMEA / Özel Karakteristik / Kontrol Planı / MSA / Capability / İzlenebilirlik uygulaması. AI önerileri mühendis onayı olmadan geçerli değildir.' }) },
       ],
     },
@@ -234,6 +280,7 @@ function registerIpc() {
     }
     await fs.writeFile(target, JSON.stringify(args.data, null, 2), 'utf8');
     addRecent(target);
+    await storeExamples(args.data).catch(() => undefined); // 4.5.0: onaylı satırlar örnek kütüphanesine
     await fs.rm(RECOVERY(), { force: true });
     return target;
   });
@@ -254,6 +301,8 @@ function registerIpc() {
     dirty = v;
     win?.setTitle(`FMEA Studio${v ? ' •' : ''}`);
   });
+  ipcMain.on('update:check', () => checkForUpdates(true, sendUpdate));
+  ipcMain.on('update:install', () => installNow());
   ipcMain.on('app:quit', () => {
     forceClose = true;
     win?.close();
@@ -274,25 +323,57 @@ function registerIpc() {
   ipcMain.handle('file:open', (_e, p: string) => shell.openPath(p));
   ipcMain.handle('file:reveal', (_e, p: string) => shell.showItemInFolder(p));
 
-  ipcMain.handle('ai:status', () => ({
-    configured: !!apiKey() || !!process.env.ANTHROPIC_API_KEY,
-    fromEnv: !apiKey() && !!process.env.ANTHROPIC_API_KEY,
-    secureStorage: safeStorage.isEncryptionAvailable(),
-    sessionOnly: !!sessionKey,
-    provider: readConfig().aiProvider ?? 'anthropic',
-    providers: PROVIDERS,
-    online: net.isOnline(),
-  }));
+  ipcMain.handle('ai:status', () => {
+    const provider = currentProvider();
+    const envVar = ENV_KEY[provider] ?? '';
+    const fromEnv = !apiKey(provider) && !!envVar && !!process.env[envVar];
+    return {
+      configured: !!apiKey(provider) || fromEnv,
+      fromEnv,
+      envVar,
+      secureStorage: safeStorage.isEncryptionAvailable(),
+      sessionOnly: !!sessionKeys[provider],
+      provider,
+      providers: PROVIDERS,
+      anthropicModels: ANTHROPIC_MODELS,
+      model: provider === 'openai' ? readConfig().openaiModel || OPENAI_MODEL : provider === 'anthropic' ? readConfig().anthropicModel || MODEL : '',
+      online: net.isOnline(),
+    };
+  });
   ipcMain.handle('ai:setKey', (_e, key: string) => {
     const c = readConfig();
-    sessionKey = '';
-    delete c.apiKeyEnc;
+    const provider = c.aiProvider ?? 'anthropic';
+    delete sessionKeys[provider];
+    let enc = '';
     if (key) {
-      if (safeStorage.isEncryptionAvailable()) c.apiKeyEnc = safeStorage.encryptString(key).toString('base64');
-      else sessionKey = key; // şifreleme yoksa diske yazılmaz
+      if (safeStorage.isEncryptionAvailable()) enc = safeStorage.encryptString(key).toString('base64');
+      else sessionKeys[provider] = key; // şifreleme yoksa diske yazılmaz
+    }
+    if (provider === 'anthropic') {
+      if (enc) c.apiKeyEnc = enc;
+      else delete c.apiKeyEnc;
+    } else {
+      const keys = { ...(c.apiKeysEnc ?? {}) };
+      if (enc) keys[provider] = enc;
+      else delete keys[provider];
+      c.apiKeysEnc = keys;
     }
     writeConfig(c);
-    return { stored: key ? (sessionKey ? 'session' : 'secure') : 'cleared' };
+    return { stored: key ? (sessionKeys[provider] ? 'session' : 'secure') : 'cleared' };
+  });
+  ipcMain.handle('ai:setModel', (_e, model: string) => {
+    const c = readConfig();
+    const m = String(model ?? '').trim();
+    if ((c.aiProvider ?? 'anthropic') === 'anthropic') {
+      if (ANTHROPIC_MODELS.some((x) => x.id === m) && m !== MODEL) c.anthropicModel = m;
+      else delete c.anthropicModel;
+      writeConfig(c);
+      return c.anthropicModel || MODEL;
+    }
+    if (m) c.openaiModel = m;
+    else delete c.openaiModel;
+    writeConfig(c);
+    return c.openaiModel || OPENAI_MODEL;
   });
   ipcMain.handle('ai:setProvider', (_e, id: string) => {
     const c = readConfig();
@@ -301,8 +382,11 @@ function registerIpc() {
     return c.aiProvider;
   });
   ipcMain.handle('ai:requirements', (_e, a: Parameters<typeof ai.extractRequirements>[1]) => ai.extractRequirements(aiEnv(), a));
-  ipcMain.handle('ai:dfmea', (_e, a: Parameters<typeof ai.suggestDfmea>[1]) => ai.suggestDfmea(aiEnv(), a));
-  ipcMain.handle('ai:pfmea', (_e, a: Parameters<typeof ai.suggestPfmea>[1]) => ai.suggestPfmea(aiEnv(), a));
+  ipcMain.handle('ai:dfmea', async (_e, a: Parameters<typeof ai.suggestDfmea>[1] & { exampleQuery?: ExampleQuery }) => ai.suggestDfmea(aiEnv(), { ...a, examples: await examplesFor(a.exampleQuery) }));
+  ipcMain.handle('ai:pfmea', async (_e, a: Parameters<typeof ai.suggestPfmea>[1] & { exampleQuery?: ExampleQuery }) => ai.suggestPfmea(aiEnv(), { ...a, examples: await examplesFor(a.exampleQuery) }));
+  ipcMain.handle('examples:list', () => readExamples());
+  ipcMain.handle('examples:info', async () => ({ count: (await readExamples()).length }));
+  ipcMain.handle('examples:clear', () => fs.rm(EXAMPLES(), { force: true }));
   ipcMain.handle('ai:review', (_e, a: Parameters<typeof ai.review>[1]) => ai.review(aiEnv(), a));
   ipcMain.handle('ai:clearCache', () => fs.rm(userFile('ai-cache'), { recursive: true, force: true }));
 
@@ -352,9 +436,35 @@ function registerIpc() {
       const t = Object.fromEntries(await Promise.all(KINDS.map(async (k) => [k, new Uint8Array(await fs.readFile(path.join(dir, SCMH_TEMPLATE_FILES[k])))]))) as Record<ScmhKind, Uint8Array>;
       const pkg = await buildScmhPackage(data, t);
       const files: string[] = [];
+      // v4-apqp: kontrol planı satırlarına faz atanmışsa her faz için ayrı KP dosyası (Prototype → Pre-Production kutusu)
+      const variants = cpPhaseVariants(data);
       for (const k of KINDS) {
+        if (k === 'cp' && variants.length) continue;
         const f = path.join(out.filePaths[0], scmhFileName(k, data));
         await fs.writeFile(f, pkg[k]);
+        files.push(f);
+      }
+      // v4-kc: opsiyonel 5. şablon – 7.2.16 KC Traceability Form (klasörde varsa doldurulur)
+      const kcTpl = path.join(dir, KC_FORM_TEMPLATE_FILE);
+      if (fssync.existsSync(kcTpl)) {
+        const f = path.join(out.filePaths[0], kcFormFileName(data));
+        await fs.writeFile(f, await buildKcForm(data, new Uint8Array(await fs.readFile(kcTpl))));
+        files.push(f);
+      }
+      for (const v of variants) {
+        const f = path.join(out.filePaths[0], scmhFileName('cp', data).replace(/\.xlsx$/, `_${v.phase}.xlsx`));
+        await fs.writeFile(f, (await buildScmhPackage(v.project, t)).cp);
+        files.push(f);
+      }
+      // v4-apqp: opsiyonel şablonlar (7.2.12, 7.2.14, 7.2.20) klasörde varsa pakete eklenir
+      const present = fssync.readdirSync(dir);
+      const fillers: Record<ApqpTemplateKind, (p: Project, tpl: Uint8Array) => Promise<{ data: Buffer }>> = { apqp: fillApqpApplicability, maturity: fillMaturityEvidence, packaging: fillPackagingForm };
+      for (const kind of Object.keys(fillers) as ApqpTemplateKind[]) {
+        const tf = findApqpTemplate(present, kind);
+        if (!tf) continue;
+        const r = await fillers[kind](data, new Uint8Array(await fs.readFile(path.join(dir, tf))));
+        const f = path.join(out.filePaths[0], apqpFileName(kind, data));
+        await fs.writeFile(f, r.data);
         files.push(f);
       }
       return { ok: true, files, dir: out.filePaths[0] };
@@ -449,6 +559,7 @@ app.whenReady().then(() => {
   registerIpc();
   buildMenu();
   createWindow();
+  win!.webContents.once('did-finish-load', () => initUpdater(sendUpdate));
   const fileArg = process.argv.find((a) => a.endsWith('.fmea'));
   if (fileArg) win!.webContents.once('did-finish-load', () => send('open-file', path.resolve(fileArg)));
   app.on('activate', () => {

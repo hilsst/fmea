@@ -1,7 +1,7 @@
 // Profesyonel Excel çıktısı (exceljs). Ana süreçte (Node) çalışır.
 import ExcelJS from 'exceljs';
 import { completenessScore, qualityChecks, traceability } from './checks';
-import { COLUMNS, cellText } from './columns';
+import { cellText, tableColumns } from './columns';
 import { TABS } from './tabs';
 import type { AnyRow, Project, TableKey } from './types';
 
@@ -64,7 +64,7 @@ function colorFor(key: string, text: string, p: Project): string | null {
 }
 
 function tableSheet(wb: ExcelJS.Workbook, p: Project, i: number, key: TableKey, label: string, hint: string) {
-  const cols = COLUMNS[key];
+  const cols = tableColumns(key, p.settings.tableFormat);
   const ws = wb.addWorksheet(sheetName(i, label), { views: [{ state: 'frozen', xSplit: 1, ySplit: 3 }] });
   title(ws, p, label, hint, cols.length + 1);
   header(ws, 3, ['ID', ...cols.map((c) => c.label)], [10, ...cols.map((c) => Math.max(6, Math.round(c.width / 7)))]);

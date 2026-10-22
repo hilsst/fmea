@@ -88,12 +88,28 @@ for (const [l, n] of [['Yapı & Fonksiyon', '10-structure'], ['Proses Akışı',
   await shot(n);
 }
 // Alt sekmeler
-for (const [s0, t, n] of [['Onay', 'Denetim İzi', '28-audit'], ['Revizyon / Baseline', 'Baselines', '29-baselines'], ['Dokümanlar', 'Kanıtlar', '30-evidence'], ['Dersler', 'Bilgi Tabanı', '31-kb'], ['AI İnceleme', 'AI Çalıştırmaları', '32-airuns'], ['PFMEA', 'Proses Parametreleri', '33-params']]) {
+for (const [s0, t, n] of [['Onay', 'Denetim İzi', '28-audit'], ['Revizyon / Baseline', 'Baselines', '29-baselines'], ['Dokümanlar', 'Kanıtlar', '30-evidence'], ['Dersler', 'Bilgi Tabanı', '31-kb'], ['AI İnceleme', 'AI Çalıştırmaları', '32-airuns'], ['PFMEA', 'Proses Parametreleri', '33-params'], ['Özel Karakteristikler', 'Adaylar & Karar Akışı', '36-kc-flow'], ['Özel Karakteristikler', 'İzlenebilirlik & 7.2.16', '37-kc-trace']]) {
   await screen(s0);
   await sub(t);
   await win.waitForTimeout(250);
   await shot(n);
 }
+// v4-apqp: APQP ve PPAP ekranları
+await screen('APQP');
+await win.locator('.card select').first().selectOption('ND');
+await win.waitForTimeout(250);
+await shot('34-apqp');
+for (const t of ['Fazlar & Kilometre Taşları', 'Teslimat Onayları', 'Ekip & Kriterler', 'P-Diyagramı / DRA', 'KP Fazları & Başlık', 'Ambalaj 7.2.20', 'Aile & Tetikleyiciler', 'Olgunluk 7.2.14']) {
+  await sub(t);
+  await win.waitForTimeout(150);
+}
+await shot('35-apqp-maturity');
+await screen('PPAP');
+for (const t of ['PRR Kapısı', 'Sunum & Karar', 'PPAP Elemanları']) {
+  await sub(t);
+  await win.waitForTimeout(150);
+}
+await shot('36-ppap');
 const auditRows = await (async () => { await screen('Onay'); await sub('Denetim İzi'); return win.locator('.effects.audit tbody tr').count(); })();
 
 // Neden burada? çekmecesi

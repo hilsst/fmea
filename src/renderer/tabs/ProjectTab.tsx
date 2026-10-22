@@ -1,5 +1,6 @@
 import { completenessScore, qualityChecks } from '../../shared/checks';
-import { apOf } from '../../shared/scoring';
+import { needsAction } from '../../shared/risk'; // v4-risk
+import { isScmh } from '../../shared/scmhScoring'; // v4-risk
 import { SCMH_DFMEA_LEVELS, SCMH_PHASES, type ProjectMeta, type Settings } from '../../shared/types';
 import { TextCell } from '../components/Cells';
 import { useStore } from '../store';
@@ -43,7 +44,7 @@ export function ProjectTab({ go }: { go: (t: TabKey) => void }) {
   const setSetting = (k: keyof Settings) => (v: unknown) => edit({ kind: 'settings', field: k, value: v }, 'Ayar değişikliği');
 
   const fm = [...p.dfmea, ...p.pfmea];
-  const apH = fm.filter((r) => apOf(p, r.s, r.o, r.d) === 'H').length;
+  const apH = fm.filter((r) => needsAction(p, r).need).length; // v4-risk: tek yüklem
   const highS = fm.filter((r) => (r.s ?? 0) >= p.settings.highSeverityThreshold).length;
   const openAct = p.actions.filter((a) => a.status !== 'Completed' && a.status !== 'Cancelled').length;
   const overdue = p.actions.filter((a) => a.dueDate && a.status !== 'Completed' && a.status !== 'Cancelled' && a.dueDate < new Date().toISOString().slice(0, 10)).length;
@@ -55,7 +56,7 @@ export function ProjectTab({ go }: { go: (t: TabKey) => void }) {
     { label: 'Gereksinim', value: p.requirements.length, tab: 'requirements' },
     { label: 'DFMEA satırı', value: p.dfmea.length, tab: 'dfmea' },
     { label: 'PFMEA satırı', value: p.pfmea.length, tab: 'pfmea' },
-    { label: 'AP = High', value: apH, tab: 'dfmea', tone: apH ? 'red' : '' },
+    { label: isScmh(p) ? 'SCMH inceleme (S≥9 / Top-N / KC)' : 'AP = High', value: apH, tab: 'dfmea', tone: apH ? 'red' : '' },
     { label: 'Yüksek Severity', value: highS, tab: 'dfmea', tone: highS ? 'red' : '' },
     { label: 'Onay bekleyen KC', value: kcPending, tab: 'kcs', tone: kcPending ? 'amber' : '' },
     { label: 'Açık aksiyon', value: openAct, tab: 'actions', tone: openAct ? 'blue' : '' },
@@ -123,8 +124,12 @@ export function ProjectTab({ go }: { go: (t: TabKey) => void }) {
               </select>
             </label>
             <label>
-              <span>RPN aksiyon eşiği (boş = kullanılmaz)</span>
+              <span>RPN aksiyon eşiği (varsayılan 100; boş = kullanılmaz)</span>
               <TextCell value={p.settings.rpnThreshold ?? ''} type="number" onCommit={(v) => setSetting('rpnThreshold')(v)} />
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={p.settings.rpnAutoAction !== false} onChange={(e) => setSetting('rpnAutoAction')(e.target.checked)} />
+              <span>RPN eşiği aşılınca boş “Önerilen Aksiyon” alanını satırın neden / kontrol bilgisinden doldur (AI RECOMMENDATION; sorumlu VERİ YOK, termin ve tahmini puan boş kalır)</span>
             </label>
             <label>
               <span>Hedef Cpk / Ppk (boş = VERİ YOK)</span>
