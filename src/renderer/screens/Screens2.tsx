@@ -911,6 +911,9 @@ export function SettingsScreen() {
                     <option value="knowledge">Engineering Knowledge (bilgi ayrı etiketli)</option>
                   </select>
                 </label>
+                {ai.provider === 'anthropic' && (
+                  <label><span>Claude modeli</span><select className="cell-select" value={ai.model} onChange={async (e) => { await api.aiSetModel(e.target.value); setAi(await api.aiStatus()); }}>{(ai.anthropicModels ?? []).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
+                )}
                 {ai.provider === 'openai' && (
                   <label><span>Model</span><input className="cell-input" key={ai.model} defaultValue={ai.model} placeholder="gpt-5" onBlur={async (e) => { if (e.target.value.trim() !== ai.model) { await api.aiSetModel(e.target.value); setAi(await api.aiStatus()); } }} /></label>
                 )}

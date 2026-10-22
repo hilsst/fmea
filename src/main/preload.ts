@@ -34,7 +34,7 @@ const api = {
   extractDoc: (p: string): Promise<{ ok: true; doc: ExtractedDoc } | { ok: false; error: string }> => ipcRenderer.invoke('doc:extract', p),
   aiStatus: (): Promise<{
     configured: boolean; fromEnv: boolean; envVar: string; secureStorage: boolean; sessionOnly: boolean; provider: string; model: string;
-    providers: readonly { id: string; label: string; supported: boolean }[]; online: boolean;
+    providers: readonly { id: string; label: string; supported: boolean }[]; anthropicModels?: readonly { id: string; label: string }[]; online: boolean;
   }> => ipcRenderer.invoke('ai:status'),
   aiSetKey: (key: string): Promise<{ stored: 'secure' | 'session' | 'cleared' }> => ipcRenderer.invoke('ai:setKey', key),
   aiSetProvider: (id: string): Promise<string> => ipcRenderer.invoke('ai:setProvider', id),
