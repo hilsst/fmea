@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
+import { approvedExamples, expertBrief, type ExampleKind } from '../../shared/expert';
+import { materialFamily } from '../../shared/failureLib';
 import { AI_ERROR_TEXT, LOW_CONF_TEXT, type AiResult } from '../../shared/aischema';
 import { findRequirementCandidates, locText, type ExtractedDoc } from '../../shared/docmodel';
 import { COMPOSITE_KB, isComposite } from '../../shared/kb';
@@ -9,6 +11,11 @@ import { sha256 } from '../../shared/sha256';
 import type { AnyRow, DocumentRow, Project } from '../../shared/types';
 import { api, isDesktop } from '../api';
 import { useStore } from '../store';
+
+/** 4.5.0: örnek seçimi için sorgu; bu projenin onaylı satırları da aday olur. */
+function exampleQuery(p: Project, kind: ExampleKind, target: string) {
+  return { kind, family: materialFamily(p), text: target, local: approvedExamples(p) };
+}
 
 export function projectContext(p: Project): string {
   const lines: string[] = [];
@@ -280,19 +287,22 @@ export function useAi() {
   const suggestDfmea = async (fnIds: string[]) => {
     const fns = project.structure.filter((s) => fnIds.length === 0 || fnIds.includes(s.id)).filter((s) => s.function);
     if (!fns.length) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
+    const target = 'Hedef fonksiyonlar:\n' + fns.map((f) => `${f.id}: ${f.element} → ${f.function} (REQ: ${f.reqIds.join(', ')})`).join('\n');
     await run('DFMEA önerileri hazırlanıyor…', 'dfmea', fns.map((f) => f.id).join(', '), () =>
-      api.aiDfmea({ context: projectContext(project), target: 'Hedef fonksiyonlar:\n' + fns.map((f) => `${f.id}: ${f.element} → ${f.function} (REQ: ${f.reqIds.join(', ')})`).join('\n'), mode }),
+      api.aiDfmea({ context: projectContext(project), target, mode, expert: expertBrief(project, 'dfmea'), exampleQuery: exampleQuery(project, 'dfmea', target) }),
     );
   };
 
   const suggestPfmea = async (stepIds: string[]) => {
     const steps = project.processSteps.filter((s) => stepIds.length === 0 || stepIds.includes(s.id));
     if (!steps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
-    const composite = isComposite(project.settings.productType) || steps.some((s) => s.specialProcess)
+    // 4.5.0: kompozit bilgi tabanı yalnız kompozit parçada (eskiden özel proses adımı olan her parçaya gidiyordu)
+    const composite = materialFamily(project) === 'composite' || (isComposite(project.settings.productType) && materialFamily(project) !== 'metal')
       ? COMPOSITE_KB.map((k) => `${k.area}: hata modları ${k.failureModes.join(', ')}; tipik nedenler ${k.causes.join(', ')}; parametreler ${k.parameters.join(', ')}`).join('\n')
-      : '(ürün tipi kompozit değil)';
+      : '';
+    const target = 'Hedef proses adımları:\n' + steps.map((s) => `${s.id}: Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${s.description}`).join('\n');
     await run('PFMEA önerileri hazırlanıyor…', 'pfmea', steps.map((s) => s.id).join(', '), () =>
-      api.aiPfmea({ context: projectContext(project), composite, target: 'Hedef proses adımları:\n' + steps.map((s) => `${s.id}: Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${s.description}`).join('\n'), mode }),
+      api.aiPfmea({ context: projectContext(project), composite, target, mode, expert: expertBrief(project, 'pfmea', steps.map((s) => s.id)), exampleQuery: exampleQuery(project, 'pfmea', target) }),
     );
   };
 

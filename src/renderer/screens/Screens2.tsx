@@ -925,6 +925,7 @@ export function SettingsScreen() {
             </>
           )}
           <div className="callout">AI önerileri doküman ve proje verisini seçili sağlayıcıya gönderir. AI hiçbir FMEA, KC, S/O/D, kontrol veya mühendislik değişikliğini onaylamaz.</div>
+          <ExampleLibrary />
 
           <h3 className="mt">Şirket şablonu</h3>
           <p className="muted">Ayarlar, KC kuralları, onay akışı ve puanlama/AP tablosu tek dosyada (.fmeatpl). Şablon satırlara dokunmaz.</p>
@@ -1026,6 +1027,28 @@ function ScmhDirSetting() {
       <p className="muted small">SCMH paketi resmi IAQG şablonlarına doldurulur (PFD 7.2.9, DFMEA 7.2.10, PFMEA 7.2.11, Kontrol Planı 7.2.13). Şablonlar © IAQG olduğu için uygulamayla dağıtılmaz; scmh.iaqg.org’dan indirip bir klasöre koyun.</p>
       <p className="small">{st?.dir ? <>Klasör: <b>{st.dir}</b></> : 'Klasör seçilmedi.'} {st && st.missing.length > 0 && <span className="warn-text">Eksik: {st.missing.join(', ')}</span>}{st?.dir && st.missing.length === 0 && <span className="ok-text"> ✓ 4 şablon bulundu</span>}</p>
       <button className="btn" onClick={async () => { const r = await api.scmhPickDir(); if (r) setSt(r); }}>Klasör seç…</button>
+    </>
+  );
+}
+
+/** 4.5.0: onaylı satır örnek kütüphanesi (bu bilgisayarda). Proje kaydedilince Approved / Engineer Reviewed satırlar eklenir. */
+function ExampleLibrary() {
+  const { toast } = useStore();
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (isDesktop) void api.examplesInfo().then((x) => setCount(x.count));
+  }, []);
+  if (!isDesktop) return null;
+  return (
+    <>
+      <h3 className="mt">AI örnek kütüphanesi</h3>
+      <p className="muted">
+        Onayladığınız (Approved / Engineer Reviewed) DFMEA ve PFMEA satırları proje kaydedilince bu bilgisayardaki kütüphaneye eklenir. AI önerisinde hedefe en benzer 8 örnek “şirket tarzı” referansı olarak
+        gönderilir; AI örnekleri kopyalamaz, sayısal değer almaz. Kütüphanede {count ?? '…'} satır var.
+      </p>
+      <div className="row-btns">
+        <button className="btn" disabled={!count} onClick={async () => { await api.examplesClear(); setCount(0); toast('Örnek kütüphanesi temizlendi'); }}>Kütüphaneyi temizle</button>
+      </div>
     </>
   );
 }

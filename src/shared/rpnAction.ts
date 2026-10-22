@@ -3,7 +3,7 @@
 // proses alanındaki hata kütüphanesinden kontrol adları eklenir. Sayısal hedef, sorumlu veya tarih uydurulmaz.
 // Öneri "AI RECOMMENDATION" etiketlidir; mühendis kabul eder, düzenler veya siler. Dolu aksiyon alanı değişmez.
 // RPN tek başına karar ölçütü değildir: needsAction (SCMH S≥9 / Top-N / KC veya AP=H) ayrıca çalışır.
-import { PFMEA_LIB, pfmeaAreaOf } from './failureLib';
+import { PFMEA_LIB, stepArea } from './failureLib';
 import type { DfmeaRow, PfmeaRow, Project } from './types';
 
 export const AI_REC = 'AI RECOMMENDATION – mühendis onayı gerekli';
@@ -33,9 +33,9 @@ export function wantsRpnAction(p: Pick<Project, 'settings'>, r: Fmea): boolean {
 }
 
 /** Satırın adımıyla aynı alandaki kütüphane kontrolleri (satırda zaten olanlar hariç). */
-function libControls(p: Pick<Project, 'processSteps'>, r: PfmeaRow): { prevention: string[]; detection: string[]; ep: string[] } {
+function libControls(p: Pick<Project, 'processSteps'> & Partial<Pick<Project, 'settings' | 'requirements' | 'meta'>>, r: PfmeaRow): { prevention: string[]; detection: string[]; ep: string[] } {
   const step = p.processSteps.find((s) => s.id === r.stepId);
-  const area = pfmeaAreaOf(`${step?.name ?? r.stepName ?? ''} ${step?.description ?? ''}`);
+  const area = stepArea(p, step, r.stepName ?? '');
   const lib = PFMEA_LIB[area] ?? [];
   const cause = (r.cause ?? '').toLocaleLowerCase('tr');
   const fm = (r.failureMode ?? '').toLocaleLowerCase('tr');
