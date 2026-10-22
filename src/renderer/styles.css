@@ -402,3 +402,7 @@ tr.crit td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .flow-picker .row-btns { flex-wrap: wrap; gap: 4px 16px; }
 .flow-picker .form-inline { display: flex; gap: 8px; align-items: center; }
 .flow-picker .form-inline select { max-width: 280px; }
+/* 4.4.1: FMEA tabloları pencereyi doldurur; altındaki panel sayfa kaydırılınca görünür */
+.content > .grid-wrap > .grid-scroll { min-height: 300px; }
+details.card.coverage { margin: 6px 0; padding: 6px 14px; flex: none; }
+details.card.coverage summary { cursor: pointer; display: flex; gap: 8px; align-items: center; }

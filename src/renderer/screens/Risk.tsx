@@ -80,12 +80,15 @@ export function DfmeaCoveragePanel() {
   if (!df.length) return null;
   const count = (k: 'riskCategory' | 'noiseFactor', v: string) => df.filter((d) => (d[k] ?? []).includes(v)).length;
   const chip = (label: string, n: number) => <span key={label} className={`badge ${n ? 'b-green' : 'b-amber'}`} style={{ marginRight: 6 }}>{label}: {n}</span>;
+  const cats = [...AS9145_CATEGORIES, 'Testability'];
+  const missing = cats.filter((c) => !count('riskCategory', c)).length + RISK_LISTS.noiseFactor.filter((c) => !count('noiseFactor', c)).length;
+  // 4.4.1: varsayılan kapalı tek satır; DFMEA tablosu pencereyi doldurur
   return (
-    <section className="card" style={{ margin: '8px 0' }}>
-      <h3>DFMEA kapsamı</h3>
+    <details className="card coverage">
+      <summary><b>DFMEA kapsamı</b> <span className={`badge ${missing ? 'b-amber' : 'b-green'}`}>{missing ? `${missing} etiketsiz kategori / gürültü faktörü` : 'Tümü etiketli'}</span></summary>
       <p className="small"><b>9145 risk kategorileri:</b> {AS9145_CATEGORIES.map((c) => chip(c, count('riskCategory', c)))} {chip('Testability', count('riskCategory', 'Testability'))}</p>
       <p className="small"><b>Gürültü faktörleri:</b> {RISK_LISTS.noiseFactor.map((c) => chip(c, count('noiseFactor', c)))}</p>
       <p className="muted small">Sarı = hiçbir satırda etiketlenmemiş. Çevre: sıcaklık, titreşim, gürültü, radyasyon duyarlılığı. Eksikler “Neyi kaçırdım?” listesinde de görünür.</p>
-    </section>
+    </details>
   );
 }
