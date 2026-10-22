@@ -148,20 +148,84 @@ export const PFMEA_LIB: Record<string, FailureTemplate[]> = {
     P('Sertlik / mekanik özellik spesifikasyon dışında', 'Dayanım veya süneklik gereksinimi karşılanmaz', 'Fırın sıcaklığı / süresi / soğutma hızı dışında', 'Machine', 'Fırın reçetesi kilitli değil; TUS / SAT yapılmıyor', 'Reçete kilidi, periyodik TUS / SAT, kalibrasyon', 'Sertlik testi + test kuponu', 9, 3, 4, 'Software parameter lock'),
     P('Çarpılma', 'Ölçü dışı parça', 'Fırına yerleşim / destekleme uygun değil', 'Method', 'Yükleme konfigürasyonu tanımlı değil', 'Yükleme fikstürü ve talimatı', 'Isıl işlem sonrası boyutsal kontrol', 6, 4, 4),
   ],
+  // 4.5.0: sac / levha kesim ve metal yüzey işlemleri
+  Cutting: [
+    P('Kesim kenarında çapak / cüruf', 'Montajda yaralanma, kaplama kenarda zayıf, ek işçilik', 'Kesim parametresi (güç, hız, gaz basıncı) veya odak ayarı kaymış', 'Machine', 'Parametre seti iş emrine bağlı değil; vardiya başı doğrulama yok', 'Malzeme / kalınlığa göre kilitli kesim programı, vardiya başı test kesimi', 'İlk parça kenar kontrolü + görsel', 5, 4, 5, 'Program kilidi'),
+    P('Kesim ölçüsü / kontur tolerans dışı', 'Sonraki operasyonda (büküm, delme) ölçü zinciri bozulur; montaj uyumsuzluğu', 'Yanlış program / revizyon veya levha sıfırlaması hatalı', 'Method', 'Program revizyonu çizim revizyonuyla eşleştirilmiyor', 'Program – çizim revizyon kontrolü, nesting onayı', 'İlk parça ölçüm (kumpas / şablon)', 6, 3, 4, 'Revizyon kontrollü program'),
+    P('Yanlış malzeme / kalınlıkta levha kesiliyor', 'Dayanım veya ölçü gereksinimi karşılanmaz', 'Levhalar alaşım / temper / kalınlık etiketiyle ayrılmıyor', 'Material', 'Malzeme sertifikası ile levha eşleştirilmiyor', 'Etiketli levha stoğu, sertifika – iş emri eşleştirmesi', 'Kesim öncesi kalınlık ölçümü + etiket kontrolü', 7, 2, 4, 'Barkodlu levha – iş emri eşleştirme'),
+    P('Isıdan etkilenen bölge / kenar sertleşmesi', 'Bükümde kenar çatlağı, yorulma ömrü düşer', 'Termal kesim parametresi malzemeye uygun değil', 'Method', 'Malzemeye göre ısı girdisi doğrulanmamış', 'Onaylı termal kesim parametreleri; gerekiyorsa kenar işleme payı', 'İlk parça kesit / sertlik kontrolü (gerekirse)', 6, 2, 6),
+  ],
+  Deburring: [
+    P('Çapak / keskin kenar kalıyor', 'Montajda yaralanma; kaplama keskin kenarda incelir, korozyon başlar', 'Çapak alma kabul kriteri ve referans numune yok', 'Method', 'Kenar durumu tanımlı değil; operatör kararına bırakılmış', 'Kenar kabul kriteri (maks. çapak) iş talimatında, referans numune', '%100 görsel + dokunma kontrolü, gerekirse ölçüm', 5, 4, 5),
+    P('Aşırı malzeme alma / pah ölçü dışı', 'Kenar mesafesi veya delik ölçüsü bozulur', 'El aleti ile kontrolsüz çapak alma', 'Man', 'Pah ölçüsü ve aleti tanımlı değil', 'Tanımlı pah aleti / mekanik çapak alma', 'Pah mastarı – ilk parça', 5, 3, 4, 'Ayarlı pah takımı'),
+    P('Çapak alma adımı atlanıyor', 'Çapaklı parça kaplamaya / müşteriye gider', 'Adım iş emrinde onaylanmıyor', 'Man', 'Rota adımı imza / sistem onayı zorunlu değil', 'İş emrinde zorunlu onay adımı', 'Final muayenede kenar kontrolü', 5, 3, 6, 'Sistem rota onayı'),
+  ],
+  'Metal Finishing': [
+    P('Kaplama kalınlığı limit altında', 'Korozyon dayanımı azalır', 'Banyo süresi / akım yoğunluğu / banyo konsantrasyonu limit dışında', 'Method', 'Banyo parametreleri kayıt ve alarm ile izlenmiyor (özel proses)', 'Onaylı proses kartı, banyo analizi ve parametre kaydı', 'Kaplama kalınlık ölçümü (eddy-current) – parti numunesi', 6, 3, 4, 'Zamanlayıcı / akım alarmı'),
+    P('Yanma / leke / renk farkı', 'Görünüm reddi, lokal koruma kaybı', 'Askı teması zayıf veya akım dağılımı düzensiz', 'Machine', 'Askılama yöntemi tanımlı değil', 'Askılama talimatı ve kontak kontrolü', 'Görsel muayene – referans numuneye göre', 4, 3, 5),
+    P('Kaplama yapışmıyor / pul pul kalkıyor', 'Koruma kaybı, korozyon', 'Ön temizlik / dağlama yetersiz', 'Method', 'Ön işlem banyosu ve durulama kontrol edilmiyor', 'Ön işlem kontrol listesi, banyo bakım planı', 'Yapışma testi (bant testi) – parti numunesi', 6, 2, 5),
+    P('Maskelenmesi gereken yüzey kaplanıyor', 'Elektriksel temas / geçme toleransı bozulur', 'Maskeleme gereksinimi iş emrine aktarılmamış', 'Method', 'Maskeleme alanları çizimden işaretlenmemiş', 'Maskeleme şablonu, iş emrinde maskeleme çizimi', 'Maskeleme sonrası görsel kontrol', 5, 3, 4, 'Maskeleme şablonu'),
+  ],
   Generic: [
     P('Operasyon gereksinimi karşılanmıyor', 'Ürün karakteristiği uygunsuz', 'İş talimatı eksik / belirsiz', 'Method', 'İş talimatı doğrulanmamış', 'Onaylı iş talimatı, operatör eğitimi', 'Operasyon sonu kontrol', 6, 4, 6),
   ],
 };
 PFMEA_LIB.Autoclave = PFMEA_LIB.Cure;
 
-/** Proses adımı adından kütüphane alanı. */
-export function pfmeaAreaOf(name: string): string {
+/** 4.5.0: projenin malzeme ailesi. Ürün tipi seçiliyse ondan; değilse gereksinim / parça metnindeki malzeme kelimelerinden. */
+export type MaterialFamily = 'metal' | 'composite' | '';
+
+const METAL_WORDS = /alümin|alumin|çelik|celik|steel|paslanmaz|titanyum|titanium|inconel|\b[2567]0[0-9]{2}-t[0-9]|ti-?6al|en aw|sac levha|\bsac\b|levha|döküm|dövme|anodiz|kromat|galvaniz/gi;
+const COMPOSITE_WORDS = /kompozit|composite|prepreg|\bply\b|ply |lamin|reçine|resin|karbon elyaf|cam elyaf|carbon fib|glass fib|honeycomb|bal peteği|sandviç|sandwich|otoklav|autoclave|radom/gi;
+
+export interface FamilySource {
+  settings?: { productType?: string };
+  meta?: { partName?: string; scope?: string; name?: string };
+  requirements?: { text: string; characteristic?: string }[];
+}
+
+export function materialFamily(p: FamilySource): MaterialFamily {
+  const t = p.settings?.productType ?? '';
+  if (/metal/i.test(t)) return 'metal';
+  if (/composite|bonded|radome|sandwich/i.test(t)) return 'composite';
+  const text = [p.meta?.partName, p.meta?.scope, p.meta?.name, ...(p.requirements ?? []).map((r) => `${r.text} ${r.characteristic ?? ''}`)].join(' ').toLocaleLowerCase('tr');
+  const m = text.match(METAL_WORDS)?.length ?? 0;
+  const c = text.match(COMPOSITE_WORDS)?.length ?? 0;
+  return m > c ? 'metal' : c > m ? 'composite' : '';
+}
+
+/** Kompozit üretimine özgü alanlar; metal parçada önerilmez. */
+export const COMPOSITE_AREAS = new Set(['Lay-up', 'Vacuum Bagging', 'Cure', 'Autoclave', 'Demolding', 'Machining', 'Surface Treatment']);
+
+const METAL_FINISH: [RegExp, string] = [/anodi[zs]|kromat|alodin|chromate|galvaniz|pasivasyon|passivat|nikel kaplama|plating|elektrolitik kaplama/, 'Metal Finishing'];
+
+/** Proses adımı adından kütüphane alanı. family = 'metal' ise kompozit alanları seçilmez. */
+export function pfmeaAreaOf(name: string, family: MaterialFamily = ''): string {
   const n = name.toLowerCase();
+  if (family === 'metal') {
+    const metal: [RegExp, string][] = [
+      [/[ıi]s[ıi]l i̇?şlem|heat treat|temperleme|sertleştirme|gerilim giderme|yaşlandırma|aging/, 'Heat Treatment'],
+      [/ndt|ultrason|x-ray|penetrant|manyetik parçacık|tahribatsız/, 'NDT'],
+      [/kaynak|weld|puntala|lehim|braz/, 'Welding'],
+      METAL_FINISH,
+      [/boya|paint|astar|primer|toz boya/, 'Painting'],
+      [/lazer|plazma|su jeti|waterjet|oksijen kesim|makas|giyotin|kesim|cutting|blanking|açınım/, 'Cutting'],
+      [/büküm|bükme|şekillendir|forming|bending|punch|zımba|pres|derin çekme/, 'Forming'],
+      [/çapak|deburr|pah kırma/, 'Deburring'],
+      [/torna|turning|talaşlı|frez|milling|raybal|taşlama|grinding|testere|delme|delik|drill|matkap|kılavuz|tapping|cnc|işleme|machin/, 'Metal Machining'],
+      [/incoming|storage|material|malzeme|depo|kabul/, 'Material'],
+      [/inspect|muayene|kontrol|ölçüm/, 'Inspection'],
+      [/assembl|montaj|perçin|rivet/, 'Assembly'],
+      [/pack|ambalaj|sevk/, 'Packaging'],
+    ];
+    return metal.find(([re]) => re.test(n))?.[1] ?? 'Generic';
+  }
   const map: [RegExp, string][] = [
     // 4.4.0: metal imalat alanları önce (örn. "Kaynak muayenesi (NDT)" → NDT, "Kaynak sonrası ısıl işlem" → Heat Treatment)
     [/[ıi]s[ıi]l i̇?şlem|heat treat|temperleme|sertleştirme|gerilim giderme/, 'Heat Treatment'],
     [/ndt|ultrason|x-ray|tap test|tahribatsız/, 'NDT'],
     [/kaynak|weld|puntala/, 'Welding'],
+    METAL_FINISH, // 4.5.0: anodize vb. her zaman metal yüzey işlemi
     [/torna|turning|talaşlı|frezeleme|milling|raybal|taşlama|grinding|çapak|deburr|testere/, 'Metal Machining'],
     [/büküm|bükme|şekillendir|forming|bending|sac kesme|punch/, 'Forming'],
     [/incoming|storage|material|malzeme|thaw|çözdür|depo|kabul/, 'Material'],
@@ -179,6 +243,11 @@ export function pfmeaAreaOf(name: string): string {
     [/pack|ambalaj|sevk/, 'Packaging'],
   ];
   return map.find(([re]) => re.test(n))?.[1] ?? 'Generic';
+}
+
+/** Adımın alanı, projenin malzeme ailesine göre. */
+export function stepArea(p: FamilySource, step: { name?: string; description?: string } | undefined, fallbackName = ''): string {
+  return pfmeaAreaOf(`${step?.name ?? fallbackName} ${step?.description ?? ''}`, materialFamily(p));
 }
 
 /** Özel proses parametresi için hata satırları (parametre limit dışı). */

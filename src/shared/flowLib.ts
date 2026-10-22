@@ -1,7 +1,7 @@
 // 4.4.0: Malzeme / imalat türüne göre proses akışı şablonları ve adım bazlı PFD girdi/çıktı + parametre kütüphanesi.
 // Şablonlar ENGINEERING KNOWLEDGE önerisidir: adım adları ve parametre ADLARI verir, sayısal limit vermez
 // (limitler proses spesifikasyonundan girilir; yoksa VERİ YOK). Mühendis gerçek akışa göre düzenler ve onaylar.
-import { pfmeaAreaOf } from './failureLib';
+import { pfmeaAreaOf, type MaterialFamily } from './failureLib';
 import type { Cause4M, PfdStepType, ProcessStepRow } from './types';
 
 export const FLOW_SOURCE = 'Akış şablonu – ENGINEERING SUGGESTION – VERIFY';
@@ -202,11 +202,15 @@ export const STEP_IO: Record<string, StepIo> = {
   Inspection: { outputs: ['Doğrulanmış ürün karakteristikleri; uygunsuz ürün ayrılmış'], inputs: [['Ölçüm sistemi (CMM / mastar)', 'Measurement'], ['Muayene planı / çizim', 'Method'], OPR], params: [] },
   Assembly: { outputs: ['Doğru parça ve torkla tamamlanmış montaj'], inputs: [['Montaj parçaları ve bağlantı elemanları', 'Material'], ['Tork aleti / montaj fikstürü', 'Machine'], WI, OPR], params: ['Tork değeri'] },
   Packaging: { outputs: ['Hasarsız, etiketli ve izlenebilir ambalaj'], inputs: [['Ambalaj malzemesi', 'Material'], WI, OPR], params: [] },
+  // 4.5.0
+  Deburring: { outputs: ['Çapaksız, kabul kriterine uygun kenar'], inputs: [['Çapak alma aleti / tezgâhı', 'Machine'], ['Kenar kabul kriteri / referans numune', 'Method'], OPR], params: [] },
+  Cutting: { outputs: ['Çizim konturuna uygun, çapaksız kenarlı açınım'], inputs: [['Levha (alaşım / temper / kalınlık)', 'Material'], ['Lazer / plazma / su jeti tezgâhı', 'Machine'], ['Kesim programı (nesting)', 'Method'], OPR], params: ['Güç', 'Kesme hızı', 'Gaz basıncı'] },
+  'Metal Finishing': { outputs: ['Spesifikasyon kalınlığında, yapışan ve lekesiz kaplama'], inputs: [['Kaplama banyosu (konsantrasyon / sıcaklık)', 'Material'], ['Doğrultucu / askı', 'Machine'], ['Onaylı proses kartı', 'Method'], ['Kaplama kalınlık ölçer', 'Measurement'], OPR], params: ['Banyo süresi', 'Akım yoğunluğu', 'Banyo sıcaklığı'] },
 };
 
 /** Proses adımı için kütüphane girdi/çıktı + parametre adları; tanınmayan adım için undefined. */
-export function stepIo(step: Pick<ProcessStepRow, 'name' | 'description'>): { area: string; io: StepIo } | undefined {
-  const area = pfmeaAreaOf(`${step.name} ${step.description ?? ''}`);
+export function stepIo(step: Pick<ProcessStepRow, 'name' | 'description'>, family: MaterialFamily = ''): { area: string; io: StepIo } | undefined {
+  const area = pfmeaAreaOf(`${step.name} ${step.description ?? ''}`, family);
   const io = STEP_IO[area];
   return io ? { area, io } : undefined;
 }

@@ -2,7 +2,7 @@
 // Üretilen her satır "AI Proposed" eklenir; ekleme öncesi onay penceresi tüm satırları listeler.
 // Kaynakta olmayan değer uydurulmaz (VERİ YOK); kütüphane içeriği ENGINEERING KNOWLEDGE olarak işaretlenir.
 import { findRequirementCandidates, locText } from './docmodel';
-import { DFMEA_LIB, PFMEA_LIB, paramTemplates, pfmeaAreaOf, type FailureTemplate } from './failureLib';
+import { DFMEA_LIB, PFMEA_LIB, paramTemplates, stepArea, type FailureTemplate } from './failureLib';
 import { dfmeaFillValues, fillBlanksEdits, pfmeaFillValues } from './fmeaFill';
 import { blankRow, nextId } from './model';
 import { NO_DATA, characteristicOf, reqAutoValues } from './reqAutofill';
@@ -216,7 +216,7 @@ export function genPfmea(g: Gen, stepIds?: string[]) {
   for (const step of g.p.processSteps) {
     if (stepIds && !stepIds.includes(step.id)) continue;
     if (g.p.pfmea.some((r) => r.stepId === step.id)) continue;
-    const area = pfmeaAreaOf(`${step.name} ${step.description}`);
+    const area = stepArea(g.p, step);
     // 4.4.0: adımın PFD çıktısı (hata modu = çıktının karşılanmaması) ve aynı 4M kategorisindeki girdiler (neden) bağlanır.
     const io = g.p.pfdItems.filter((x) => x.stepId === step.id && x.text.trim());
     const out = io.find((x) => x.kind === 'Output');

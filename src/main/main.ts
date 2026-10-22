@@ -13,6 +13,8 @@ import { cpPhaseVariants } from '../shared/apqp'; // v4-apqp
 import { apqpFileName, fillApqpApplicability, fillMaturityEvidence, fillPackagingForm, findApqpTemplate, type ApqpTemplateKind } from '../shared/apqpExport'; // v4-apqp
 import type { SheetGrid } from '../shared/importmap';
 import type { Project } from '../shared/types';
+import { approvedExamples, formatExamples, mergeExamples, pickExamples, type ExampleKind, type ExampleRow } from '../shared/expert';
+import type { MaterialFamily } from '../shared/failureLib';
 import * as ai from './ai';
 import { ENV_KEY, MODEL, OPENAI_MODEL, PROVIDERS } from './ai/provider';
 import { DEFAULT_IFS, ifsConnector, type IfsSettings } from './connectors/ifs';
@@ -24,6 +26,33 @@ let forceClose = false;
 
 const userFile = (name: string) => path.join(app.getPath('userData'), name);
 const RECOVERY = () => userFile('recovery.fmea.json');
+/** 4.5.0: onaylı FMEA satırlarından yerel örnek kütüphanesi (AI'a şirket tarzı örneği olarak gider; buluta yalnızca seçilen örnekler gider). */
+const EXAMPLES = () => userFile('fmea-examples.json');
+type ExampleQuery = { kind: ExampleKind; family: MaterialFamily; text: string; local: ExampleRow[] };
+
+async function readExamples(): Promise<ExampleRow[]> {
+  try {
+    return JSON.parse(await fs.readFile(EXAMPLES(), 'utf8')) as ExampleRow[];
+  } catch {
+    return [];
+  }
+}
+
+/** Projenin onaylı satırlarını kütüphaneye yazar; bu projeden olup artık onaylı olmayan satırları çıkarır. */
+async function storeExamples(p: Project) {
+  const rows = approvedExamples(p);
+  const project = (p.meta.partNumber || p.meta.name || 'proje').replace(/\s+/g, ' ').trim();
+  const keep = new Set(rows.map((r) => r.key));
+  const lib = (await readExamples()).filter((x) => x.project !== project || keep.has(x.key));
+  await fs.writeFile(EXAMPLES(), JSON.stringify(mergeExamples(lib, rows)), 'utf8');
+}
+
+async function examplesFor(q?: ExampleQuery): Promise<string> {
+  if (!q) return '';
+  const local = new Set(q.local.map((x) => x.key));
+  const pool = [...q.local, ...(await readExamples()).filter((x) => !local.has(x.key))];
+  return formatExamples(pickExamples(pool, q.kind, q.family, q.text));
+}
 const CONFIG = () => userFile('config.json');
 
 interface Config {
@@ -249,6 +278,7 @@ function registerIpc() {
     }
     await fs.writeFile(target, JSON.stringify(args.data, null, 2), 'utf8');
     addRecent(target);
+    await storeExamples(args.data).catch(() => undefined); // 4.5.0: onaylı satırlar örnek kütüphanesine
     await fs.rm(RECOVERY(), { force: true });
     return target;
   });
@@ -343,8 +373,10 @@ function registerIpc() {
     return c.aiProvider;
   });
   ipcMain.handle('ai:requirements', (_e, a: Parameters<typeof ai.extractRequirements>[1]) => ai.extractRequirements(aiEnv(), a));
-  ipcMain.handle('ai:dfmea', (_e, a: Parameters<typeof ai.suggestDfmea>[1]) => ai.suggestDfmea(aiEnv(), a));
-  ipcMain.handle('ai:pfmea', (_e, a: Parameters<typeof ai.suggestPfmea>[1]) => ai.suggestPfmea(aiEnv(), a));
+  ipcMain.handle('ai:dfmea', async (_e, a: Parameters<typeof ai.suggestDfmea>[1] & { exampleQuery?: ExampleQuery }) => ai.suggestDfmea(aiEnv(), { ...a, examples: await examplesFor(a.exampleQuery) }));
+  ipcMain.handle('ai:pfmea', async (_e, a: Parameters<typeof ai.suggestPfmea>[1] & { exampleQuery?: ExampleQuery }) => ai.suggestPfmea(aiEnv(), { ...a, examples: await examplesFor(a.exampleQuery) }));
+  ipcMain.handle('examples:info', async () => ({ count: (await readExamples()).length }));
+  ipcMain.handle('examples:clear', () => fs.rm(EXAMPLES(), { force: true }));
   ipcMain.handle('ai:review', (_e, a: Parameters<typeof ai.review>[1]) => ai.review(aiEnv(), a));
   ipcMain.handle('ai:clearCache', () => fs.rm(userFile('ai-cache'), { recursive: true, force: true }));
 

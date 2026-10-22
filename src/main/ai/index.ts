@@ -132,17 +132,23 @@ ${local || '(aday yok)'}
   return { ...r, note: prepared.note };
 }
 
-export function suggestDfmea(env: AiEnv, a: { context: string; target: string; mode: AiMode }) {
+/** 4.5.0: uzman modu talimatı ve onaylı örnekler (expert.ts); boşsa eklenmez. */
+const extra = (a: { expert?: string; examples?: string }): ContentBlock[] =>
+  [a.expert, a.examples].filter((t): t is string => !!t?.trim()).map((text) => ({ type: 'text', text }));
+
+export function suggestDfmea(env: AiEnv, a: { context: string; target: string; mode: AiMode; expert?: string; examples?: string }) {
   return run(env, 'FMEA Generator', a.mode, [
     { type: 'text', text: a.context },
+    ...extra(a),
     { type: 'text', text: `GÖREV: Aşağıdaki fonksiyon(lar) için DFMEA satırları öner. functionId ve reqIds yukarıdaki ID’lerden seçilir. Her S/O/D için sWhy/oWhy/dWhy gerekçesi ver (puanlama kriter tablosuna atıf). Mevcut hata modlarını tekrarlama. Bir fonksiyon için tam kayıp, kısmi, aralıklı, istenmeyen fonksiyon hata modlarını değerlendir.\n${a.target}` },
   ], DFMEA_SCHEMA);
 }
 
-export function suggestPfmea(env: AiEnv, a: { context: string; target: string; composite: string; mode: AiMode }) {
+export function suggestPfmea(env: AiEnv, a: { context: string; target: string; composite: string; mode: AiMode; expert?: string; examples?: string }) {
   return run(env, 'Process Analyst', a.mode, [
     { type: 'text', text: a.context },
-    { type: 'text', text: `GÖREV: Aşağıdaki proses adım(lar)ı için PFMEA satırları öner. dfIds ilgili DFMEA ID’leri. cause4M zorunlu; why dizisi 5 Neden (en fazla 5), rootCause sistem zafiyeti olmalı. Özel proseslerde params listesine izlenmesi gereken parametreleri ekle (limit yazma).\nKompozit bilgi tabanı (ENGINEERING KNOWLEDGE):\n${a.composite}\nMevcut hata modlarını tekrarlama.\n${a.target}` },
+    ...extra(a),
+    { type: 'text', text: `GÖREV: Aşağıdaki proses adım(lar)ı için PFMEA satırları öner. dfIds ilgili DFMEA ID’leri. cause4M zorunlu; why dizisi 5 Neden (en fazla 5), rootCause sistem zafiyeti olmalı. Özel proseslerde params listesine izlenmesi gereken parametreleri ekle (limit yazma).${a.composite ? `\nKompozit bilgi tabanı (ENGINEERING KNOWLEDGE):\n${a.composite}` : ''}\nMevcut hata modlarını tekrarlama.\n${a.target}` },
   ], PFMEA_SCHEMA);
 }
 

@@ -14,6 +14,7 @@ import { ensureLineNumbers, splitRequirement } from './riskModel'; // v4-risk
 import { REQ_ISSUE_TRIGGERS, syncReqIssue } from './reqIssues';
 import { rpnActionValues } from './rpnAction';
 import { FLOW_SOURCE, stepIo } from './flowLib';
+import { materialFamily } from './failureLib';
 import type {
   ActionRow,
   AnyRow,
@@ -726,13 +727,18 @@ function rpnAction(c: Ctx, table: 'dfmea' | 'pfmea', id: string) {
     c.set(table, id, f, v, `${id} RPN eşiği (${c.p.settings.rpnThreshold}) aşıldı – önerilen aksiyon (AI RECOMMENDATION)`);
 }
 
+const SPECIAL_AREAS = new Set(['Metal Finishing', 'Heat Treatment', 'Welding', 'Cure', 'Bonding', 'NDT']);
+
 /** 4.4.0: adı yeni girilen proses adımına kütüphaneden PFD girdi/çıktı ve proses parametresi adları (limit VERİ YOK). */
 function deriveStepIo(c: Ctx, stepId: string) {
   const st = c.find<ProcessStepRow>('processSteps', stepId);
   if (!st?.name?.trim()) return;
   if (c.rows<PfdItemRow>('pfdItems').some((x) => x.stepId === stepId) || c.rows<ProcessParamRow>('processParams').some((x) => x.stepId === stepId)) return;
-  const hit = stepIo(st);
+  const hit = stepIo(st, materialFamily(c.p));
   if (!hit) return;
+  // 4.5.0: AS9100 özel proses alanları (sonucu ancak tahribatlı testle doğrulanabilen prosesler) işaretlenir; mühendis kaldırabilir.
+  if (SPECIAL_AREAS.has(hit.area) && !st.specialProcess)
+    c.set('processSteps', stepId, 'specialProcess', true, `${stepId} ${hit.area} özel proses alanı (ENGINEERING SUGGESTION – doğrulayın)`);
   const src = `${FLOW_SOURCE} (${hit.area})`;
   const why = `${stepId} proses akışı adımı → ${hit.area} kütüphanesi (ENGINEERING SUGGESTION)`;
   for (const text of hit.io.outputs)

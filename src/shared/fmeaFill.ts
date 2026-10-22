@@ -2,7 +2,7 @@
 // proses parametresi, bağlı DFMEA) doldurur. Dolu alanlara dokunulmaz. Karar niteliğindeki alanlar
 // (S 9–10 kararı, önerilen aksiyon) "AI ÖNERİSİ" olarak gelir; onay mühendistedir.
 import { DEFAULT_REACTION } from './engine';
-import { pfmeaAreaOf } from './failureLib';
+import { stepArea } from './failureLib';
 import { NO_DATA } from './reqAutofill';
 import { needsAction } from './risk';
 import { AI_REC, rowRpn, rpnActionText } from './rpnAction';
@@ -88,12 +88,20 @@ const PROCESS_FUNCTION: Record<string, string> = {
   Inspection: 'Ürün karakteristiklerini doğrulamak ve uygunsuz ürünü ayırmak',
   Assembly: 'Parçaları doğru bağlantı elemanı ve torkla monte etmek',
   Packaging: 'Parçayı hasarsız sevk edilecek şekilde ambalajlamak',
+  // 4.5.0: metal alanları
+  Cutting: 'Levhadan açınımı çizim konturuna ve kenar kalitesine uygun kesmek',
+  Forming: 'Parçayı çizimdeki açı ve iç yarıçapa uygun bükmek',
+  Deburring: 'Kesim ve delik kenarlarındaki çapağı ölçüyü bozmadan almak',
+  'Metal Machining': 'Delik ve yüzeyleri çizim ölçü, tolerans ve konumuna göre işlemek',
+  Welding: 'Parçaları onaylı kaynak prosedürüne (WPS) göre birleştirmek',
+  'Heat Treatment': 'Parçayı onaylı ısıl işlem çevrimiyle istenen mekanik özelliğe getirmek',
+  'Metal Finishing': 'Yüzeyi onaylı proses kartıyla spesifikasyon kalınlığında kaplamak',
 };
 
 /** Alanla ilişkili gereksinimleri bulmak için anahtar kelimeler. */
 const AREA_WORDS: Record<string, RegExp> = {
   Material: /malzeme|prepreg|reçine|resin|material|lot|raf ömrü/i,
-  'Lay-up': /ply|kat sayısı|oryantasyon|laminat|kalınl|thickness/i,
+  'Lay-up': /ply|kat sayısı|oryantasyon|laminat/i,
   'Vacuum Bagging': /vakum|vacuum|porozite|porosity/i,
   Cure: /kür|cure|tg\b|otoklav|autoclave/i,
   Bonding: /bond|yapıştır|insert|adhesive/i,
@@ -104,6 +112,14 @@ const AREA_WORDS: Record<string, RegExp> = {
   Inspection: /ölçü|boyut|kalınl|Ø|çap|dimension/i,
   Assembly: /montaj|tork|torque|bağlantı|fastener/i,
   Packaging: /ambalaj|packag/i,
+  // 4.5.0: metal alanları
+  Cutting: /çapak|kesim|kenar|kontur|açınım|levha|sac kalınl/i,
+  Deburring: /çapak|keskin kenar|burr|pah/i,
+  Forming: /büküm|bükme|bend|açı|yarıçap|radius|flanş/i,
+  'Metal Machining': /delik|hole|Ø|⌀|(?<![a-zçğıöşü])çap(?!ak)|merkez mesafe|pürüzlü|roughness/i,
+  Welding: /kaynak|weld/i,
+  'Heat Treatment': /sertlik|hardness|temper|ısıl işlem|heat treat/i,
+  'Metal Finishing': /anodi|kaplama|kromat|alodin|galvaniz|korozyon|tuz sis|salt spray|plating/i,
 };
 const PROCESS_REQ = new Set(['Manufacturing', 'Process', 'Inspection']);
 
@@ -115,7 +131,7 @@ function reqText(r: RequirementRow) {
 
 /** Adımla ilişkili gereksinimler: adım metni / ürün karakteristikleri veya alan anahtar kelimeleriyle eşleşenler. */
 export function stepRequirements(p: Project, step: ProcessStepRow): RequirementRow[] {
-  const area = pfmeaAreaOf(`${step.name} ${step.description}`);
+  const area = stepArea(p, step);
   const re = AREA_WORDS[area];
   const chars = `${step.productChars} ${step.processChars}`.toLocaleLowerCase('tr');
   return p.requirements.filter((r) => {
@@ -128,7 +144,7 @@ export function stepRequirements(p: Project, step: ProcessStepRow): RequirementR
 export function pfmeaFillValues(p: Project, r: PfmeaRow): Record<string, unknown> {
   const step = p.processSteps.find((s) => s.id === r.stepId);
   if (!step) return onlyEmpty(r, { reactionPlan: DEFAULT_REACTION, measurement: r.detection });
-  const area = pfmeaAreaOf(`${step.name} ${step.description}`);
+  const area = stepArea(p, step);
   const reqs = stepRequirements(p, step);
   const product = reqs.filter((x) => !PROCESS_REQ.has(x.reqType));
   const params = p.processParams.filter((x) => x.stepId === step.id);
