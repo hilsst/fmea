@@ -88,6 +88,9 @@ export interface ProjectMeta {
   kcListAgreedBy: string;
   kcListAgreedDate: string;
   kcListAgreementRef: string;
+  // 4.4.0: parça malzemesi ve seçilen proses akışı şablonları (anahtarlar ';' ile; flowLib.FLOW_TEMPLATES)
+  material?: string;
+  flowTemplates?: string;
 }
 
 export interface Settings {
@@ -95,8 +98,10 @@ export interface Settings {
   kcSeverityThreshold: number;
   /** Bu değer ve üzeri Severity → High Severity vurgusu. */
   highSeverityThreshold: number;
-  /** RPN aksiyon eşiği (boş = kullanılmaz; SCMH eşiksiz çalışır). */
+  /** RPN aksiyon eşiği (4.4.0: varsayılan 100; boş = kullanılmaz). RPN tek başına kriter değildir; needsAction'a ek tetiktir. */
   rpnThreshold: number | null;
+  /** 4.4.0: RPN eşiği aşılınca boş "Önerilen Aksiyon" AI RECOMMENDATION ile dolsun (eski dosyalarda yok = açık). */
+  rpnAutoAction?: boolean;
   /** Capability hedefleri (boş = VERİ YOK). */
   targetCpk: number | null;
   minSamples: number | null;

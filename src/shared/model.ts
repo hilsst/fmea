@@ -210,6 +210,8 @@ export const DEFAULT_META: ProjectMeta = {
   kcListAgreedBy: '',
   kcListAgreedDate: '',
   kcListAgreementRef: '',
+  material: '',
+  flowTemplates: '',
 };
 
 const DEFAULT_STEP_ROLE: Record<string, string> = {
@@ -225,7 +227,8 @@ const DEFAULT_STEP_ROLE: Record<string, string> = {
 export const DEFAULT_SETTINGS: Settings = {
   kcSeverityThreshold: 9,
   highSeverityThreshold: 8,
-  rpnThreshold: null,
+  rpnThreshold: 100,
+  rpnAutoAction: true,
   targetCpk: null,
   minSamples: null,
   autoControlPlan: true,
@@ -417,6 +420,11 @@ export function normalizeProject(raw: Partial<Project>, report?: MigrationReport
   for (const t of Object.keys(ID_PREFIX) as TableKey[]) {
     const rows = (raw[t] as AnyRow[] | undefined) ?? (t === 'history' ? base.history : []);
     (p as unknown as Record<string, AnyRow[]>)[t] = rows.map((r) => ({ ...blankRow(t, r.id), ...r }) as AnyRow);
+  }
+  // 4.4.0: RPN eşiği varsayılanı 100. 4.4 öncesi dosyalarda eşik hiç kullanılmadıysa (boş) 100'e çekilir.
+  if (raw.settings && !('rpnAutoAction' in raw.settings) && raw.settings.rpnThreshold == null) {
+    p.settings.rpnThreshold = 100;
+    notes.push('RPN aksiyon eşiği 100 olarak ayarlandı (FMEA Studio 4.4); Proje › Risk ve KC kurallarından değiştirebilirsiniz.');
   }
   capNormalize(p, raw.settings, notes); // v4-cap
   if (from === 2) notes.push('Dosya şema 2 → 3 (FMEA Studio 4.0) güncellendi: APQP/PPAP, KC yaşam döngüsü, MSA/capability ve PFD girdi/çıktı alanları boş eklendi; mevcut veriler değişmedi.');

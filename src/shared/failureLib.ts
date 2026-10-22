@@ -129,6 +129,25 @@ export const PFMEA_LIB: Record<string, FailureTemplate[]> = {
   Packaging: [
     P('Taşımada parça hasarı', 'Müşteride hasarlı parça', 'Ambalaj parçayı korumuyor', 'Method', 'Ambalaj tasarımı doğrulanmamış', 'Onaylı ambalaj talimatı', 'Sevk öncesi ambalaj kontrolü', 6, 3, 6),
   ],
+  // 4.4.0: metal imalat akışları (talaşlı, kaynaklı, sac metal, ısıl işlem)
+  'Metal Machining': [
+    P('Ölçü / tolerans dışı (çap, boy, konum)', 'Montaj uyumsuzluğu, fonksiyon kaybı', 'Takım aşınması / ofset düzeltmesi yapılmamış', 'Machine', 'Takım ömrü ve ofset takibi yok', 'Takım ömrü yönetimi, CNC program doğrulama, ilk parça onayı', 'Süreç içi ölçüm + CMM / mastar', 7, 4, 4, 'Software parameter lock'),
+    P('Yüzey pürüzlülüğü limit dışında', 'Sızdırmazlık / yorulma ömrü etkilenir', 'Kesme parametresi veya takım uygun değil', 'Method', 'Kesme parametreleri talimatta tanımlı değil', 'Onaylı kesme parametreleri, takım seçim listesi', 'Pürüzlülük ölçümü (örnekleme)', 6, 4, 5),
+    P('Çapak / keskin kenar kalıyor', 'Montaj hasarı, yorulma çatlağı başlangıcı', 'Çapak alma adımı atlanıyor / kontrol edilmiyor', 'Man', 'Çapak alma kriteri tanımlı değil', 'Çapak alma talimatı + limit numune', 'Görsel / dokunsal kontrol', 6, 4, 6),
+  ],
+  Welding: [
+    P('Eksik nüfuziyet / ergime', 'Kaynak dayanımı düşer; yapısal hasar riski', 'Kaynak parametreleri (akım, gerilim, hız) WPS dışında', 'Machine', 'Parametreler izlenmiyor / kilitli değil', 'Onaylı WPS, kalifiye kaynakçı, parametre izleme', 'NDT (RT / UT) + görsel muayene', 9, 3, 5, 'Software parameter lock'),
+    P('Gözenek / kalıntı', 'Kaynak dayanımı ve yorulma ömrü düşer', 'Koruyucu gaz / yüzey temizliği yetersiz', 'Material', 'Kaynak öncesi temizlik ve gaz kontrolü tanımsız', 'Kaynak öncesi temizlik talimatı, gaz debisi kontrolü', 'NDT (RT / UT) + görsel muayene', 8, 4, 5),
+    P('Çarpılma / ölçü dışı', 'Montaj uyumsuzluğu', 'Fikstür / kaynak sırası tanımlı değil', 'Method', 'Kaynak sırası ve fikstür kalifiye edilmemiş', 'Kaynak fikstürü, tanımlı kaynak sırası', 'Kaynak sonrası boyutsal kontrol', 6, 4, 4, 'Fixture'),
+  ],
+  Forming: [
+    P('Büküm açısı / ölçü dışı', 'Montaj uyumsuzluğu', 'Geri esneme (springback) telafisi yok', 'Method', 'Büküm programı doğrulanmamış', 'Onaylı büküm programı, ilk parça onayı', 'Açı / profil mastarı', 6, 4, 4),
+    P('Bükümde çatlak / incelme', 'Yapısal dayanım kaybı', 'Büküm yarıçapı / malzeme durumu uygun değil', 'Material', 'Malzeme temper durumu doğrulanmıyor', 'Malzeme sertifika kontrolü, minimum büküm yarıçapı', 'Görsel muayene (+ gerekirse penetrant)', 8, 3, 5),
+  ],
+  'Heat Treatment': [
+    P('Sertlik / mekanik özellik spesifikasyon dışında', 'Dayanım veya süneklik gereksinimi karşılanmaz', 'Fırın sıcaklığı / süresi / soğutma hızı dışında', 'Machine', 'Fırın reçetesi kilitli değil; TUS / SAT yapılmıyor', 'Reçete kilidi, periyodik TUS / SAT, kalibrasyon', 'Sertlik testi + test kuponu', 9, 3, 4, 'Software parameter lock'),
+    P('Çarpılma', 'Ölçü dışı parça', 'Fırına yerleşim / destekleme uygun değil', 'Method', 'Yükleme konfigürasyonu tanımlı değil', 'Yükleme fikstürü ve talimatı', 'Isıl işlem sonrası boyutsal kontrol', 6, 4, 4),
+  ],
   Generic: [
     P('Operasyon gereksinimi karşılanmıyor', 'Ürün karakteristiği uygunsuz', 'İş talimatı eksik / belirsiz', 'Method', 'İş talimatı doğrulanmamış', 'Onaylı iş talimatı, operatör eğitimi', 'Operasyon sonu kontrol', 6, 4, 6),
   ],
@@ -139,8 +158,14 @@ PFMEA_LIB.Autoclave = PFMEA_LIB.Cure;
 export function pfmeaAreaOf(name: string): string {
   const n = name.toLowerCase();
   const map: [RegExp, string][] = [
+    // 4.4.0: metal imalat alanları önce (örn. "Kaynak muayenesi (NDT)" → NDT, "Kaynak sonrası ısıl işlem" → Heat Treatment)
+    [/[ıi]s[ıi]l i̇?şlem|heat treat|temperleme|sertleştirme|gerilim giderme/, 'Heat Treatment'],
+    [/ndt|ultrason|x-ray|tap test|tahribatsız/, 'NDT'],
+    [/kaynak|weld|puntala/, 'Welding'],
+    [/torna|turning|talaşlı|frezeleme|milling|raybal|taşlama|grinding|çapak|deburr|testere/, 'Metal Machining'],
+    [/büküm|bükme|şekillendir|forming|bending|sac kesme|punch/, 'Forming'],
     [/incoming|storage|material|malzeme|thaw|çözdür|depo|kabul/, 'Material'],
-    [/lay-?up|laminasyon|serim|kitting|cutting|kesim|debulk/, 'Lay-up'],
+    [/lay-?up|laminasyon|serim|kitting|\bply\b|cutting|kesim|debulk/, 'Lay-up'],
     [/bag|torba|vakum|poşet/, 'Vacuum Bagging'],
     [/cure|kür|autoclave|otoklav|oven|fırın/, 'Cure'],
     [/bond|yapıştır|insert/, 'Bonding'],

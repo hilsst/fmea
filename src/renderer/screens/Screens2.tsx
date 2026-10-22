@@ -6,7 +6,8 @@ import { appendBaseline, baselineProject, createBaseline, diffProjects, diffSumm
 import { rowLabel } from '../../shared/columns';
 import { verifySource } from '../../shared/docmodel';
 import { impactOf } from '../../shared/impact';
-import { COMPOSITE_KB, PRODUCT_TYPES, PRODUCT_TYPE_HINTS, isComposite } from '../../shared/kb';
+import { COMPOSITE_KB, PRODUCT_TYPES, PRODUCT_TYPE_HINTS } from '../../shared/kb';
+import { FlowTemplatePicker } from '../components/FlowTemplates';
 import { evaluateKc } from '../../shared/kc';
 import { DEFAULT_SCORING, DEFAULT_SETTINGS, TABLE_LABEL, nextId, tableOfId } from '../../shared/model';
 import { failedRunEdit } from '../../shared/proposals';
@@ -136,7 +137,9 @@ export function ProductTypeCard() {
         {PRODUCT_TYPES.map((t) => <option key={t}>{t}</option>)}
       </select>
       {hints.length > 0 && <ul className="plain small mt">{hints.map((h) => <li key={h}>{h}</li>)}</ul>}
-      {isComposite(p.settings.productType) && <p className="small">Kompozit: PFMEA › Proses Akışı ekranında “Kompozit şablonu uygula” kullanılabilir.</p>}
+      <h3 className="mt">Malzeme ve proses akışı şablonları</h3>
+      <p className="muted">Parça malzemesine göre önerilen akışlar işaretli gelir; birden çok akış seçebilirsiniz (örn. kompozit + talaşlı + montaj).</p>
+      <FlowTemplatePicker />
     </section>
   );
 }

@@ -377,7 +377,7 @@ function ScreenView({ screen, sub, go }: { screen: ScreenKey; sub?: string; go: 
     case 'documents': return sub === 'evidence' ? <EvidenceScreen /> : sub === 'issues' ? <IssuesTab /> : <DocumentsTab />;
     case 'requirements': return <RequirementsTab />;
     case 'dfmea': return sub === 'structure' ? <StructureTab /> : <DfmeaTab />;
-    case 'pfmea': return sub === 'processSteps' ? <ProcessTab /> : sub === 'pfdItems' ? <Grid table="pfdItems" emptyHint="Her PFD adımının çıktıları (→ PFMEA hata modu) ve girdileri / değişkenlik kaynakları (→ PFMEA nedeni). Çıktı eklendiğinde hata modu taslakları önerilir (PF webinar p20, p22)." /> /* v4-risk */ : sub === 'processParams' ? <Grid table="processParams" emptyHint="Özel proses parametreleri (kür sıcaklığı, basınç, vakum, süre…). Limitler kaynak spesifikasyondan girilir; yoksa VERİ YOK." /> : <PfmeaTab />;
+    case 'pfmea': return sub === 'processSteps' ? <ProcessTab /> : sub === 'pfdItems' ? <Grid table="pfdItems" emptyHint="Her PFD adımının çıktıları (→ PFMEA hata modu) ve girdileri / değişkenlik kaynakları (→ PFMEA nedeni). Proses Akışı’na adım eklendiğinde kütüphaneden otomatik önerilir; elle eklenen çıktı için hata modu taslakları önerilir (PF webinar p20, p22)." /> /* v4-risk */ : sub === 'processParams' ? <Grid table="processParams" emptyHint="Proses parametreleri (kür sıcaklığı, kaynak akımı, devir…). Proses Akışı’na adım eklendiğinde parametre adları otomatik önerilir; limitler kaynak spesifikasyondan girilir, yoksa VERİ YOK." /> : <PfmeaTab />;
     case 'risk': return <RiskScreen />;
     case 'kcs': return sub === 'kcFlow' ? <KcFlowScreen /> : sub === 'kcTrace' ? <KcTraceScreen /> : <KcTab />; // v4-kc
     case 'controlPlan': return <ControlPlanTab />;

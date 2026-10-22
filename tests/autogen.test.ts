@@ -81,7 +81,7 @@ describe('otomatik öneri motoru', () => {
     expect(prmRow.processRequirement).toMatch(/Kür sıcaklığı: VERİ YOK/);
     const s9 = rows.find((r) => (r.s ?? 0) >= 9)!;
     expect(s9.sDisposition).toBeTruthy();
-    expect(s9.recommendedAction).toMatch(/AI ÖNERİSİ/);
+    expect(s9.recommendedAction).toMatch(/AI RECOMMENDATION/);
     // tekrar doldurma dolu alanlara dokunmaz
     expect(fillBlanksEdits(p, 'pfmea').filter((e) => e.field !== 'dfIds')).toHaveLength(0);
     expect(rows.find((r) => r.failureMode === 'Kür sıcaklığı alt limitin altında')!.source).toMatch(/limit VERİ YOK/);

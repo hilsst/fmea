@@ -3,7 +3,7 @@ import { findRequirementCandidates, locText, UNSUPPORTED_MSG } from '../../share
 import { summarizeChanges, type Edit } from '../../shared/engine';
 import { reqAutoValues } from '../../shared/reqAutofill';
 import type { GenStage } from '../../shared/autogen';
-import { COMPOSITE_TEMPLATE, isComposite } from '../../shared/kb';
+import { FlowTemplatePicker } from '../components/FlowTemplates';
 import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
 import { KC_LOCK_MSG, isCi, kcLocked, scmhKcDecision } from '../../shared/kcScmh'; // v4-kc
 import { isScmh } from '../../shared/scmhScoring'; // v4-kc
@@ -383,54 +383,24 @@ export function DfmeaTab() {
 }
 
 export function ProcessTab() {
-  const { project, edit } = useStore();
-  const addStandard = async () => {
-    const b = batch(project);
-    const std = ['Incoming Material', 'Storage', 'Material Preparation', 'Cutting', 'Kitting', 'Lay-up', 'Debulk', 'Vacuum Bagging', 'Cure', 'Demolding', 'Machining', 'Bonding', 'Surface Treatment', 'Painting', 'Inspection', 'Assembly', 'Final Inspection', 'Packaging'];
-    const special = new Set(['Cure', 'Bonding', 'Painting', 'Surface Treatment']);
-    std.forEach((name, i) =>
-      b.add('processSteps', {
-        opNo: String((i + 1) * 10),
-        name,
-        specialProcess: special.has(name),
-        source: 'AI VARSAYIMI – mühendislik doğrulaması gerekli (örnek kompozit akış)',
-      } as Partial<AnyRow>),
-    );
-    await edit(b.edits, 'Örnek proses akışı');
-  };
-  const addTemplate = async () => {
-    const b = batch(project);
-    const have = new Set(project.processSteps.map((s) => s.name.toLowerCase()));
-    for (const t of COMPOSITE_TEMPLATE) {
-      if (have.has(t.name.toLowerCase())) continue;
-      const stepId = b.add('processSteps', { opNo: t.opNo, name: t.name, description: t.description, specialProcess: t.specialProcess, source: 'Kompozit proses şablonu (§69) – ENGINEERING SUGGESTION – VERIFY', origin: 'template' } as Partial<AnyRow>);
-      for (const name of t.params)
-        b.add('processParams', { stepId, parameter: name, source: 'Kompozit şablon – limit VERİ YOK', notes: 'VERİ YOK – doğrulanmalı (limitleri proses spesifikasyonundan girin)', origin: 'template' } as Partial<AnyRow>);
-    }
-    if (!b.edits.length) return;
-    await edit(b.edits, 'Kompozit proses şablonu');
-  };
-  const composite = isComposite(project.settings.productType);
+  const { project } = useStore();
+  const [flow, setFlow] = useState(false);
   return (
     <div className="split">
       <Grid
         table="processSteps"
         toolbar={
-          <>
-            {project.processSteps.length === 0 && !composite && (
-              <button className="btn" onClick={addStandard} title="Spesifikasyon §8 örnek kompozit akışı; gerçek akışla değiştirin">
-                Örnek kompozit akışı ekle
-              </button>
-            )}
-            {composite && (
-              <button className="btn" onClick={addTemplate} title="Ürün tipi kompozit: 17 adımlık şablon ve izlenecek parametre adları (limitler VERİ YOK). Mevcut adımlar silinmez.">
-                Kompozit şablonu uygula
-              </button>
-            )}
-          </>
+          <button className="btn" onClick={() => setFlow(true)} title="Talaşlı, kaynaklı, sac metal, ısıl işlem, yüzey işlem, kompozit ve montaj akışlarından seçin (çoklu seçim). Mevcut adımlar silinmez.">
+            Akış şablonu ekle
+          </button>
         }
-        emptyHint="Gerçek üretim akışını yüklenen dokümanlardan çıkarın. Örnek akış yalnızca başlangıç içindir."
+        emptyHint="Proje panelinde parça malzemesini ve akış şablonlarını seçin veya gerçek üretim akışını yüklenen dokümanlardan çıkarın. Her yeni adım için PFD girdi/çıktı ve proses parametreleri otomatik önerilir."
       />
+      {flow && (
+        <Modal title="Proses akışı şablonları" sub="Malzeme / imalat türüne göre çoklu seçim" onClose={() => setFlow(false)} wide>
+          <FlowTemplatePicker compact />
+        </Modal>
+      )}
       <aside className="tree card flow">
         <h3>Proses akış şeması</h3>
         {project.processSteps.length === 0 && <p className="muted">Adımlar burada sırayla görünür.</p>}

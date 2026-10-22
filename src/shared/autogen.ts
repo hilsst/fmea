@@ -217,11 +217,18 @@ export function genPfmea(g: Gen, stepIds?: string[]) {
     if (stepIds && !stepIds.includes(step.id)) continue;
     if (g.p.pfmea.some((r) => r.stepId === step.id)) continue;
     const area = pfmeaAreaOf(`${step.name} ${step.description}`);
-    for (const t of PFMEA_LIB[area] ?? PFMEA_LIB.Generic) g.add('pfmea', pfRow(step, t, `${step.id} · PFMEA hata kütüphanesi (${area})`) as Partial<AnyRow>);
+    // 4.4.0: adımın PFD çıktısı (hata modu = çıktının karşılanmaması) ve aynı 4M kategorisindeki girdiler (neden) bağlanır.
+    const io = g.p.pfdItems.filter((x) => x.stepId === step.id && x.text.trim());
+    const out = io.find((x) => x.kind === 'Output');
+    const links = (t: FailureTemplate): Partial<PfmeaRow> => ({
+      ...(out ? { outputId: out.id } : {}),
+      causeInputIds: io.filter((x) => x.kind === 'Input' && x.cat4M && x.cat4M === t.cause4M).map((x) => x.id),
+    });
+    for (const t of PFMEA_LIB[area] ?? PFMEA_LIB.Generic) g.add('pfmea', { ...pfRow(step, t, `${step.id} · PFMEA hata kütüphanesi (${area})`), ...links(t) } as Partial<AnyRow>);
     // Özel proses parametreleri: her parametre için alt/üst limit dışı hata modları; parametre satırına bağlanır.
     for (const prm of g.p.processParams.filter((x) => x.stepId === step.id) as ProcessParamRow[]) {
       const ids = paramTemplates(prm.parameter || prm.id, prm.productCharacteristic, prm.prevention, prm.monitoring).map((t) =>
-        g.add('pfmea', pfRow(step, t, `${step.id}, ${prm.id} · özel proses parametresi${prm.lsl != null || prm.usl != null ? ` (${prm.lsl ?? '–'}…${prm.usl ?? '–'} ${prm.unit})` : ' (limit VERİ YOK)'}`) as Partial<AnyRow>),
+        g.add('pfmea', { ...pfRow(step, t, `${step.id}, ${prm.id} · özel proses parametresi${prm.lsl != null || prm.usl != null ? ` (${prm.lsl ?? '–'}…${prm.usl ?? '–'} ${prm.unit})` : ' (limit VERİ YOK)'}`), ...links(t) } as Partial<AnyRow>),
       );
       g.set('processParams', prm.id, 'pfIds', [...prm.pfIds, ...ids]);
     }

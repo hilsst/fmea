@@ -12,6 +12,8 @@ import { capOnDelete, capOnSet } from './capEngine'; // v4-cap
 import { cpRequired, joinedRequirement } from './risk'; // v4-risk
 import { ensureLineNumbers, splitRequirement } from './riskModel'; // v4-risk
 import { REQ_ISSUE_TRIGGERS, syncReqIssue } from './reqIssues';
+import { rpnActionValues } from './rpnAction';
+import { FLOW_SOURCE, stepIo } from './flowLib';
 import type {
   ActionRow,
   AnyRow,
@@ -23,6 +25,7 @@ import type {
   PfdItemRow,
   PfmeaRow,
   ProcessParamRow,
+  ProcessStepRow,
   Project,
   RequirementRow,
   Settings,
@@ -368,6 +371,10 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
 
   if (table === 'settings') {
     if (field === 'kcSeverityThreshold' || field === 'autoKcCandidates') syncAllKcCandidates(c);
+    if (field === 'rpnThreshold' || field === 'rpnAutoAction') {
+      for (const r of c.rows<DfmeaRow>('dfmea')) rpnAction(c, 'dfmea', r.id);
+      for (const r of c.rows<PfmeaRow>('pfmea')) rpnAction(c, 'pfmea', r.id);
+    }
     return;
   }
   capOnSet(c, table, id, field, e.from, e.to); // v4-cap: capability bandı, MSA yeniden çalışma ve kapsam kuralları
@@ -425,6 +432,7 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
         for (const k of c.rows<KcRow>('kcs').filter((k) => k.sourceId === id && k.autoCreated && k.status === 'AI Proposed'))
           c.set('kcs', k.id, 'characteristic', kcCharacteristic(c, d), `${id} tanımı değişti`);
       syncActionFromFmea(c, 'dfmea', d, field);
+      if (field === 's' || field === 'o' || field === 'd') rpnAction(c, 'dfmea', id);
       break;
     }
     case 'pfmea': {
@@ -453,10 +461,12 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
         }
       }
       syncActionFromFmea(c, 'pfmea', p, field);
+      if (field === 's' || field === 'o' || field === 'd') rpnAction(c, 'pfmea', id);
       break;
     }
     case 'processSteps': {
       const st = c.find<AnyRow & { opNo: string; name: string; machine: string; tool: string }>('processSteps', id)!;
+      if (field === 'name' && !e.from) deriveStepIo(c, id);
       for (const p of c.rows<PfmeaRow>('pfmea').filter((p) => p.stepId === id)) {
         if (field === 'opNo') c.set('pfmea', p.id, 'opNo', st.opNo, `${id} operasyon numarası değişti`);
         if (field === 'name') c.set('pfmea', p.id, 'stepName', st.name, `${id} proses adı değişti`);
@@ -679,7 +689,8 @@ function riskOnSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
     if (field === 'text' && !fresh && e.from)
       for (const p of c.rows<PfmeaRow>('pfmea').filter((x) => x.outputId === id || x.causeInputIds?.includes(id)))
         c.set('pfmea', p.id, 'reassess', `FMEA Reassessment Required – PFD ${it.kind === 'Output' ? 'çıktısı' : 'girdisi'} ${id} değişti`, `${id} değişti`);
-    if ((field === 'text' || field === 'kind' || field === 'stepId') && it.kind === 'Output' && it.text.trim() && it.stepId
+    // Akış şablonundan gelen çıktılar için taslak üretilmez: PFMEA "Kütüphaneden öner" ile bu çıktıya bağlanır.
+    if ((field === 'text' || field === 'kind' || field === 'stepId') && it.kind === 'Output' && it.text.trim() && it.stepId && it.origin !== 'template'
       && !c.rows<PfmeaRow>('pfmea').some((x) => x.outputId === id)) {
       const st = c.find<AnyRow & { opNo: string; name: string }>('processSteps', it.stepId);
       for (const m of ['yok (no output)', 'kısmi / yetersiz (partial / under)', 'fazla (over)', 'aralıklı (intermittent)'])
@@ -704,6 +715,32 @@ function riskOnSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
         c.set('controlPlan', t, 'reassess', `FMEA Reassessment Required – bağlı proses karakteristiği ${id} değişti`, `${id} değişti`);
     return;
   }
+}
+
+/** 4.4.0: RPN ≥ eşik ve önerilen aksiyon boşsa satırın neden/kontrol bilgisinden AI RECOMMENDATION yazar (rpnAction.ts). */
+function rpnAction(c: Ctx, table: 'dfmea' | 'pfmea', id: string) {
+  const row = c.find<DfmeaRow | PfmeaRow>(table, id);
+  if (!row) return;
+  const vals = rpnActionValues(c.p, row, table === 'pfmea');
+  for (const [f, v] of Object.entries(vals))
+    c.set(table, id, f, v, `${id} RPN eşiği (${c.p.settings.rpnThreshold}) aşıldı – önerilen aksiyon (AI RECOMMENDATION)`);
+}
+
+/** 4.4.0: adı yeni girilen proses adımına kütüphaneden PFD girdi/çıktı ve proses parametresi adları (limit VERİ YOK). */
+function deriveStepIo(c: Ctx, stepId: string) {
+  const st = c.find<ProcessStepRow>('processSteps', stepId);
+  if (!st?.name?.trim()) return;
+  if (c.rows<PfdItemRow>('pfdItems').some((x) => x.stepId === stepId) || c.rows<ProcessParamRow>('processParams').some((x) => x.stepId === stepId)) return;
+  const hit = stepIo(st);
+  if (!hit) return;
+  const src = `${FLOW_SOURCE} (${hit.area})`;
+  const why = `${stepId} proses akışı adımı → ${hit.area} kütüphanesi (ENGINEERING SUGGESTION)`;
+  for (const text of hit.io.outputs)
+    c.add('pfdItems', { stepId, kind: 'Output', text, source: src, origin: 'template' } as Partial<PfdItemRow>, why);
+  for (const [text, cat4M] of hit.io.inputs)
+    c.add('pfdItems', { stepId, kind: 'Input', text, cat4M, sourceOfVariation: true, source: src, origin: 'template' } as Partial<PfdItemRow>, why);
+  for (const parameter of hit.io.params)
+    c.add('processParams', { stepId, parameter, source: `${src} – limit VERİ YOK`, notes: 'VERİ YOK – doğrulanmalı (limitleri proses spesifikasyonundan girin)', origin: 'template' } as Partial<ProcessParamRow>, why);
 }
 
 function syncActionFromFmea(c: Ctx, table: 'dfmea' | 'pfmea', row: DfmeaRow | PfmeaRow, field: string) {

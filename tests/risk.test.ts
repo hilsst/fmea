@@ -28,6 +28,7 @@ const check = (p: Project, key: string) => qualityChecks(p).find((c) => c.key ==
 
 function base(): Project {
   const p = newProject(); // SCMH
+  p.settings.rpnThreshold = null; // SCMH yalın davranış; RPN eşiği ayrı testte (4.4.0)
   p.requirements = [row<RequirementRow>('requirements', 'REQ-001', { text: 'Hole Ø6.0', balloon: '12' })];
   p.dfmea = [
     row<DfmeaRow>('dfmea', 'DF-001', { reqIds: ['REQ-001'], requirement: 'REQ-001: Hole Ø6.0', failureMode: 'Hole too small', effect: 'No assembly', cause: 'Tolerance error', prevention: 'Design standard', detection: 'Analysis', s: 9, o: 3, d: 4 }),
