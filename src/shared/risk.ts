@@ -15,6 +15,7 @@ import type { Finding } from './semantic';
 import { apOf, riskLevel, type RiskLevel } from './scoring';
 import { isScmh, scmhPriority, scmhSortBy, SCMH_PRIORITY, type ScmhMeasure } from './scmhScoring';
 import { splitRequirement } from './riskModel';
+import { rpnOver } from './rpnAction';
 import { isInactive } from './kcScmh'; // v4-kc
 import { dfRowsOfKc, pfRowsOfKc } from './kcTrace'; // v4-kc
 import type { ActionRow, ControlPlanRow, DfmeaRow, PfmeaRow, ProcessStepRow, Project, Score } from './types';
@@ -96,14 +97,18 @@ function topBands(p: Project): Map<string, string[]> {
  * AIAG-VDA: AP = H.
  */
 export function needsAction(p: Project, row: Fmea): NeedInfo {
+  // 4.4.0: RPN eşiği ek tetiktir; S≥9 / Top-N / KC (SCMH) veya AP=H tek başına yine aksiyon gerektirir.
+  const rpnReason = rpnOver(p, row) ? [`RPN≥${p.settings.rpnThreshold}`] : [];
   if (!isScmh(p)) {
     const h = apOf(p, row.s, row.o, row.d) === 'H';
-    return { need: h, reasons: h ? ['AP=H'] : [] };
+    const reasons = [...(h ? ['AP=H'] : []), ...rpnReason];
+    return { need: reasons.length > 0, reasons };
   }
   const reasons: string[] = [];
   if (valid(row.s) && row.s >= SCMH_PRIORITY.reviewSeverity) reasons.push('S≥9');
   reasons.push(...(topBands(p).get(row.id) ?? []));
   if (linkedKcIds(p, row).length) reasons.push('KC/CI');
+  reasons.push(...rpnReason);
   return { need: reasons.length > 0, reasons };
 }
 
@@ -111,7 +116,7 @@ export function needsAction(p: Project, row: Fmea): NeedInfo {
 export function needLabel(p: Project, row: Fmea): string {
   const n = needsAction(p, row);
   if (!n.need) return '';
-  if (!isScmh(p)) return 'AP=H';
+  if (!isScmh(p)) return n.reasons.join(' / ');
   return 'SCMH: ' + n.reasons.map((r) => (r === 'S≥9' ? 'S≥9 review' : r)).join(' / ');
 }
 

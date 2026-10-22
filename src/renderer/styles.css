@@ -398,3 +398,7 @@ tr.crit td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .tree-node.pending b { color: var(--amber); }
 .tree .fn-list { list-style: none; padding-left: 18px; margin: 0 0 4px; font-size: 12px; }
 .tree .fn-list .rid { font-size: 10px; opacity: 0.6; }
+/* 4.4.0 proses akışı şablon seçimi */
+.flow-picker .row-btns { flex-wrap: wrap; gap: 4px 16px; }
+.flow-picker .form-inline { display: flex; gap: 8px; align-items: center; }
+.flow-picker .form-inline select { max-width: 280px; }

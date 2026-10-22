@@ -5,6 +5,7 @@ import { DEFAULT_REACTION } from './engine';
 import { pfmeaAreaOf } from './failureLib';
 import { NO_DATA } from './reqAutofill';
 import { needsAction } from './risk';
+import { AI_REC, rowRpn, rpnActionText } from './rpnAction';
 import type { DfmeaRow, PfmeaRow, ProcessStepRow, Project, RequirementRow, StructureRow } from './types';
 
 export const DECISION_NOTE = 'AI ÖNERİSİ – mühendis kararı gerekli';
@@ -171,10 +172,13 @@ function decisionValues(p: Project, r: DfmeaRow | PfmeaRow, pf: boolean): Record
     out.sDisposition = pf ? (ep && !ep.startsWith('None') ? 'Error-proofing prevention' : 'Process KC assigned') : 'Design change planned';
     out.sDispositionReason = DECISION_NOTE;
   }
+  // 4.4.0: öneri satırın neden / kontrol bilgisinden türetilir (rpnAction.ts); puanlar eksikse genel öneri.
   if (s >= 9 || needsAction(p, r).need)
-    out.recommendedAction = pf
-      ? `Hata önleme (poka-yoke / otomatik izleme) ekle; tespit: ${r.detection || 'yöntem belirlenmeli'} (${DECISION_NOTE})`
-      : `Önleme kontrolünü güçlendir (tasarım değişikliği / analiz) ve doğrulama testini planla (${DECISION_NOTE})`;
+    out.recommendedAction = rowRpn(r) != null
+      ? rpnActionText(p, r, pf)
+      : pf
+        ? `Hata önleme (poka-yoke / otomatik izleme) ekle; tespit: ${r.detection || 'yöntem belirlenmeli'} (${AI_REC})`
+        : `Önleme kontrolünü güçlendir (tasarım değişikliği / analiz) ve doğrulama testini planla (${AI_REC})`;
   return out;
 }
 

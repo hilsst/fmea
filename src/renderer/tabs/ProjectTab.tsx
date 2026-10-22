@@ -124,8 +124,12 @@ export function ProjectTab({ go }: { go: (t: TabKey) => void }) {
               </select>
             </label>
             <label>
-              <span>RPN aksiyon eşiği (boş = kullanılmaz)</span>
+              <span>RPN aksiyon eşiği (varsayılan 100; boş = kullanılmaz)</span>
               <TextCell value={p.settings.rpnThreshold ?? ''} type="number" onCommit={(v) => setSetting('rpnThreshold')(v)} />
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={p.settings.rpnAutoAction !== false} onChange={(e) => setSetting('rpnAutoAction')(e.target.checked)} />
+              <span>RPN eşiği aşılınca boş “Önerilen Aksiyon” alanını satırın neden / kontrol bilgisinden doldur (AI RECOMMENDATION; sorumlu VERİ YOK, termin ve tahmini puan boş kalır)</span>
             </label>
             <label>
               <span>Hedef Cpk / Ppk (boş = VERİ YOK)</span>
