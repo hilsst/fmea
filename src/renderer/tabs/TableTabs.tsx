@@ -21,6 +21,8 @@ import { DfmeaCoveragePanel } from '../screens/Risk'; // v4-risk
 import { cpCoverageGap } from '../../shared/risk'; // v4-risk
 import { formHeader } from '../../shared/fmeaForm';
 import { useStore } from '../store';
+import { dfmeaTransferReason, pfmeaFromRequirement, requirementInPfmea, requirementTransferReason } from '../../shared/pfmeaImport';
+import { specOf } from '../../shared/engine';
 import { missingReqIssueRows } from '../../shared/reqIssues';
 
 type AddEdit = { kind: 'add'; table: TableKey; row: AnyRow };
@@ -424,6 +426,7 @@ export function PfmeaTab() {
   const { project } = useStore(); // v4-risk
   const [notInCp, setNotInCp] = useState(false); // v4-risk: "Kontrol planında yok" filtresi
   const [importDf, setImportDf] = useState(false);
+  const [importReq, setImportReq] = useState(false);
   const [checklist, setChecklist] = useState(false);
   const ai = useAi();
   const gen = useAutogen();
@@ -442,6 +445,9 @@ export function PfmeaTab() {
             <button className="btn" onClick={() => setImportDf(true)} title="DFMEA hata modlarını proses adımlarına aktarır (spesifikasyon §8, §25)">
               DFMEA’dan aktar
             </button>
+            <button className="btn" onClick={() => setImportReq(true)} title="Gereksinimleri (özellikle DFMEA’sı olmayan proses, muayene ve boyutsal gereksinimleri) seçilen proses adımlarına PFMEA taslak satırı olarak aktarır">
+              Gereksinimlerden aktar
+            </button>
             <button className="btn" onClick={() => setChecklist(true)} title="Spesifikasyon §9 kompozit hata modu kontrol listesi">
               Kompozit kontrol listesi
             </button>
@@ -456,20 +462,48 @@ export function PfmeaTab() {
             </button>
           </>
         }
-        emptyHint="PFMEA DFMEA’dan bağımsız oluşturulmaz: “DFMEA’dan aktar” ile başlayın."
+        emptyHint="PFMEA’ya “DFMEA’dan aktar” veya “Gereksinimlerden aktar” ile başlayın."
       />
       {importDf && <ImportFromDfmea onClose={() => setImportDf(false)} />}
+      {importReq && <ImportFromRequirements onClose={() => setImportReq(false)} />}
       {checklist && <CompositeChecklist onClose={() => setChecklist(false)} />}
       {ai.dialogs}
     </>
   );
 }
 
+/** Aktarım pencerelerinde başlık satırındaki "tümünü seç / kaldır" kutusu. */
+function SelectAllBox({ total, count, onChange }: { total: number; count: number; onChange: (all: boolean) => void }) {
+  return (
+    <input
+      type="checkbox"
+      title={count === total ? 'Tümünü seçimden kaldır' : 'Tümünü seç'}
+      checked={total > 0 && count === total}
+      ref={(el) => { if (el) el.indeterminate = count > 0 && count < total; }}
+      disabled={!total}
+      onChange={(e) => onChange(e.target.checked)}
+    />
+  );
+}
+
+function StepSelect({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (v: string) => void }) {
+  const { project } = useStore();
+  return (
+    <select className="cell-select" disabled={disabled} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Proses adımı seç…</option>
+      {project.processSteps.map((s) => (
+        <option key={s.id} value={s.id}>{s.opNo} {s.name}</option>
+      ))}
+    </select>
+  );
+}
+
 function ImportFromDfmea({ onClose }: { onClose: () => void }) {
   const { project, edit } = useStore();
   const candidates = project.dfmea.filter((d) => d.failureMode);
+  // 4.4.1: varsayılan olarak yalnızca öneriler seçili (S≥eşik, KC adayı, üretilebilirlik; henüz bağlı değil)
   const [picked, setPicked] = useState<Record<string, string>>(() =>
-    Object.fromEntries(candidates.filter((d) => !project.pfmea.some((p) => p.dfIds.includes(d.id))).map((d) => [d.id, ''])),
+    Object.fromEntries(candidates.filter((d) => dfmeaTransferReason(project, d)).map((d) => [d.id, ''])),
   );
   const apply = async () => {
     const b = batch(project);
@@ -489,59 +523,136 @@ function ImportFromDfmea({ onClose }: { onClose: () => void }) {
     }
     if (await edit(b.edits, 'DFMEA’dan PFMEA’ya aktarım')) onClose();
   };
+  const n = Object.keys(picked).length;
   return (
     <Modal
       title="DFMEA’dan PFMEA’ya aktar"
-      sub="Her DFMEA satırını üretimde kontrol edildiği proses adımına bağlayın. Severity DFMEA’dan otomatik alınır."
+      sub="Her DFMEA gereksinimini üretimde kontrol edildiği proses adımına bağlayın. Ön seçimler yalnızca öneridir; Severity DFMEA’dan otomatik alınır."
       onClose={onClose}
       wide
       foot={
         <>
           <button className="btn" onClick={onClose}>Vazgeç</button>
-          <button className="btn primary" disabled={!Object.keys(picked).length} onClick={apply}>
-            {Object.keys(picked).length} satırı aktar
+          <button className="btn primary" disabled={!n} onClick={apply}>
+            {n} satırı aktar
           </button>
         </>
       }
     >
       {candidates.length === 0 && <p className="muted">Aktarılacak DFMEA satırı yok.</p>}
-      <table className="effects">
-        <tbody>
-          {candidates.map((d) => {
-            const on = d.id in picked;
-            const linked = project.pfmea.filter((p) => p.dfIds.includes(d.id)).map((p) => p.id);
-            return (
-              <tr key={d.id}>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={(e) => {
-                      const n = { ...picked };
-                      if (e.target.checked) n[d.id] = '';
-                      else delete n[d.id];
-                      setPicked(n);
-                    }}
-                  />
-                </td>
-                <td className="rid">{d.id}</td>
-                <td>
-                  <b>{d.failureMode}</b>
-                  <div className="why">Neden: {d.cause || '—'} · S {d.s ?? '–'} {linked.length ? `· Zaten bağlı: ${linked.join(', ')}` : ''}</div>
-                </td>
-                <td>
-                  <select className="cell-select" disabled={!on} value={picked[d.id] ?? ''} onChange={(e) => setPicked({ ...picked, [d.id]: e.target.value })}>
-                    <option value="">Proses adımı seç…</option>
-                    {project.processSteps.map((s) => (
-                      <option key={s.id} value={s.id}>{s.opNo} {s.name}</option>
-                    ))}
-                  </select>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {candidates.length > 0 && (
+        <table className="effects">
+          <thead>
+            <tr>
+              <th><SelectAllBox total={candidates.length} count={n} onChange={(all) => setPicked(all ? Object.fromEntries(candidates.map((d) => [d.id, picked[d.id] ?? ''])) : {})} /></th>
+              <th>ID</th><th>Gereksinim</th><th>Proses adımı</th>
+            </tr>
+          </thead>
+          <tbody>
+            {candidates.map((d) => {
+              const on = d.id in picked;
+              const linked = project.pfmea.filter((p) => p.dfIds.includes(d.id)).map((p) => p.id);
+              const reason = dfmeaTransferReason(project, d);
+              return (
+                <tr key={d.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => {
+                        const n = { ...picked };
+                        if (e.target.checked) n[d.id] = '';
+                        else delete n[d.id];
+                        setPicked(n);
+                      }}
+                    />
+                  </td>
+                  <td className="rid">{d.id}</td>
+                  <td>
+                    <b style={{ whiteSpace: 'pre-line' }}>{d.requirement || <span className="muted">Gereksinim bağlı değil</span>}</b>
+                    {reason && <span className="badge b-blue" style={{ marginLeft: 6 }}>Öneri: {reason}</span>}
+                    <div className="why">Hata modu: {d.failureMode} · Neden: {d.cause || '—'} · S {d.s ?? '–'} {linked.length ? `· Zaten bağlı: ${linked.join(', ')}` : ''}</div>
+                  </td>
+                  <td><StepSelect value={picked[d.id] ?? ''} disabled={!on} onChange={(v) => setPicked({ ...picked, [d.id]: v })} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </Modal>
+  );
+}
+
+/** 4.4.1: gereksinimlerden doğrudan PFMEA taslak satırı (DFMEA'sı olmayan proses / muayene gereksinimleri için). */
+function ImportFromRequirements({ onClose }: { onClose: () => void }) {
+  const { project, edit } = useStore();
+  const candidates = project.requirements.filter((r) => r.text && r.approval !== 'Rejected');
+  const [picked, setPicked] = useState<Record<string, string>>(() =>
+    Object.fromEntries(candidates.filter((r) => requirementTransferReason(project, r)).map((r) => [r.id, ''])),
+  );
+  const apply = async () => {
+    const b = batch(project);
+    for (const [reqId, stepId] of Object.entries(picked)) b.add('pfmea', pfmeaFromRequirement(project.requirements.find((r) => r.id === reqId)!, stepId) as Partial<AnyRow>);
+    if (await edit(b.edits, 'Gereksinimlerden PFMEA’ya aktarım')) onClose();
+  };
+  const n = Object.keys(picked).length;
+  return (
+    <Modal
+      title="Gereksinimlerden PFMEA’ya aktar"
+      sub="Her gereksinimi kontrol edildiği proses adımına bağlayın. Ön seçimler yalnızca öneridir (proses/muayene/boyutsal gereksinimler, PFMEA’da karşılığı olmayanlar). Hata modu, etki ve neden boş gelir; mühendis girer."
+      onClose={onClose}
+      wide
+      foot={
+        <>
+          <button className="btn" onClick={onClose}>Vazgeç</button>
+          <button className="btn primary" disabled={!n} onClick={apply}>
+            {n} satırı aktar
+          </button>
+        </>
+      }
+    >
+      {candidates.length === 0 && <p className="muted">Aktarılacak gereksinim yok. Önce Gereksinimler ekranında gereksinim girin.</p>}
+      {candidates.length > 0 && (
+        <table className="effects">
+          <thead>
+            <tr>
+              <th><SelectAllBox total={candidates.length} count={n} onChange={(all) => setPicked(all ? Object.fromEntries(candidates.map((r) => [r.id, picked[r.id] ?? ''])) : {})} /></th>
+              <th>ID</th><th>Gereksinim</th><th>Proses adımı</th>
+            </tr>
+          </thead>
+          <tbody>
+            {candidates.map((r) => {
+              const on = r.id in picked;
+              const linked = requirementInPfmea(project, r.id);
+              const reason = requirementTransferReason(project, r);
+              return (
+                <tr key={r.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => {
+                        const n = { ...picked };
+                        if (e.target.checked) n[r.id] = '';
+                        else delete n[r.id];
+                        setPicked(n);
+                      }}
+                    />
+                  </td>
+                  <td className="rid">{r.id}</td>
+                  <td>
+                    <b>{r.text}</b>
+                    {reason && <span className="badge b-blue" style={{ marginLeft: 6 }}>Öneri: {reason}</span>}
+                    <div className="why">Tip: {r.reqType || '—'} · Kabul: {specOf(r) || '—'} {linked.length ? `· PFMEA’da var: ${linked.join(', ')}` : ''}</div>
+                  </td>
+                  <td><StepSelect value={picked[r.id] ?? ''} disabled={!on} onChange={(v) => setPicked({ ...picked, [r.id]: v })} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
     </Modal>
   );
 }
