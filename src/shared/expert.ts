@@ -131,3 +131,74 @@ export function expertBrief(p: Project, kind: ExampleKind, stepIds: string[] = [
     .filter(Boolean)
     .join('\n\n');
 }
+
+// ───────────────────────── 4.6.0 AI'sız örnek önerisi ─────────────────────────
+
+/** Öneri başına benzerlik eşiği ve hedef başına en fazla öneri. */
+export const EXAMPLE_MIN_SCORE = 0.2;
+const PER_TARGET = 3;
+
+const areaOf = (context: string) => /^\[([^\]]+)\]/.exec(context)?.[1] ?? '';
+const fnOf = (context: string) => context.split('→').slice(1).join('→').trim();
+const norm = (s: string) => txt(s).toLocaleLowerCase('tr');
+
+/**
+ * Kütüphanedeki onaylı örneklerden, AI kullanmadan DFMEA / PFMEA öneri verisi üretir (AI şemasıyla aynı biçim;
+ * buildProposals ile inceleme ekranına gider). Hedef fonksiyon / adım için en benzer örnekler alınır; PFMEA'da
+ * adım alanı (Kesim, Büküm…) eşleşmesi zorunludur. Aynı hata modu hedefte zaten varsa önerilmez.
+ * Puanlar örnekten taşınır ve "bu parça için doğrulanmalı" gerekçesiyle düşük / orta güvenle işaretlenir.
+ */
+export function exampleProposalData(p: Project, kind: ExampleKind, pool: ExampleRow[], targetIds: string[] = []): { rows: Record<string, unknown>[]; issues: never[] } {
+  const family = materialFamily(p);
+  const own = new Set(approvedExamples(p).map((x) => x.key));
+  const cands = pool.filter((x) => x.kind === kind && x.failureMode && !own.has(x.key) && (!family || !x.family || x.family === family));
+  const rows: Record<string, unknown>[] = [];
+  const pick = (query: string, existing: string[], ok: (x: ExampleRow) => boolean) => {
+    const have = new Set(existing.map(norm));
+    const seen = new Set<string>();
+    return cands
+      .filter(ok)
+      .map((x) => ({ x, score: similarity(query, `${x.context} ${x.requirement}`) }))
+      .filter((m) => m.score >= EXAMPLE_MIN_SCORE)
+      .sort((a, b) => b.score - a.score)
+      .filter((m) => {
+        const k = norm(m.x.failureMode);
+        if (have.has(k) || seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .slice(0, PER_TARGET);
+  };
+  const common = (x: ExampleRow, score: number) => {
+    const confidence = score >= 0.5 ? 'Medium' : 'Low';
+    const why = (l: string) => ({ reason: `Örnek kütüphanesinden (${x.project}, benzerlik %${Math.round(score * 100)}); bu parça için ${l} doğrulanmalı.${x.reasons ? ` Örnek gerekçesi: ${x.reasons}` : ''}`, confidence: 'Low' });
+    return {
+      failureMode: x.failureMode, effect: x.effect, cause: x.cause, prevention: x.prevention, detection: x.detection,
+      s: x.s, o: x.o, d: x.d, sWhy: why('şiddet'), oWhy: why('oluşma'), dWhy: why('tespit'),
+      recommendedAction: '', confidence, basis: 'ENGINEERING KNOWLEDGE', evidence: [], exampleSource: `${x.project} · ${x.context}`,
+    };
+  };
+  if (kind === 'dfmea') {
+    const fns = p.structure.filter((s) => s.function && (!targetIds.length || targetIds.includes(s.id)));
+    for (const fn of fns) {
+      const reqs = p.requirements.filter((r) => fn.reqIds.includes(r.id)).map((r) => r.text).join(' ');
+      const existing = p.dfmea.filter((d) => d.functionId === fn.id).map((d) => d.failureMode);
+      for (const { x, score } of pick(`${fn.element} ${fn.function} ${reqs}`, existing, () => true))
+        rows.push({ functionId: fn.id, reqIds: fn.reqIds, localEffect: '', higherEffect: '', verification: '', ...common(x, score) });
+    }
+  } else {
+    const steps = p.processSteps.filter((s) => !targetIds.length || targetIds.includes(s.id));
+    for (const st of steps) {
+      const area = stepArea(p, st);
+      const existing = p.pfmea.filter((r) => r.stepId === st.id).map((r) => r.failureMode);
+      // Adım alanı bilinmiyorsa (Generic) yalnızca metin benzerliği; biliniyorsa aynı alandaki örnekler
+      const sameArea = (x: ExampleRow) => area === 'Generic' || areaOf(x.context) === area;
+      for (const { x, score } of pick(`${area} ${st.name} ${st.description}`, existing, sameArea))
+        rows.push({
+          stepId: st.id, processFunction: fnOf(x.context), requirement: '', dfIds: [], processElement: '', cause4M: '', why: [],
+          rootCause: x.rootCause, errorProofing: x.errorProofing, measurement: '', reactionPlan: '', ...common(x, score),
+        });
+    }
+  }
+  return { rows, issues: [] };
+}

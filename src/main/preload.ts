@@ -3,6 +3,7 @@ import type { AiResult } from '../shared/aischema';
 import type { ExtractedDoc } from '../shared/docmodel';
 import type { SheetGrid } from '../shared/importmap';
 import type { Project } from '../shared/types';
+import type { ExampleRow } from '../shared/expert';
 import type { UpdateStatus } from './updater';
 
 // Arayüzün erişebildiği tek yüzey (beyaz liste). Node API'leri arayüze açılmaz (§62).
@@ -40,6 +41,7 @@ const api = {
   aiSetProvider: (id: string): Promise<string> => ipcRenderer.invoke('ai:setProvider', id),
   aiSetModel: (model: string): Promise<string> => ipcRenderer.invoke('ai:setModel', model),
   aiClearCache: () => ipcRenderer.invoke('ai:clearCache'),
+  examplesList: (): Promise<ExampleRow[]> => ipcRenderer.invoke('examples:list'),
   examplesInfo: (): Promise<{ count: number }> => ipcRenderer.invoke('examples:info'),
   examplesClear: () => ipcRenderer.invoke('examples:clear'),
   aiRequirements: (a: unknown): Promise<AiResult & { note?: string }> => ipcRenderer.invoke('ai:requirements', a),

@@ -371,6 +371,9 @@ export function DfmeaTab() {
             <button className="btn" onClick={() => gen(['structure', 'dfmea'], 'Gereksinim → yapı → DFMEA')} title="Önce eksik yapı/fonksiyonları, sonra DFMEA satırlarını önerir">
               ⟳ Gereksinimlerden tümü
             </button>
+            <button className="btn" onClick={() => ai.suggestFromExamples('dfmea')} title="AI kullanmadan, örnek kütüphanesindeki onaylı (Approved / Engineer Reviewed) benzer satırları önerir. İnternet ve API anahtarı gerekmez.">
+              📚 Onaylı örneklerden öner
+            </button>
             <button className="btn ai" onClick={() => ai.suggestDfmea([])} title="Tüm fonksiyonlar için hata modu, etki, neden ve kontrol önerir">
               ✦ AI: DFMEA öner
             </button>
@@ -456,6 +459,9 @@ export function PfmeaTab() {
             </button>
             <button className="btn" onClick={() => fillBlanks(sel)} title="Seçili (seçim yoksa tüm) satırların boş alanlarını proses adımı, parametreler, gereksinimler ve DFMEA'dan doldurur: proses fonksiyonu, ürün/proses gereksinimi, bağlı DFMEA, proses elemanı, ölçüm yöntemi, reaksiyon planı, özel karakteristik, S 9–10 kararı ve aksiyon önerisi. Dolu alanlar değişmez.">
               ⟳ Boşları doldur{sel.length ? ` (${sel.length})` : ''}
+            </button>
+            <button className="btn" onClick={() => ai.suggestFromExamples('pfmea')} title="AI kullanmadan, örnek kütüphanesindeki onaylı (Approved / Engineer Reviewed) benzer satırları önerir. İnternet ve API anahtarı gerekmez.">
+              📚 Onaylı örneklerden öner
             </button>
             <button className="btn ai" onClick={() => ai.suggestPfmea([])}>
               ✦ AI: PFMEA öner

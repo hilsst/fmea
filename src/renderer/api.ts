@@ -37,6 +37,7 @@ function browserFallback(): Api {
     aiDfmea: fail,
     aiPfmea: fail,
     aiReview: fail,
+    examplesList: async () => [],
     examplesInfo: async () => ({ count: 0 }),
     examplesClear: async () => undefined,
     onMenu: noop,
