@@ -21,6 +21,7 @@ import { DfmeaCoveragePanel } from '../screens/Risk'; // v4-risk
 import { cpCoverageGap } from '../../shared/risk'; // v4-risk
 import { formHeader } from '../../shared/fmeaForm';
 import { useStore } from '../store';
+import { missingReqIssueRows } from '../../shared/reqIssues';
 
 type AddEdit = { kind: 'add'; table: TableKey; row: AnyRow };
 
@@ -735,7 +736,24 @@ export function ActionsTab() {
 }
 
 export function IssuesTab() {
-  return <Grid table="issues" emptyHint="Eksik tolerans, eksik kabul kriteri, eksik çevresel gereksinim gibi konuları “Open Engineering Issue” olarak kaydedin." />;
+  const { project, edit, toast } = useStore();
+  // VERİ YOK içeren gereksinimler yeni kayıt/değişiklikte otomatik konu açar; bu düğme önceki projelerdeki eksikleri tamamlar.
+  const fromReqs = async () => {
+    const rows = missingReqIssueRows(project);
+    if (!rows.length) return toast('VERİ YOK içeren ve açık konusu olmayan gereksinim yok.');
+    await edit(rows.map((row) => ({ kind: 'add' as const, table: 'issues' as const, row })), `${rows.length} gereksinimden açık konu`);
+  };
+  return (
+    <Grid
+      table="issues"
+      toolbar={
+        <button className="btn" onClick={fromReqs} title="VERİ YOK içeren her gereksinim için açık konu açar (yeni gereksinimlerde otomatik yapılır)">
+          ⟳ VERİ YOK gereksinimlerinden oluştur
+        </button>
+      }
+      emptyHint="VERİ YOK içeren gereksinimler burada otomatik açık konu olur. Eksik tolerans, kabul kriteri, çevresel gereksinim gibi diğer konuları da “Open Engineering Issue” olarak kaydedin."
+    />
+  );
 }
 
 export function LessonsTab() {

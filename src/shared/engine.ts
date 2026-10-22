@@ -11,6 +11,7 @@ import { crTouchesPpap, isUpdateTrigger, lessonReassessText, ppapApprovedDate } 
 import { capOnDelete, capOnSet } from './capEngine'; // v4-cap
 import { cpRequired, joinedRequirement } from './risk'; // v4-risk
 import { ensureLineNumbers, splitRequirement } from './riskModel'; // v4-risk
+import { REQ_ISSUE_TRIGGERS, syncReqIssue } from './reqIssues';
 import type {
   ActionRow,
   AnyRow,
@@ -382,6 +383,7 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
     }
     case 'requirements': {
       if (REQ_AUTO_INPUTS.includes(field)) autofillRequirement(c, id);
+      if (REQ_ISSUE_TRIGGERS.includes(field)) syncReqIssue(c, id);
       if ((REQ_AUTO_FIELDS as readonly string[]).includes(field)) keepOrReleaseAuto(c, id, field, e.to);
       if (field === 'text' || field === 'acceptance' || field === 'lsl' || field === 'usl' || field === 'nominal' || field === 'unit' || field === 'tolerance') {
         if (field === 'text')
@@ -731,6 +733,7 @@ function onDelete(c: Ctx, e: Extract<Event, { type: 'delete' }>) {
         c.set('dfmea', d.id, 'reqIds', d.reqIds.filter((x) => x !== id), why);
       for (const s of c.rows<AnyRow & { reqIds: string[] }>('structure').filter((s) => s.reqIds.includes(id)))
         c.set('structure', s.id, 'reqIds', s.reqIds.filter((x) => x !== id), why);
+      syncReqIssue(c, id);
       break;
     case 'structure':
       for (const d of c.rows<DfmeaRow>('dfmea').filter((d) => d.functionId === id)) c.set('dfmea', d.id, 'functionId', '', why);
