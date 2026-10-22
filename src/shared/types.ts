@@ -608,6 +608,8 @@ export interface IssueRow extends BaseRow {
   dueDate: string;
   status: IssueStatus;
   answer: string;
+  /** VERİ YOK içeren gereksinimden otomatik açılan konu: kaynak gereksinim ID (reqIssues.ts). */
+  autoReqId?: string;
 }
 
 export interface LessonRow extends BaseRow {
