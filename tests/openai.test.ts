@@ -12,6 +12,13 @@ describe('OpenAI sağlayıcısı', () => {
     expect(p.model).toBe('gpt-x');
   });
 
+  it('makeProvider anthropic: seçilen Claude modeli; tanımsız model → Opus 5.5', () => {
+    expect(makeProvider('anthropic', '', 'claude-haiku-5-5').model).toBe('claude-haiku-5-5');
+    expect(makeProvider('anthropic', '', 'claude-sonnet-5-5').model).toBe('claude-sonnet-5-5');
+    expect(makeProvider('anthropic', '', 'gpt-5').model).toBe('claude-opus-5-5');
+    expect(makeProvider('anthropic', '').model).toBe('claude-opus-5-5');
+  });
+
   it('PDF/görsel bloklarını ve json_schema biçimini gönderir, metni döndürür', async () => {
     const f = reply(200, { model: 'gpt-x', choices: [{ finish_reason: 'stop', message: { content: '{"a":1}' } }], usage: { prompt_tokens: 10, completion_tokens: 3 } });
     vi.stubGlobal('fetch', f);

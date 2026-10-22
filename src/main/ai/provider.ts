@@ -37,11 +37,17 @@ export interface AiProvider {
 
 export const MODEL = 'claude-opus-5-5';
 
+/** 4.5.1: seçilebilir Claude modelleri (fiyat: girdi / çıktı, 1M token başına USD). */
+export const ANTHROPIC_MODELS = [
+  { id: 'claude-opus-5-5', label: 'Opus 5.5 – en iyi kalite ($4 / $20)' },
+  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5 – dengeli ($2 / $10)' },
+  { id: 'claude-haiku-5-5', label: 'Haiku 5.5 – en ucuz ($0.10 / $0.50)' },
+] as const;
+
 export class AnthropicProvider implements AiProvider {
   id = 'anthropic' as const;
   label = 'Anthropic Claude';
-  model = MODEL;
-  constructor(private apiKey: string) {}
+  constructor(private apiKey: string, public model = MODEL) {}
 
   async complete({ system, content, schema, repair }: CompleteArgs): Promise<CompleteResult> {
     const client = new Anthropic(this.apiKey ? { apiKey: this.apiKey } : {});
@@ -67,8 +73,8 @@ export class AnthropicProvider implements AiProvider {
           model: this.model,
           max_tokens: 32000,
           system,
-          betas: ['server-side-fallback-2026-07-01'],
-          fallbacks: 'default',
+          // Sunucu taraflı yedek model yalnızca Opus için; Haiku 5.5'te yok.
+          ...(this.model.startsWith('claude-opus') ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
           output_config: { effort: 'high', format: { type: 'json_schema', schema } },
           messages,
         },
@@ -181,5 +187,5 @@ export const ENV_KEY: Record<string, string> = { anthropic: 'ANTHROPIC_API_KEY',
 export function makeProvider(id: string, apiKey: string, model?: string): AiProvider {
   if (id === 'openai') return new OpenAiProvider(apiKey, model || OPENAI_MODEL);
   if (id === 'local') return new NotSupportedProvider('local', 'Yerel model');
-  return new AnthropicProvider(apiKey);
+  return new AnthropicProvider(apiKey, ANTHROPIC_MODELS.some((m) => m.id === model) ? model : MODEL);
 }

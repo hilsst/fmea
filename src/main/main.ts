@@ -16,7 +16,7 @@ import type { Project } from '../shared/types';
 import { approvedExamples, formatExamples, mergeExamples, pickExamples, type ExampleKind, type ExampleRow } from '../shared/expert';
 import type { MaterialFamily } from '../shared/failureLib';
 import * as ai from './ai';
-import { ENV_KEY, MODEL, OPENAI_MODEL, PROVIDERS } from './ai/provider';
+import { ANTHROPIC_MODELS, ENV_KEY, MODEL, OPENAI_MODEL, PROVIDERS } from './ai/provider';
 import { DEFAULT_IFS, ifsConnector, type IfsSettings } from './connectors/ifs';
 import { checkForUpdates, initUpdater, installNow, type UpdateStatus } from './updater';
 
@@ -63,6 +63,8 @@ interface Config {
   aiProvider?: string;
   /** OpenAI modeli (boşsa varsayılan). */
   openaiModel?: string;
+  /** Claude modeli (4.5.1; boşsa Opus 5.5). */
+  anthropicModel?: string;
   recent?: string[];
   ifs?: IfsSettings;
   /** IAQG SCMH şablon klasörü (şablonlar © IAQG; uygulamayla dağıtılmaz, kullanıcı sağlar). */
@@ -99,7 +101,7 @@ function apiKey(provider = currentProvider()): string {
 
 function aiEnv(): ai.AiEnv {
   const c = readConfig();
-  return { apiKey: apiKey(), provider: c.aiProvider ?? 'anthropic', model: c.openaiModel, cacheDir: userFile('ai-cache'), online: () => net.isOnline() };
+  return { apiKey: apiKey(), provider: c.aiProvider ?? 'anthropic', model: (c.aiProvider ?? 'anthropic') === 'openai' ? c.openaiModel : c.anthropicModel, cacheDir: userFile('ai-cache'), online: () => net.isOnline() };
 }
 
 // ---------------------------------------------------------------- doküman ayrıştırma (worker)
@@ -333,7 +335,8 @@ function registerIpc() {
       sessionOnly: !!sessionKeys[provider],
       provider,
       providers: PROVIDERS,
-      model: provider === 'openai' ? readConfig().openaiModel || OPENAI_MODEL : provider === 'anthropic' ? MODEL : '',
+      anthropicModels: ANTHROPIC_MODELS,
+      model: provider === 'openai' ? readConfig().openaiModel || OPENAI_MODEL : provider === 'anthropic' ? readConfig().anthropicModel || MODEL : '',
       online: net.isOnline(),
     };
   });
@@ -361,6 +364,12 @@ function registerIpc() {
   ipcMain.handle('ai:setModel', (_e, model: string) => {
     const c = readConfig();
     const m = String(model ?? '').trim();
+    if ((c.aiProvider ?? 'anthropic') === 'anthropic') {
+      if (ANTHROPIC_MODELS.some((x) => x.id === m) && m !== MODEL) c.anthropicModel = m;
+      else delete c.anthropicModel;
+      writeConfig(c);
+      return c.anthropicModel || MODEL;
+    }
     if (m) c.openaiModel = m;
     else delete c.openaiModel;
     writeConfig(c);
