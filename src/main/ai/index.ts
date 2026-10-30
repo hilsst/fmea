@@ -295,7 +295,7 @@ export function suggestDfmea(env: AiEnv, a: { context: string; target: string; m
   return run(env, 'FMEA Generator', a.mode, [
     { type: 'text', text: a.context },
     ...extra(a),
-    { type: 'text', text: `GÖREV: Aşağıdaki fonksiyon(lar) için DFMEA satırları öner. functionId ve reqIds yukarıdaki ID’lerden seçilir. Her S/O/D için sWhy/oWhy/dWhy gerekçesi ver (puanlama kriter tablosuna atıf). Mevcut hata modlarını tekrarlama. Bir fonksiyon için tam kayıp, kısmi, aralıklı, istenmeyen fonksiyon hata modlarını değerlendir.\n${a.target}` },
+    { type: 'text', text: `GÖREV: Aşağıdaki fonksiyon(lar) için DFMEA satırları öner. Yalnızca yukarıdaki ONAYLI gereksinimlere dayan; yüklenen dokümanlardan veya onaysız gereksinimlerden yeni gereksinim türetme. functionId yukarıdaki fonksiyonlardan, reqIds yalnızca hedef fonksiyonun onaylı REQ listesinden seçilir. Her S/O/D için sWhy/oWhy/dWhy gerekçesi ver (puanlama kriter tablosuna atıf). Mevcut hata modlarını tekrarlama. Bir fonksiyon için tam kayıp, kısmi, aralıklı, istenmeyen fonksiyon hata modlarını değerlendir.\n${a.target}` },
   ], DFMEA_SCHEMA);
 }
 

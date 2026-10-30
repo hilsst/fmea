@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
+import { approvedReqIds, dfmeaTargets, dfmeaTargetText } from '../../shared/dfmeaInput';
 import { approvedExamples, exampleProposalData, expertBrief, type ExampleKind } from '../../shared/expert';
 import { materialFamily } from '../../shared/failureLib';
 import { AI_ERROR_TEXT, LOW_CONF_TEXT, type AiResult } from '../../shared/aischema';
@@ -17,16 +18,20 @@ function exampleQuery(p: Project, kind: ExampleKind, target: string) {
   return { kind, family: materialFamily(p), text: target, local: approvedExamples(p) };
 }
 
-export function projectContext(p: Project): string {
+/** approvedReqsOnly: yalnızca Approved gereksinimler ve fonksiyonların onaylı REQ bağlantıları yazılır (DFMEA önerisi). */
+export function projectContext(p: Project, opts: { approvedReqsOnly?: boolean } = {}): string {
   const lines: string[] = [];
+  const ok = opts.approvedReqsOnly ? approvedReqIds(p) : null;
+  const reqs = ok ? p.requirements.filter((r) => ok.has(r.id)) : p.requirements;
+  const fnReqs = (ids: string[]) => (ok ? ids.filter((id) => ok.has(id)) : ids).join(',');
   const m = p.meta;
   lines.push(`PROJE: ${m.name} | Parça: ${m.partNumber} ${m.partName} | Müşteri: ${m.customer} | Program: ${m.program} | Ürün tipi: ${p.settings.productType || 'belirtilmedi'} | FMEA ${m.fmeaRevision}`);
   if (m.scope) lines.push(`Kapsam: ${m.scope}`);
   lines.push(`KC Severity eşiği: ${p.settings.kcSeverityThreshold} | AP tablosu: ${p.scoring.apName || (p.scoring.apTable ? 'Şirket tablosu' : 'AIAG-VDA 2019')}`);
   lines.push('PUANLAMA KRİTERLERİ (S/O/D, DFMEA | PFMEA):', ...(['severity', 'occurrence', 'detection'] as const).flatMap((k) => p.scoring[k].map((e) => `${k[0].toUpperCase()}${e.rank}: ${e.df} | ${e.pf}`)));
   if (p.documents.length) lines.push('\nDOKÜMANLAR:', ...p.documents.map((d) => `${d.id} | ${d.docNumber} | ${d.name} | Rev ${d.revision} | ${d.docType}`));
-  if (p.requirements.length) lines.push('\nGEREKSİNİMLER:', ...p.requirements.map((r) => `${r.id} [${r.reqType}] ${r.text} | Kabul: ${r.acceptance || 'VERİ YOK'}${r.lsl != null || r.usl != null ? ` | Limit: ${r.lsl ?? '–'}…${r.usl ?? '–'} ${r.unit}` : ''} | Kaynak: ${r.source}`));
-  if (p.structure.length) lines.push('\nYAPI & FONKSİYON:', ...p.structure.map((s) => `${s.id} ${s.level} ${s.element} (üst: ${s.parentId || '-'}) → ${s.function}${s.performanceReq ? ` | Performans: ${s.performanceReq}` : ''} | REQ: ${s.reqIds.join(',')}`));
+  if (reqs.length) lines.push(ok ? '\nGEREKSİNİMLER (yalnızca onaylı / Approved):' : '\nGEREKSİNİMLER:', ...reqs.map((r) => `${r.id} [${r.reqType}] ${r.text} | Kabul: ${r.acceptance || 'VERİ YOK'}${r.lsl != null || r.usl != null ? ` | Limit: ${r.lsl ?? '–'}…${r.usl ?? '–'} ${r.unit}` : ''} | Kaynak: ${r.source}`));
+  if (p.structure.length) lines.push('\nYAPI & FONKSİYON:', ...p.structure.map((s) => `${s.id} ${s.level} ${s.element} (üst: ${s.parentId || '-'}) → ${s.function}${s.performanceReq ? ` | Performans: ${s.performanceReq}` : ''} | REQ: ${fnReqs(s.reqIds)}`));
   if (p.dfmea.length) lines.push('\nDFMEA:', ...p.dfmea.map((d) => `${d.id} fn:${d.functionId} req:${d.reqIds.join(',')} | FM: ${d.failureMode} | Etki: ${d.effect} | Neden: ${d.cause} | Önleme: ${d.prevention} | Tespit: ${d.detection} | S${d.s ?? '-'} O${d.o ?? '-'} D${d.d ?? '-'} AP:${apOf(p, d.s, d.o, d.d)}`));
   if (p.processSteps.length) lines.push('\nPROSES AKIŞI:', ...p.processSteps.map((s) => `${s.id} Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} | ${s.description} | Makine: ${s.machine}`));
   if (p.processParams.length) lines.push('\nPROSES PARAMETRELERİ:', ...p.processParams.map((x) => `${x.id} step:${x.stepId} ${x.parameter} ${x.lsl ?? ''}…${x.usl ?? ''} ${x.unit} | ürün kar.: ${x.productCharacteristic} | izleme: ${x.monitoring}`));
@@ -285,11 +290,14 @@ export function useAi() {
   };
 
   const suggestDfmea = async (fnIds: string[]) => {
-    const fns = project.structure.filter((s) => fnIds.length === 0 || fnIds.includes(s.id)).filter((s) => s.function);
-    if (!fns.length) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
-    const target = 'Hedef fonksiyonlar:\n' + fns.map((f) => `${f.id}: ${f.element} → ${f.function} (REQ: ${f.reqIds.join(', ')})`).join('\n');
-    await run('DFMEA önerileri hazırlanıyor…', 'dfmea', fns.map((f) => f.id).join(', '), () =>
-      api.aiDfmea({ context: projectContext(project), target, mode, expert: expertBrief(project, 'dfmea'), exampleQuery: exampleQuery(project, 'dfmea', target) }),
+    if (!project.structure.some((s) => s.function && (!fnIds.length || fnIds.includes(s.id)))) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
+    // 4.6.3: yalnızca onaylı gereksinimler; onaylı gereksinimi olmayan fonksiyon atlanır
+    const { ready, skipped } = dfmeaTargets(project, fnIds);
+    if (!ready.length) return toast('DFMEA önerisi yalnızca onaylı (Approved) gereksinimlerden üretilir. Seçili fonksiyonların onaylı gereksinimi yok; Gereksinimler ekranında onaylayın ve fonksiyonlara bağlayın.', 'warn');
+    if (skipped.length) toast(`Onaylı gereksinimi olmayan ${skipped.length} fonksiyon atlandı: ${skipped.map((f) => f.id).join(', ')}`, 'warn');
+    const target = dfmeaTargetText(ready);
+    await run('DFMEA önerileri hazırlanıyor…', 'dfmea', ready.map(({ fn }) => fn.id).join(', '), () =>
+      api.aiDfmea({ context: projectContext(project, { approvedReqsOnly: true }), target, mode, expert: expertBrief(project, 'dfmea'), exampleQuery: exampleQuery(project, 'dfmea', target) }),
     );
   };
 
