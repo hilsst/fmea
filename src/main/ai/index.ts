@@ -1,6 +1,7 @@
 // AI görevleri: yerel çıkarım → parçalama → ilgili bölüm seçimi → AI → şema doğrulama (+1 yeniden deneme) → önbellek (§55, §61).
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { PDFDocument } from 'pdf-lib';
 import {
   DFMEA_SCHEMA, PFMEA_SCHEMA, REQUIREMENTS_SCHEMA, REVIEW_SCHEMA, parseJson, validate,
   type AiResult, type AiRunMeta, type Json,
@@ -158,6 +159,65 @@ export function mergeRequirementParts(parts: Json[]): Json {
   return { requirements: reqs, drawing, issues } as Json;
 }
 
+/** 4.6.2: taranmış PDF'te bir AI çağrısına giden sayfa sayısı. */
+export const PDF_PAGES_PER_PART = 4;
+
+/** [başlangıç, bitiş] (0 tabanlı, dahil) sayfa aralıklarına böler. */
+export function pageRanges(count: number, per = PDF_PAGES_PER_PART): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i < count; i += per) out.push([i, Math.min(count, i + per) - 1]);
+  return out;
+}
+
+/**
+ * Metin katmanı olmayan PDF'i sayfa gruplarına ayırıp her grubu ayrı PDF olarak AI görsel analizine gönderir.
+ * Kesilen grup ikiye bölünür. Tek parçaya sığan (≤ PDF_PAGES_PER_PART sayfa) PDF'te null döner (eski yol kullanılır).
+ */
+async function extractScannedPdf(env: AiEnv, filePath: string, mode: AiMode, taskFor: (found: string[]) => string): Promise<(AiResult & { note?: string }) | null> {
+  let src: PDFDocument;
+  try {
+    src = await PDFDocument.load(await fs.readFile(filePath), { ignoreEncryption: true });
+  } catch {
+    return null;
+  }
+  const count = src.getPageCount();
+  if (count <= PDF_PAGES_PER_PART) return null;
+  const name = path.basename(filePath);
+  const queue = pageRanges(count);
+  const results: Json[] = [];
+  const found: string[] = [];
+  const meta: AiRunMeta = { role: 'Drawing Analyst', provider: env.provider || 'anthropic', model: '', at: new Date().toISOString(), mode, tokensIn: 0, tokensOut: 0, cached: true, retries: 0 };
+  while (queue.length) {
+    const [from, to] = queue.shift()!;
+    const part = await PDFDocument.create();
+    for (const pg of await part.copyPages(src, Array.from({ length: to - from + 1 }, (_, i) => from + i))) part.addPage(pg);
+    const data = Buffer.from(await part.save()).toString('base64');
+    const pages = from === to ? `s.${from + 1}` : `s.${from + 1}–${to + 1}`;
+    const r = await run(env, 'Drawing Analyst', mode, [
+      { type: 'pdf', data, title: `${name} (${pages})` },
+      { type: 'text', text: `Bu PDF, ${count} sayfalık "${name}" dokümanının ${pages} sayfalarıdır (taranmış, metin katmanı yok). evidence.page alanına orijinal sayfa numarasını yaz (bu parçanın 1. sayfası = s.${from + 1}).` },
+      { type: 'text', text: taskFor(found) },
+    ], REQUIREMENTS_SCHEMA);
+    if (!r.ok) {
+      if (r.error.kind === 'TRUNCATED' && to > from) {
+        const mid = from + Math.floor((to - from) / 2);
+        queue.unshift([from, mid], [mid + 1, to]);
+        continue;
+      }
+      const msg = r.error.kind === 'TRUNCATED' ? `${pages} tek başına çıktı sınırını aşıyor (çok yoğun sayfa). Bu sayfayı daha düşük kapsamla ayrı yükleyin.` : r.error.message;
+      return { ok: false, error: { kind: r.error.kind, message: results.length ? `${msg} (${results.length} parça tamamlanmıştı; tekrar denemede yeniden ücretlendirilmez.)` : msg }, meta: r.meta };
+    }
+    results.push(r.data);
+    for (const q of (r.data.requirements as Json[] | undefined) ?? []) found.push(`(bu dokümandan) ${String(q.text ?? '')}`);
+    meta.model = r.meta.model;
+    meta.tokensIn += r.meta.tokensIn;
+    meta.tokensOut += r.meta.tokensOut;
+    meta.retries += r.meta.retries;
+    meta.cached &&= r.meta.cached;
+  }
+  return { ok: true, data: mergeRequirementParts(results), meta, note: `Taranmış PDF (${count} sayfa) ${results.length} parça hâlinde AI görsel analiziyle işlendi; yerel OCR yok. Tüm sonuçlar MANUAL VERIFICATION REQUIRED.` };
+}
+
 export async function extractRequirements(
   env: AiEnv,
   a: { doc: ExtractedDoc | null; filePath?: string; docId: string; docLabel: string; existing: string[]; candidates: RequirementCandidate[]; mode: AiMode },
@@ -208,6 +268,12 @@ ${cands.slice(0, 300).map((c, i) => `${i + 1}. [${locText(c.loc)}] ${c.text}`).j
     return { ok: true, data: mergeRequirementParts(results), meta, note };
   }
 
+  // 4.6.2: metin katmanı olmayan (taranmış) PDF sayfa gruplarına bölünüp görsel olarak parça parça analiz edilir.
+  if (a.filePath && path.extname(a.filePath).toLowerCase() === '.pdf' && doc?.status !== 'unsupported') {
+    const r = await extractScannedPdf(env, a.filePath, a.mode, (ex) => task(a.candidates, [...a.existing, ...ex]));
+    if (r) return r;
+  }
+
   let prepared;
   try {
     prepared = await docContent(a.doc, a.filePath, 'shall must required tolerance olmalıdır gereklidir minimum maximum ± mm °C MPa material coating inspection');
@@ -217,7 +283,7 @@ ${cands.slice(0, 300).map((c, i) => `${i + 1}. [${locText(c.loc)}] ${c.text}`).j
   }
   const r = await run(env, prepared.role, a.mode, [...prepared.blocks, { type: 'text', text: task(a.candidates, a.existing) }], REQUIREMENTS_SCHEMA);
   if (!r.ok && r.error.kind === 'TRUNCATED')
-    return { ...r, error: { kind: 'TRUNCATED', message: 'Yanıt uzunluk sınırında kesildi. Bu dosyada metin katmanı olmadığı için parça parça işlenemiyor; dosyayı metinli PDF/Word olarak kaydedin veya ilgili sayfaları ayrı dosya olarak yükleyin.' } };
+    return { ...r, error: { kind: 'TRUNCATED', message: 'Yanıt uzunluk sınırında kesildi. Bu görsel/sayfa tek başına çok yoğun; dosyayı metinli PDF/Word olarak kaydedin veya daha küçük parçalara bölüp yükleyin.' } };
   return { ...r, note: prepared.note };
 }
 
