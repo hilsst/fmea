@@ -2,7 +2,8 @@
 // FMEA'nın ne kadar eksiksiz, izlenebilir ve tutarlı hazırlandığını gösterir.
 import { qualityChecks, type CheckResult } from './checks';
 import { isComposite, kbForStep } from './kb';
-import { apOf } from './scoring';
+import { isScmh } from './scmhScoring'; // v4-risk
+import { actionAddressed, needsAction, riskMisses, unaddressed } from './risk'; // v4-risk
 import { semanticFindings, type Finding } from './semantic';
 import type { DfmeaRow, PfmeaRow, Project } from './types';
 
@@ -92,12 +93,12 @@ export function qualityReport(p: Project): QualityReport {
     `${withSrc}/${srcRows.length} kayıtta kaynak/kanıt; ${p.evidence.length ? Math.round(evVer * 100) + '% kanıt doğrulandı' : 'kanıt kaydı yok'}`, srcRows.length > 0);
 
   // Action
-  const high = fm.filter((r) => apOf(p, r.s, r.o, r.d) === 'H');
-  const highOk = high.filter((r) => has(r.recommendedAction)).length;
+  const high = fm.filter((r) => needsAction(p, r).need); // v4-risk: tek yüklem
+  const highOk = high.filter((r) => actionAddressed(r)).length;
   const td = new Date().toISOString().slice(0, 10);
   const actOk = p.actions.filter((a) => has(a.owner) && has(a.dueDate) && !(a.dueDate < td && a.status !== 'Completed' && a.status !== 'Cancelled')).length;
   dim('action', 'Aksiyon', (ratio(highOk, high.length) + ratio(actOk, p.actions.length)) / 2,
-    `${highOk}/${high.length} AP=H satırda aksiyon, ${actOk}/${p.actions.length} aksiyonda sorumlu+termin (gecikmesiz)`, high.length + p.actions.length > 0);
+    `${highOk}/${high.length} ${isScmh(p) ? 'SCMH inceleme (S≥9 / Top-N / KC)' : 'AP=H'} satırda aksiyon/karar, ${actOk}/${p.actions.length} aksiyonda sorumlu+termin (gecikmesiz)`, high.length + p.actions.length > 0);
 
   const app = dims.filter((d) => d.applicable);
   const score = app.length ? Math.round(app.reduce((a, d) => a + d.score, 0) / app.length) : 0;
@@ -136,7 +137,9 @@ export function whatDidIMiss(p: Project): MissItem[] {
   add('MSA', 'MSA kaydı olmayan KC ölçümleri', p.controlPlan.filter((c) => c.kcId && !p.msa.some((m) => m.cpId === c.id || m.kcId === c.kcId)).map((c) => c.id));
   add('MSA', 'Çalışma tipi seçilmemiş MSA kayıtları', p.msa.filter((m) => !m.study).map((m) => m.id));
   add('Capability', 'Veri girilmemiş capability kayıtları', p.capability.filter((c) => !c.data.trim()).map((c) => c.id));
-  add('Aksiyon', 'AP=H olup aksiyonu olmayan satırlar', [...p.dfmea, ...p.pfmea].filter((r) => apOf(p, r.s, r.o, r.d) === 'H' && !has(r.recommendedAction)).map((r) => r.id));
+  // v4-risk: tek yüklem
+  add('Aksiyon', isScmh(p) ? 'SCMH inceleme listesinde (S≥9 / Top-N / KC-CI) olup aksiyonu veya kararı olmayan satırlar' : 'AP=H olup aksiyonu olmayan satırlar', unaddressed(p).map((r) => r.id));
+  for (const m of riskMisses(p)) add(m.area, m.message, m.ids); // v4-risk
   add('Dersler', 'Hiçbir FMEA satırına bağlanmamış geçmiş problem kayıtları', p.lessons.filter((l) => l.linkedFmeaIds.length === 0).map((l) => l.id));
   add('Kanıt', 'Doğrulanamayan kanıtlar (SOURCE NOT VERIFIED)', p.evidence.filter((e) => e.verification === 'SOURCE NOT VERIFIED').map((e) => e.id));
   add('Doküman', 'Analiz edilmemiş veya desteklenmeyen dokümanlar', p.documents.filter((d) => d.filePath && !p.docIndex[d.id]).map((d) => d.id));

@@ -1,6 +1,6 @@
 {
   "name": "fmea-studio",
-  "version": "3.0.0",
+  "version": "4.6.3",
   "description": "DFMEA / PFMEA / KC / Kontrol Planı / İzlenebilirlik masaüstü uygulaması",
   "main": "dist/main/main.js",
   "scripts": {
@@ -35,10 +35,12 @@
     "dxf-parser": "1.1.2",
     "electron": "^38.8.6",
     "electron-builder": "^26.15.3",
+    "electron-updater": "^6.8.9",
     "esbuild": "^0.24.2",
     "exceljs": "^4.4.0",
     "fast-xml-parser": "5.11.2",
     "jszip": "3.10.2",
+    "pdf-lib": "1.17.1",
     "playwright-core": "^1.64.1",
     "postal-mime": "4.0.2",
     "react": "^18.3.1",
@@ -94,7 +96,8 @@
       "createDesktopShortcut": true,
       "shortcutName": "FMEA Studio",
       "language": "1055",
-      "artifactName": "FMEA-Studio-Kurulum-${version}.${ext}"
+      "artifactName": "FMEA-Studio-Kurulum-${version}.${ext}",
+      "differentialPackage": true
     },
     "mac": {
       "target": [
@@ -115,6 +118,14 @@
     },
     "portable": {
       "artifactName": "FMEA-Studio-Tasinabilir-${version}.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hilsst",
+        "repo": "fmea",
+        "releaseType": "release"
+      }
+    ]
   }
 }

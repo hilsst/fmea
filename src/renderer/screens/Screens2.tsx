@@ -3,22 +3,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AI_ERROR_TEXT, LOW_CONF_TEXT, REVIEW_CATEGORIES } from '../../shared/aischema';
 import { appendBaseline, baselineProject, createBaseline, diffProjects, diffSummary, verifyBaseline, type RowDiff } from '../../shared/baseline';
-import { capabilityAnalysis, verdictText } from '../../shared/capability';
 import { rowLabel } from '../../shared/columns';
 import { verifySource } from '../../shared/docmodel';
 import { impactOf } from '../../shared/impact';
-import { COMPOSITE_KB, PRODUCT_TYPES, PRODUCT_TYPE_HINTS, isComposite } from '../../shared/kb';
+import { COMPOSITE_KB, PRODUCT_TYPES, PRODUCT_TYPE_HINTS } from '../../shared/kb';
+import { FlowTemplatePicker } from '../components/FlowTemplates';
 import { evaluateKc } from '../../shared/kc';
 import { DEFAULT_SCORING, DEFAULT_SETTINGS, TABLE_LABEL, nextId, tableOfId } from '../../shared/model';
 import { failedRunEdit } from '../../shared/proposals';
 import { QUALITY_SCORE_NOTE, qualityReport, whatDidIMiss } from '../../shared/quality';
 import { buildReviewReportHtml, type AiReview } from '../../shared/report';
 import { AIAG_VDA_AP, D_BANDS, O_BANDS, RPN_WARNING, S_BANDS, apOf, parseData } from '../../shared/scoring';
-import { SCMH_SCORING, isScmh, scmhPriority, scmhSort } from '../../shared/scmhScoring';
+import { SCMH_SCORING, isScmh } from '../../shared/scmhScoring'; // v4-risk: öncelik tablosu Risk.tsx'e taşındı
 import { searchLessons } from '../../shared/similarity';
 import { applyTemplate, makeTemplate, validateTemplate, type CompanyTemplate } from '../../shared/template';
 import { ROLES, WORKFLOW_STEPS, type AnyRow, type ApprovalRecord, type EvidenceRow, type KcRules, type Project, type Settings } from '../../shared/types';
 import { approvedSteps, currentStep, decisionError, enabledSteps, openCriticalAi, recordDecision } from '../../shared/workflow';
+import { unaddressed } from '../../shared/risk'; // v4-risk
+import { ScmhPriorityPanel } from './Risk'; // v4-risk
 import type { ScreenKey } from '../../shared/nav';
 import { api, isDesktop } from '../api';
 import { projectContext } from '../components/AiDialogs';
@@ -56,7 +58,7 @@ export function DashboardScreen({ go }: { go: Go }) {
     { label: 'DFMEA satırı', value: p.dfmea.length, go: ['dfmea', 'dfmea'] },
     { label: 'PFMEA satırı', value: p.pfmea.length, go: ['pfmea', 'pfmea'] },
     isScmh(p)
-      ? { label: 'S 9–10 (RPN’den bağımsız incelenmeli)', value: fm.filter((r) => scmhPriority(r).review).length, go: ['risk'], tone: fm.some((r) => scmhPriority(r).review) ? 'red' : '' }
+      ? { label: 'SCMH inceleme: aksiyon/karar bekleyen (S≥9 / Top-N / KC)', value: unaddressed(p).length, go: ['risk'], tone: unaddressed(p).length ? 'red' : '' } // v4-risk
       : { label: 'AP = High', value: apH, go: ['risk'], tone: apH ? 'red' : '' },
     { label: 'AI önerisi (karar bekliyor)', value: aiPending, go: ['aiReview', 'aiRuns'], tone: aiPending ? 'amber' : '' },
     { label: 'Mantık hatası', value: errors, go: ['quality'], tone: errors ? 'red' : '' },
@@ -135,7 +137,9 @@ export function ProductTypeCard() {
         {PRODUCT_TYPES.map((t) => <option key={t}>{t}</option>)}
       </select>
       {hints.length > 0 && <ul className="plain small mt">{hints.map((h) => <li key={h}>{h}</li>)}</ul>}
-      {isComposite(p.settings.productType) && <p className="small">Kompozit: PFMEA › Proses Akışı ekranında “Kompozit şablonu uygula” kullanılabilir.</p>}
+      <h3 className="mt">Malzeme ve proses akışı şablonları</h3>
+      <p className="muted">Parça malzemesine göre önerilen akışlar işaretli gelir; birden çok akış seçebilirsiniz (örn. kompozit + talaşlı + montaj).</p>
+      <FlowTemplatePicker />
     </section>
   );
 }
@@ -144,14 +148,37 @@ export function ProductTypeCard() {
 
 const LEVELS = ['H', 'M', 'L'] as const;
 
-export function RiskScreen() {
+/** DFMEA / PFMEA ekran ve Excel kolon düzeni (Ayarlar ve Risk ekranlarında). */
+export function TableFormatSetting({ first = false }: { first?: boolean }) {
   const { project: p, mutate } = useStore();
+  return (
+    <>
+      <h3 style={first ? undefined : { marginTop: 14 }}>DFMEA / PFMEA tablo düzeni</h3>
+      <div className="row-btns">
+        {([['SCMH', 'IAQG SCMH 7.2.10 / 7.2.11', 'Item, Function, Requirement … SEV×OCC, RPN, Classification, Action Results'], ['F33', 'Şirket formu F33.03 / F05.04', 'Op. (Line) #, Process Step # … Predicted Risk ve Action Results Achieved']] as const).map(([k, label, hint]) => (
+          <label key={k} className="check-row" title={hint}>
+            <input
+              type="radio"
+              checked={(p.settings.tableFormat ?? 'SCMH') === k}
+              onChange={() => mutate((d) => { d.settings.tableFormat = k; }, { kind: 'Modified', table: 'settings', id: 'tableFormat', field: 'tableFormat', from: p.settings.tableFormat ?? 'SCMH', to: k, comment: 'DFMEA/PFMEA tablo düzeni' })}
+            />{' '}
+            <b>{label}</b>
+          </label>
+        ))}
+      </div>
+      <p className="muted small">Yalnızca ekran ve Excel kolon sırasını değiştirir; veriler, otomatik doldurma, onay ve puanlama kuralları aynı kalır.</p>
+    </>
+  );
+}
+
+export function RiskScreen() {
+  const { project: p, mutate, confirm } = useStore();
   const custom = !!p.scoring.apTable;
   const table = p.scoring.apTable ?? AIAG_VDA_AP;
   // AP hesaplanan bir değerdir; tablo değişince AP'si değişecek satırlar kaydetmeden önce gösterilir.
-  const setTable = (next: Record<string, string> | null, title: string) => {
+  const setTable = async (next: Record<string, string> | null, title: string) => {
     const changed = [...p.dfmea, ...p.pfmea].filter((r) => apOf(p, r.s, r.o, r.d) !== apOf({ scoring: { apTable: next } }, r.s, r.o, r.d));
-    if (changed.length && !window.confirm(`${title}\n\nBu değişiklik ${changed.length} FMEA satırının AP değerini değiştiriyor:\n${changed.slice(0, 15).map((r) => `${r.id}: ${apOf(p, r.s, r.o, r.d)} → ${apOf({ scoring: { apTable: next } }, r.s, r.o, r.d)}`).join('\n')}${changed.length > 15 ? '\n…' : ''}\n\nOnaylıyor musunuz?`)) return;
+    if (changed.length && !(await confirm(title, `Bu değişiklik ${changed.length} FMEA satırının AP değerini değiştiriyor:\n${changed.slice(0, 15).map((r) => `${r.id}: ${apOf(p, r.s, r.o, r.d)} → ${apOf({ scoring: { apTable: next } }, r.s, r.o, r.d)}`).join('\n')}${changed.length > 15 ? '\n…' : ''}\n\nOnaylıyor musunuz?`))) return;
     mutate((d) => {
       d.scoring.apTable = next;
     }, { kind: 'Modified', table: 'scoring', id: 'apTable', field: 'apTable', comment: `${title} · ${changed.length} satırın AP değeri değişti` });
@@ -164,10 +191,10 @@ export function RiskScreen() {
     setTable(base, `AP tablosu: S${key.split(',')[0]} O${key.split(',')[1]} D bandı ${D_BANDS[di]} → ${v}`);
   };
   const scmh = isScmh(p);
-  const setStandard = (std: 'SCMH' | 'AIAG-VDA') => {
+  const setStandard = async (std: 'SCMH' | 'AIAG-VDA') => {
     if (std === p.settings.scoringStandard) return;
     const tables = std === 'SCMH' ? SCMH_SCORING : DEFAULT_SCORING;
-    if (!window.confirm(`Puanlama standardı ${std === 'SCMH' ? 'IAQG SCMH' : 'AIAG-VDA 2019'} olacak.\n\nS/O/D kriter metinleri bu standardın tablolarıyla değiştirilir. Satırlardaki mevcut S/O/D puanları DEĞİŞMEZ; yeni kriterlere göre yeniden değerlendirilmeleri gerekir.\n\nOnaylıyor musunuz?`)) return;
+    if (!(await confirm(`Puanlama standardı ${std === 'SCMH' ? 'IAQG SCMH' : 'AIAG-VDA 2019'} olacak`, `S/O/D kriter metinleri bu standardın tablolarıyla değiştirilir. Satırlardaki mevcut S/O/D puanları DEĞİŞMEZ; yeni kriterlere göre yeniden değerlendirilmeleri gerekir.\n\nOnaylıyor musunuz?`))) return;
     mutate((d) => {
       d.settings.scoringStandard = std;
       d.scoring.severity = structuredClone(tables.severity);
@@ -175,7 +202,6 @@ export function RiskScreen() {
       d.scoring.detection = structuredClone(tables.detection);
     }, { kind: 'Modified', table: 'settings', id: 'scoringStandard', field: 'scoringStandard', from: p.settings.scoringStandard, to: std, comment: 'Puanlama standardı ve S/O/D kriter tabloları değiştirildi' });
   };
-  const ranked = scmh ? scmhSort([...p.dfmea, ...p.pfmea].filter((r) => r.failureMode)).slice(0, 40) : [];
   const apSection = (
       <section className="card">
         <h3>Action Priority (AP) tablosu {custom ? <span className="badge b-purple">{p.scoring.apName || 'Şirket tablosu'}</span> : <span className="badge b-gray">AIAG-VDA 2019</span>}</h3>
@@ -226,35 +252,12 @@ export function RiskScreen() {
           <label className="check-row"><input type="radio" checked={scmh} onChange={() => setStandard('SCMH')} /> <b>IAQG SCMH</b> (DFMEA 7.2.10 / PFMEA 7.2.11 D/P-SEV, OCC, DET tabloları)</label>
           <label className="check-row"><input type="radio" checked={!scmh} onChange={() => setStandard('AIAG-VDA')} /> <b>AIAG-VDA 2019</b> (Action Priority)</label>
         </div>
+        <TableFormatSetting />
         {scmh
           ? <div className="callout">SCMH kuralı: RPN eşiği yoktur. S 9–10 olan her satır RPN’den bağımsız incelenir; ardından RPN ve S×O’ya göre önceliklendirilir.</div>
           : <div className="callout warn"><b>{RPN_WARNING}</b> Öncelik: emniyet/regülasyon → yüksek severity → KC → AP → RPN.</div>}
       </section>
-      {scmh && (
-        <section className="card">
-          <h3>SCMH öncelik sırası (ilk {ranked.length})</h3>
-          {ranked.length === 0 && <p className="muted">Puanlanmış hata modu yok.</p>}
-          <table className="effects">
-            <thead><tr><th>#</th><th>ID</th><th>Hata modu</th><th>S</th><th>O</th><th>D</th><th>RPN</th><th>S×O</th><th>Neden</th></tr></thead>
-            <tbody>
-              {ranked.map((r, i) => {
-                const pr = scmhPriority(r);
-                return (
-                  <tr key={r.id} className="click" onClick={() => window.dispatchEvent(new CustomEvent('why', { detail: r.id }))}>
-                    <td>{i + 1}</td>
-                    <td className="rid">{r.id}{pr.review && <span className="badge b-red"> S≥9</span>}</td>
-                    <td>{r.failureMode}</td>
-                    <td>{r.s ?? '–'}</td><td>{r.o ?? '–'}</td><td>{r.d ?? '–'}</td>
-                    <td>{r.s && r.o && r.d ? r.s * r.o * r.d : '–'}</td>
-                    <td>{r.s && r.o ? r.s * r.o : '–'}</td>
-                    <td className="small">{pr.reason}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </section>
-      )}
+      {scmh && <ScmhPriorityPanel />}{/* v4-risk: RPN / S×O / S×D sıralaması, Top-N, çıktı seçenekleri */}
       {scmh ? <details className="card"><summary><b>AIAG-VDA Action Priority tablosu (yalnızca referans)</b></summary>{apSection}</details> : apSection}
       <ScoringTab />
     </div>
@@ -290,33 +293,8 @@ export function KcFactorPanel({ id }: { id?: string }) {
 
 // ───────────────────────── Capability analiz paneli ─────────────────────────
 
-export function CapabilityPanel({ id }: { id?: string }) {
-  const { project: p } = useStore();
-  const row = p.capability.find((c) => c.id === id);
-  if (!row) return <aside className="card tree"><h3>Capability doğrulama</h3><p className="muted">Analiz için bir satır seçin. Veriyi “Ölçümler” sütununa yapıştırın.</p></aside>;
-  const values = parseData(row.data);
-  const a = capabilityAnalysis(values, row.lsl, row.usl, row.target, { minSamples: p.settings.minSamples, targetCpk: p.settings.targetCpk }, row.subgroupSize, row.distribution);
-  const f = (v: number | null, n = 3) => (v == null ? '—' : v.toFixed(n));
-  return (
-    <aside className="card tree">
-      <h3>{row.id} · <span className={`badge ${a.verdict === 'VALID' ? 'b-green' : a.verdict === 'INVALID' ? 'b-red' : 'b-amber'}`}>{a.verdict}</span></h3>
-      <table className="effects small">
-        <tbody>
-          <tr><td>n / min</td><td>{a.n} / {a.minSamples}</td></tr>
-          <tr><td>Yöntem</td><td>{a.method || '—'}</td></tr>
-          <tr><td>Ortalama</td><td>{f(a.mean, 4)}</td></tr>
-          <tr><td>σ within / overall</td><td>{f(a.sigmaWithin, 4)} / {f(a.sigmaOverall, 4)}</td></tr>
-          <tr><td>Cp / Cpk</td><td>{f(a.cp)} / {f(a.cpk)}</td></tr>
-          <tr><td>Pp / Ppk</td><td>{f(a.pp)} / {f(a.ppk)}</td></tr>
-          <tr><td>Normallik (AD)</td><td>{a.ad == null ? '—' : `A²=${a.ad.toFixed(3)} p≈${f(a.adP)} → ${a.normal ? 'normal' : 'normal değil'}`}</td></tr>
-          <tr><td>Kararlılık</td><td>{a.stable == null ? '—' : a.stable ? 'kontrol altında' : `kontrol dışı nokta: ${a.outOfControl.slice(0, 10).map((i) => i + 1).join(', ')}`}</td></tr>
-        </tbody>
-      </table>
-      <p className="small">{verdictText(a, p.settings.targetCpk)}</p>
-      {a.reasons.length > 0 && <ul className="plain small">{a.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
-    </aside>
-  );
-}
+// v4-cap: panel Cap.tsx'e taşındı (AS9145 Tablo 1 bandı, SPC, PPM, veri kaynağı)
+export { CapabilityPanel } from './Cap';
 
 // ───────────────────────── Bilgi tabanı ─────────────────────────
 
@@ -536,7 +514,7 @@ export function AiReviewScreen() {
     if (!isDesktop) return toast('AI incelemesi masaüstü uygulamasında çalışır.', 'warn');
     const s = await api.aiStatus();
     if (!s.online) return toast(AI_ERROR_TEXT.OFFLINE, 'warn');
-    if (!s.configured && s.provider === 'anthropic') {
+    if (!s.configured && s.provider !== 'local') {
       window.dispatchEvent(new CustomEvent('open-settings'));
       return toast('Önce Ayarlar › AI bölümünden API anahtarını girin.', 'warn');
     }
@@ -848,7 +826,7 @@ const KC_RULE_LABEL: Record<keyof KcRules, string> = {
 } as Record<keyof KcRules, string>;
 
 export function SettingsScreen() {
-  const { project: p, edit, mutate, toast } = useStore();
+  const { project: p, edit, mutate, toast, ask } = useStore();
   const s = p.settings;
   const set = (field: keyof Settings, value: unknown, title = 'Ayar değişikliği') => edit({ kind: 'settings', field, value }, title);
   const [ai, setAi] = useState<Awaited<ReturnType<typeof api.aiStatus>> | null>(null);
@@ -868,7 +846,7 @@ export function SettingsScreen() {
     toast(r.stored === 'secure' ? 'API anahtarı işletim sistemi şifrelemesiyle kaydedildi' : r.stored === 'session' ? 'Güvenli depolama yok: anahtar yalnızca bu oturum için bellekte tutuluyor' : 'API anahtarı silindi', r.stored === 'session' ? 'warn' : 'ok');
   };
   const saveTemplate = async () => {
-    const name = window.prompt('Şablon adı', p.meta.customer ? `${p.meta.customer} FMEA şablonu` : 'Şirket FMEA şablonu');
+    const name = await ask({ title: 'Şablon adı', input: p.meta.customer ? `${p.meta.customer} FMEA şablonu` : 'Şirket FMEA şablonu' });
     if (!name) return;
     const out = await api.saveTemplate(makeTemplate(p, name));
     if (out) toast('Şirket şablonu kaydedildi');
@@ -895,6 +873,9 @@ export function SettingsScreen() {
 
   return (
     <div className="page">
+      <section className="card">
+        <TableFormatSetting first />
+      </section>
       <div className="two-col">
         <section className="card">
           <h3>Kullanıcı</h3>
@@ -914,7 +895,7 @@ export function SettingsScreen() {
           {isDesktop && ai && (
             <>
               <p className="small">
-                {!ai.online ? AI_ERROR_TEXT.OFFLINE : ai.configured ? (ai.fromEnv ? '✓ ANTHROPIC_API_KEY ortam değişkeninden' : ai.sessionOnly ? '✓ Anahtar yalnızca bu oturum için bellekte' : '✓ Anahtar güvenli depolamada') : '✕ Anahtar yok – AI özellikleri kapalı'}
+                {!ai.online ? AI_ERROR_TEXT.OFFLINE : ai.configured ? (ai.fromEnv ? `✓ ${ai.envVar} ortam değişkeninden` : ai.sessionOnly ? '✓ Anahtar yalnızca bu oturum için bellekte' : '✓ Anahtar güvenli depolamada') : '✕ Anahtar yok – AI özellikleri kapalı'}
               </p>
               <div className="form">
                 <label>
@@ -930,7 +911,13 @@ export function SettingsScreen() {
                     <option value="knowledge">Engineering Knowledge (bilgi ayrı etiketli)</option>
                   </select>
                 </label>
-                <label className="wide"><span>API anahtarı</span><input className="cell-input" type="password" placeholder="sk-ant-…" value={key} onChange={(e) => setKey(e.target.value)} /></label>
+                {ai.provider === 'anthropic' && (
+                  <label><span>Claude modeli</span><select className="cell-select" value={ai.model} onChange={async (e) => { await api.aiSetModel(e.target.value); setAi(await api.aiStatus()); }}>{(ai.anthropicModels ?? []).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
+                )}
+                {ai.provider === 'openai' && (
+                  <label><span>Model</span><input className="cell-input" key={ai.model} defaultValue={ai.model} placeholder="gpt-5" onBlur={async (e) => { if (e.target.value.trim() !== ai.model) { await api.aiSetModel(e.target.value); setAi(await api.aiStatus()); } }} /></label>
+                )}
+                <label className="wide"><span>API anahtarı ({ai.providers.find((x) => x.id === ai.provider)?.label ?? ai.provider})</span><input className="cell-input" type="password" placeholder={ai.provider === 'openai' ? 'sk-…' : 'sk-ant-…'} value={key} onChange={(e) => setKey(e.target.value)} /></label>
               </div>
               {!ai.secureStorage && <div className="callout warn">Bu sistemde işletim sistemi şifrelemesi yok. Anahtar diske yazılmaz; uygulama kapanınca silinir.</div>}
               <div className="row-btns">
@@ -941,6 +928,7 @@ export function SettingsScreen() {
             </>
           )}
           <div className="callout">AI önerileri doküman ve proje verisini seçili sağlayıcıya gönderir. AI hiçbir FMEA, KC, S/O/D, kontrol veya mühendislik değişikliğini onaylamaz.</div>
+          <ExampleLibrary />
 
           <h3 className="mt">Şirket şablonu</h3>
           <p className="muted">Ayarlar, KC kuralları, onay akışı ve puanlama/AP tablosu tek dosyada (.fmeatpl). Şablon satırlara dokunmaz.</p>
@@ -1042,6 +1030,28 @@ function ScmhDirSetting() {
       <p className="muted small">SCMH paketi resmi IAQG şablonlarına doldurulur (PFD 7.2.9, DFMEA 7.2.10, PFMEA 7.2.11, Kontrol Planı 7.2.13). Şablonlar © IAQG olduğu için uygulamayla dağıtılmaz; scmh.iaqg.org’dan indirip bir klasöre koyun.</p>
       <p className="small">{st?.dir ? <>Klasör: <b>{st.dir}</b></> : 'Klasör seçilmedi.'} {st && st.missing.length > 0 && <span className="warn-text">Eksik: {st.missing.join(', ')}</span>}{st?.dir && st.missing.length === 0 && <span className="ok-text"> ✓ 4 şablon bulundu</span>}</p>
       <button className="btn" onClick={async () => { const r = await api.scmhPickDir(); if (r) setSt(r); }}>Klasör seç…</button>
+    </>
+  );
+}
+
+/** 4.5.0: onaylı satır örnek kütüphanesi (bu bilgisayarda). Proje kaydedilince Approved / Engineer Reviewed satırlar eklenir. */
+function ExampleLibrary() {
+  const { toast } = useStore();
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (isDesktop) void api.examplesInfo().then((x) => setCount(x.count));
+  }, []);
+  if (!isDesktop) return null;
+  return (
+    <>
+      <h3 className="mt">AI örnek kütüphanesi</h3>
+      <p className="muted">
+        Onayladığınız (Approved / Engineer Reviewed) DFMEA ve PFMEA satırları proje kaydedilince bu bilgisayardaki kütüphaneye eklenir. AI önerisinde hedefe en benzer 8 örnek “şirket tarzı” referansı olarak
+        gönderilir; AI örnekleri kopyalamaz, sayısal değer almaz. Kütüphanede {count ?? '…'} satır var.
+      </p>
+      <div className="row-btns">
+        <button className="btn" disabled={!count} onClick={async () => { await api.examplesClear(); setCount(0); toast('Örnek kütüphanesi temizlendi'); }}>Kütüphaneyi temizle</button>
+      </div>
     </>
   );
 }

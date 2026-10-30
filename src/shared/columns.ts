@@ -1,12 +1,16 @@
 // Ekran tabloları ve Excel çıktısı için ortak kolon tanımları.
 import { historicalIds } from './checks';
 import { LISTS } from './model';
+import { CAP_COLUMNS, CP_SPC_COLUMNS, MSA_COLUMNS } from './capColumns'; // v4-cap
 import { capabilityAnalysis, verdictText } from './capability';
-import { apOf, RPN_WARNING, isKcCandidate, parseData, riskLevel, rpn } from './scoring';
+import { apOf, RPN_WARNING, isKcCandidate, parseData, rpn } from './scoring';
 import type { CapabilityAnalysis } from './capability';
 import { impactOf } from './impact';
 import { evaluateKc } from './kc';
+import { kcExtraColumns, pfmeaExtraColumns, requirementExtraColumns } from './kcColumns'; // v4-kc
 import { PFD_STEP_TYPES } from './types';
+import { CP_PHASES as LISTS_CP_PHASES } from './apqpModel'; // v4-apqp
+import { RISK_COLS } from './riskColumns'; // v4-risk
 import type { AnyRow, CapabilityRow, ChangeRequestRow, DfmeaRow, KcRow, PfmeaRow, Project, TableKey } from './types';
 
 export type ColType = 'text' | 'long' | 'score' | 'select' | 'multi' | 'ref' | 'bool' | 'date' | 'number' | 'computed';
@@ -28,6 +32,14 @@ export interface Col {
   secondary?: boolean;
   /** Bu kolon başka ekrandan kopyalanır; düzenleme ilgili ekranda yapılır. */
   derived?: string;
+  /** v4-kc: yalnızca bu puanlama standardındaki projelerde gösterilir. */
+  mode?: 'SCMH' | 'AIAG-VDA';
+  /** Ekranda kolonların üstündeki başlık bandı (F33.03 / F05.04 bölümleri). */
+  group?: string;
+  /** Formdaki kolon harfi (A–Z). */
+  formCol?: string;
+  /** Ekran başlığında gösterilen form etiketi; `label` Excel / içe aktarma / denetim kaydında kullanılır. */
+  formLabel?: string;
 }
 
 const t = (key: string, label: string, width = 160, extra: Partial<Col> = {}): Col => ({ key, label, width, type: 'text', ...extra });
@@ -36,14 +48,52 @@ const sel = (key: string, label: string, options: string[], width = 140, extra: 
 const score = (key: string, label: string, help: string, extra: Partial<Col> = {}): Col => ({ key, label, width: 52, type: 'score', help, ...extra });
 const comp = (key: string, label: string, compute: Col['compute'], width = 80, help?: string): Col => ({ key, label, width, type: 'computed', compute, readonly: true, help });
 
-const fmeaScores = (): Col[] => [
-  score('s', 'S', 'Severity 1–10 (Puanlama sekmesi). Gerçek veri yoksa AI önerisidir; onay gerekir.'),
-  score('o', 'O', 'Occurrence 1–10'),
-  score('d', 'D', 'Detection 1–10'),
-  comp('ap', 'AP', (r, p) => apOf(p, (r as DfmeaRow).s, (r as DfmeaRow).o, (r as DfmeaRow).d), 46, 'Action Priority (AIAG-VDA veya şirket AP tablosu, Risk ekranı)'),
-  comp('rpn', 'RPN', (r) => rpn((r as DfmeaRow).s, (r as DfmeaRow).o, (r as DfmeaRow).d), 52, `S×O×D – ${RPN_WARNING}`),
-  comp('risk', 'Risk', (r, p) => riskLevel(r as DfmeaRow, p.settings, p.scoring.apTable), 82, 'Öncelik: Emniyet/regülasyon > yüksek S > KC > AP > RPN'),
-  sel('specialChar', 'Özel Kar.', LISTS.specialChar, 100),
+/** v4.1: F33.03 (DFMEA) / F05.04 (PFMEA) form düzeni. A–Z formdaki sırayla, ardından uygulamanın onay / izlenebilirlik kolonları. */
+export const FORM_GROUPS = {
+  dfmea: 'Design Failure Mode and Effects Analysis (DFMEA) Worksheet – F33.03',
+  pfmea: 'Process Failure Mode and Effects Analysis (PFMEA) Worksheet – F05.04',
+  pred: 'Recommended Actions and Predicted Risk',
+  achieved: 'Action Results Achieved',
+  app: 'FMEA Studio – Onay / İzlenebilirlik / SCMH',
+};
+const form = (c: Col, formCol: string, formLabel: string, group: string): Col => ({ ...c, formCol, formLabel, group, secondary: false });
+const F = (r: AnyRow) => r as DfmeaRow;
+
+/** Form E–Z: hata modundan aksiyon sonuçlarına (DFMEA ve PFMEA'da aynı). */
+const formBody = (g: string, effect: Col, cause: Col): Col[] => {
+  const { pred, achieved } = FORM_GROUPS;
+  return [
+    form(long('failureMode', 'Hata Modu', 200), 'E', 'Potential Failure Mode', g),
+    form(effect, 'F', 'Potential Effect(s) of Failure', g),
+    form(score('s', 'S', 'Severity 1–10 (Puanlama sekmesi). Gerçek veri yoksa AI önerisidir; onay gerekir.'), 'G', 'Severity', g),
+    form(sel('specialChar', 'Özel Kar.', LISTS.specialChar, 110), 'H', 'Key Characteristic Classification', g),
+    form(cause, 'I', 'Potential Cause(s) of Failure', g),
+    form(score('o', 'O', 'Occurrence 1–10'), 'J', 'Occurrence', g),
+    form(long('prevention', 'Önleme Kontrolü', 190), 'K', 'Prevention Controls', g),
+    form(long('detection', 'Tespit Kontrolü', 190), 'L', 'Detection Controls', g),
+    form(score('d', 'D', 'Detection 1–10'), 'M', 'Detection', g),
+    form(comp('rpn', 'RPN', (r) => rpn(F(r).s, F(r).o, F(r).d), 52, `S×O×D – ${RPN_WARNING}`), 'N', 'RPN', g),
+    form(long('recommendedAction', 'Önerilen Aksiyon', 220, { help: 'Girildiğinde Aksiyonlar sekmesine otomatik kayıt açılır' }), 'O', 'Recommended Action', pred),
+    form(t('owner', 'Sorumlu', 120), 'P', 'Responsibility', pred),
+    form({ key: 'dueDate', label: 'Termin', width: 120, type: 'date' }, 'P', 'Target Completion Date', pred),
+    form(score('predS', 'Tahmini S', 'Önerilen aksiyon uygulanırsa beklenen Severity (formda Q)'), 'Q', 'Severity', pred),
+    form(score('predO', 'Tahmini O', 'Önerilen aksiyon uygulanırsa beklenen Occurrence (formda R)'), 'R', 'Occurrence', pred),
+    form(score('predD', 'Tahmini D', 'Önerilen aksiyon uygulanırsa beklenen Detection (formda S)'), 'S', 'Detection', pred),
+    form(comp('predRpn', 'Tahmini RPN', (r) => rpn(F(r).predS ?? null, F(r).predO ?? null, F(r).predD ?? null), 52, 'Tahmini S×O×D'), 'T', 'RPN', pred),
+    form(long('actionTaken', 'Alınan Aksiyon', 180), 'U', 'Action Taken', achieved),
+    form(long('results', 'Sonuç', 180, { help: 'Aksiyonun sonucu / doğrulaması (örn. test raporu, müşteri onayı)' }), 'V', 'Results', achieved),
+    form(score('newS', 'Yeni S', 'Aksiyon sonrası'), 'W', 'Severity', achieved),
+    form(score('newO', 'Yeni O', 'Aksiyon sonrası'), 'X', 'Occurrence', achieved),
+    form(score('newD', 'Yeni D', 'Aksiyon sonrası'), 'Y', 'Detection', achieved),
+    form(comp('newRpn', 'Yeni RPN', (r) => rpn(F(r).newS, F(r).newO, F(r).newD), 52, 'Aksiyon sonrası S×O×D'), 'Z', 'RPN', achieved),
+  ];
+};
+
+/** Formda olmayan risk kolonları: AP / SCMH ölçütleri ve KC durumu. */
+const appRisk = (): Col[] => [
+  comp('ap', 'AP', (r, p) => apOf(p, F(r).s, F(r).o, F(r).d), 46, 'Action Priority (AIAG-VDA veya şirket AP tablosu, Risk ekranı)'),
+  RISK_COLS.risk, // v4-risk: SCMH'de AP yerine needsAction (eski: riskLevel)
+  ...RISK_COLS.scores, // v4-risk
   comp('kcFlag', 'KC', (r, p) => {
     const k = p.kcs.find((k) => k.sourceId === r.id);
     if (k) return `${k.id} (${k.status === 'Approved' ? 'Onaylı' : k.status === 'Rejected' ? 'Red' : 'Aday'})`;
@@ -59,27 +109,26 @@ const scoreReasons = (): Col[] =>
     sel(`${k}Conf`, `${k.toUpperCase()} Güven`, LISTS.confidence, 80, { secondary: true }),
   ]);
 
-const fmeaTail = (): Col[] => [
-  long('recommendedAction', 'Önerilen Aksiyon', 220, { help: 'Girildiğinde Aksiyonlar sekmesine otomatik kayıt açılır' }),
-  t('owner', 'Sorumlu', 110),
-  { key: 'dueDate', label: 'Termin', width: 120, type: 'date' },
+const appTail = (): Col[] => [
   sel('actionStatus', 'Aksiyon Durumu', LISTS.actionStatus, 110),
   t('actionId', 'Aksiyon ID', 80, { readonly: true, derived: 'Aksiyonlar' }),
-  long('actionTaken', 'Alınan Aksiyon', 180, { secondary: true }),
-  score('newS', 'Yeni S', 'Aksiyon sonrası', { secondary: true }),
-  score('newO', 'Yeni O', 'Aksiyon sonrası', { secondary: true }),
-  score('newD', 'Yeni D', 'Aksiyon sonrası', { secondary: true }),
-  comp('newAp', 'Yeni AP', (r, p) => apOf(p, (r as DfmeaRow).newS, (r as DfmeaRow).newO, (r as DfmeaRow).newD), 60),
+  comp('newAp', 'Yeni AP', (r, p) => apOf(p, F(r).newS, F(r).newO, F(r).newD), 60),
+  ...RISK_COLS.decision.filter((c) => c.key !== 'lineNo'), // v4-risk (Satır # formda A kolonu)
   t('source', 'Kaynak', 150, { help: 'Örn. REQ-023, DRW-001 / Sayfa 4 / Ölçü 35, EMAIL-003' }),
   sel('confidence', 'AI Güven', LISTS.confidence, 80, { secondary: true }),
   sel('dataStatus', 'Veri Durumu', LISTS.dataStatus, 170, { secondary: true }),
-  sel('approval', 'Onay', LISTS.approval, 130),
   sel('basis', 'Dayanak', LISTS.basis, 150, { secondary: true, help: 'SOURCE DATA / ENGINEERING KNOWLEDGE / AI INFERENCE' }),
   { key: 'evidenceIds', label: 'Kanıtlar', width: 120, type: 'multi', ref: 'evidence', secondary: true },
   comp('hist', 'Geçmiş', (r, p) => (historicalIds(p).has(r.id) ? 'Historical Occurrence Evidence' : ''), 110, 'Dersler sekmesinde bu satıra bağlı NCR/8D/CAPA varsa'),
   t('reassess', 'Yeniden Değerlendirme', 200, { help: 'Kaynak değiştiğinde otomatik dolar; değerlendirince temizleyin' }),
   long('notes', 'Notlar', 160, { secondary: true }),
 ];
+
+const PF_REQ_IDS: Col = { key: 'reqIds', label: 'Gereksinim ID', width: 120, type: 'multi', ref: 'requirements', help: 'Gereksinimler ekranından seçin: üretim / proses / muayene tipi proses gereksinimine, diğerleri ürün gereksinimine yazılır' };
+const approvalCol = (): Col => sel('approval', 'Onay', LISTS.approval, 130);
+const lineNoCol = (g: string): Col => form(RISK_COLS.decision.find((c) => c.key === 'lineNo')!, 'A', 'Op. (Line) #', g);
+/** Form dışındaki kolonları uygulama grubuna koyar. */
+const appGroup = (cols: Col[]): Col[] => cols.map((c) => (c.group ? c : { ...c, group: FORM_GROUPS.app }));
 
 export const COLUMNS: Record<TableKey, Col[]> = {
   documents: [
@@ -97,14 +146,14 @@ export const COLUMNS: Record<TableKey, Col[]> = {
   requirements: [
     long('text', 'Gereksinim', 300),
     sel('reqType', 'Tip', LISTS.reqType, 130),
-    long('acceptance', 'Kabul Kriteri', 200, { help: 'Değiştiğinde DFMEA, KC ve Kontrol Planı güncellenir' }),
+    long('acceptance', 'Kabul Kriteri', 200, { help: 'Boşsa gereksinim metnindeki limitlerden otomatik dolar (limit yoksa VERİ YOK). Elle değiştirirseniz otomatik güncelleme durur. Değiştiğinde DFMEA, KC ve Kontrol Planı güncellenir' }),
     t('characteristic', 'Karakteristik', 130),
     { key: 'nominal', label: 'Nominal', width: 76, type: 'number' },
     { key: 'lsl', label: 'Alt Limit', width: 76, type: 'number' },
     { key: 'usl', label: 'Üst Limit', width: 76, type: 'number' },
     t('unit', 'Birim', 60),
     t('tolerance', 'Tolerans', 90, { secondary: true }),
-    t('verification', 'Doğrulama Yöntemi', 150),
+    t('verification', 'Doğrulama Yöntemi', 150, { help: 'Boşsa gereksinim tipi ve karakteristiğinden AI ÖNERİSİ olarak dolar; mühendis onaylamalı veya düzeltmeli' }),
     t('source', 'Kaynak', 170, { help: 'Doküman ID / No, sayfa, bölüm, ölçü no' }),
     { key: 'sourceDocId', label: 'Kaynak Doküman', width: 110, type: 'ref', ref: 'documents', secondary: true },
     t('sourcePage', 'Sayfa', 60, { secondary: true }),
@@ -131,29 +180,33 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     { key: 'reqIds', label: 'Gereksinimler', width: 160, type: 'multi', ref: 'requirements' },
     comp('dfCount', 'DFMEA', (r, p) => p.dfmea.filter((d) => d.functionId === r.id).length || '', 60),
     t('source', 'Kaynak', 150),
+    sel('approval', 'Onay', LISTS.approval, 130, { help: 'Otomatik önerilen satırlar AI Proposed gelir. Rejected satırlardan DFMEA önerilmez' }),
     t('reassess', 'Yeniden Değerlendirme', 180, { secondary: true }),
     long('notes', 'Notlar', 160),
   ],
-  dfmea: [
+  dfmea: appGroup([
+    lineNoCol(FORM_GROUPS.dfmea),
+    form({ key: 'functionId', label: 'Fonksiyon ID', width: 130, type: 'ref', ref: 'structure', help: 'DFMEA’da proses adımı yerine Yapı & Fonksiyon satırı' }, 'B', 'Process Step #', FORM_GROUPS.dfmea),
+    form(long('function', 'Fonksiyon', 200, { derived: 'Yapı & Fonksiyon' }), 'C', 'Operation / Process Name', FORM_GROUPS.dfmea),
+    form(long('requirement', 'Gereksinim', 200, { readonly: true, derived: 'Gereksinimler' }), 'D', 'Requirements', FORM_GROUPS.dfmea),
+    ...formBody(
+      FORM_GROUPS.dfmea,
+      long('effect', 'Nihai Etki', 200, { help: 'Severity bu etkiye göre verilir' }),
+      long('cause', 'Neden', 200, { help: '5 Neden / Balık kılçığı ile kök nedene yaklaşın' }),
+    ),
+    approvalCol(),
+    { key: 'reqIds', label: 'Gereksinim ID', width: 120, type: 'multi', ref: 'requirements' },
+    ...appRisk(),
     t('system', 'Sistem', 110, { secondary: true }),
     t('subsystem', 'Alt Sistem', 110, { secondary: true }),
     t('component', 'Komponent', 120, { secondary: true }),
-    { key: 'functionId', label: 'Fonksiyon ID', width: 130, type: 'ref', ref: 'structure' },
-    long('function', 'Fonksiyon', 200, { derived: 'Yapı & Fonksiyon' }),
-    { key: 'reqIds', label: 'Gereksinim ID', width: 120, type: 'multi', ref: 'requirements' },
-    long('requirement', 'Gereksinim', 200, { readonly: true, derived: 'Gereksinimler' }),
-    long('failureMode', 'Hata Modu', 200),
     long('localEffect', 'Lokal Etki', 170, { secondary: true }),
     long('higherEffect', 'Üst Seviye Etki', 170, { secondary: true }),
-    long('effect', 'Nihai Etki', 200, { help: 'Severity bu etkiye göre verilir' }),
-    long('cause', 'Neden', 200, { help: '5 Neden / Balık kılçığı ile kök nedene yaklaşın' }),
-    long('prevention', 'Önleme Kontrolü', 190),
-    long('detection', 'Tespit Kontrolü', 190),
-    ...fmeaScores(),
     ...scoreReasons(),
     long('verification', 'Doğrulama', 160, { secondary: true }),
-    ...fmeaTail(),
-  ],
+    ...RISK_COLS.df, // v4-risk
+    ...appTail(),
+  ]),
   processSteps: [
     t('opNo', 'Op. No', 70, { help: 'Değiştiğinde PFMEA ve Kontrol Planı güncellenir' }),
     sel('name', 'Proses Adımı', LISTS.processStep, 170, { help: 'Listeden seçin veya yazın', free: true }),
@@ -167,36 +220,42 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('productChars', 'Ürün Karakteristikleri', 180),
     long('processChars', 'Proses Karakteristikleri', 180),
     comp('pfCount', 'PFMEA', (r, p) => p.pfmea.filter((x) => x.stepId === r.id).length || '', 60),
+    ...RISK_COLS.step, // v4-risk
     t('source', 'Kaynak', 140),
     long('notes', 'Notlar', 160),
   ],
-  pfmea: [
-    { key: 'stepId', label: 'Adım ID', width: 130, type: 'ref', ref: 'processSteps' },
-    t('opNo', 'Op. No', 60, { readonly: true, derived: 'Proses Akışı' }),
-    t('stepName', 'Proses Adımı', 140, { readonly: true, derived: 'Proses Akışı' }),
-    long('processFunction', 'Proses Fonksiyonu', 180),
-    long('requirement', 'Gereksinim / Karakteristik', 180),
-    t('processElement', 'Proses Elemanı', 130, { secondary: true, help: 'Man / Machine / Material / Method / Measurement / Environment elemanı' }),
+  pfmea: appGroup([
+    lineNoCol(FORM_GROUPS.pfmea),
+    form(t('opNo', 'Op. No', 70, { readonly: true, derived: 'Proses Akışı' }), 'B', 'Process Step #', FORM_GROUPS.pfmea),
+    form(t('stepName', 'Proses Adımı', 150, { readonly: true, derived: 'Proses Akışı' }), 'C', 'Operation / Process Name', FORM_GROUPS.pfmea),
+    form(long('processFunction', 'Proses Fonksiyonu', 180), 'D', 'Requirements – Proses Fonksiyonu', FORM_GROUPS.pfmea),
+    ...RISK_COLS.pfReq.map((c, i) => form(c, 'D', i ? 'Requirements – Proses' : 'Requirements – Ürün', FORM_GROUPS.pfmea)), // v4-risk
+    { ...PF_REQ_IDS, group: FORM_GROUPS.pfmea },
+    ...formBody(
+      FORM_GROUPS.pfmea,
+      long('effect', 'Etki', 190),
+      long('cause', 'Neden', 190, { help: 'İnsan faktörü, makine, malzeme, metot, ölçüm, çevre' }),
+    ),
+    approvalCol(),
+    { key: 'stepId', label: 'Adım ID', width: 130, type: 'ref', ref: 'processSteps', help: 'Proses Akışı satırı; Op. No ve proses adı buradan gelir' },
     { key: 'dfIds', label: 'Bağlı DFMEA', width: 120, type: 'multi', ref: 'dfmea', help: 'Bağlıysa Severity DFMEA ile otomatik eşitlenir' },
-    long('failureMode', 'Hata Modu', 190),
-    long('effect', 'Etki', 190),
+    ...appRisk(),
+    t('processElement', 'Proses Elemanı', 130, { secondary: true, help: 'Man / Machine / Material / Method / Measurement / Environment elemanı' }),
     sel('cause4M', '4M/5M', LISTS.cause4M, 110, { help: 'Nedenin kategorisi' }),
-    long('cause', 'Neden', 190, { help: 'İnsan faktörü, makine, malzeme, metot, ölçüm, çevre' }),
     long('why1', 'Neden 1', 150, { secondary: true }),
     long('why2', 'Neden 2', 150, { secondary: true }),
     long('why3', 'Neden 3', 150, { secondary: true }),
     long('why4', 'Neden 4', 150, { secondary: true }),
     long('why5', 'Neden 5', 150, { secondary: true }),
     long('rootCause', 'Kök Neden', 180, { help: '“Operatör hatası” kök neden değildir; sistemdeki zafiyeti yazın' }),
-    long('prevention', 'Önleme Kontrolü', 180),
-    long('detection', 'Tespit Kontrolü', 180),
     sel('errorProofing', 'Hata Önleme', LISTS.errorProofing, 140),
-    ...fmeaScores(),
     ...scoreReasons(),
     t('measurement', 'Ölçüm Yöntemi', 150, { help: 'Kontrol Planı ölçüm yöntemine aktarılır' }),
     long('reactionPlan', 'Reaksiyon Planı', 170),
-    ...fmeaTail(),
-  ],
+    sel('stage', 'PFMEA Olgunluğu', ['Preliminary', 'Released'], 110, { secondary: true, help: 'Ön PFMEA DRA ile eşzamanlı geliştirilir (SCMH 7.2.3 s.36); PRR/PPAP öncesi Released olmalı' }), // v4-apqp
+    ...RISK_COLS.pf, // v4-risk
+    ...appTail(),
+  ]),
   kcs: [
     { key: 'sourceId', label: 'Kaynak FMEA', width: 130, type: 'ref', ref: ['dfmea', 'pfmea'] },
     long('characteristic', 'Karakteristik', 220),
@@ -244,46 +303,14 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     long('reactionPlan', 'Reaksiyon Planı', 180, { help: 'Durdur → ayır → son kabul edilen parça → etkilenen lot/seri → Kalite → NCR → karar → kök neden → FMEA ve kontrol planı güncelleme' }),
     t('responsible', 'Sorumlu', 110),
     t('record', 'Kayıt', 120, { help: 'Ölçüm sonucunun kaydedildiği form / sistem' }),
+    { key: 'phases', label: 'KP Fazı', width: 140, type: 'multi', options: LISTS_CP_PHASES, help: 'Prototype / Pre-launch / Production. Boş = tüm fazlar. SCMH paketi faz başına ayrı KP üretir' }, // v4-apqp
+    ...CP_SPC_COLUMNS, // v4-cap
+    ...RISK_COLS.cp, // v4-risk
     long('notes', 'Notlar', 150, { secondary: true }),
   ],
-  msa: [
-    { key: 'cpId', label: 'Kontrol Planı', width: 100, type: 'ref', ref: 'controlPlan' },
-    { key: 'kcId', label: 'KC', width: 90, type: 'ref', ref: 'kcs' },
-    long('characteristic', 'Karakteristik', 220, { derived: 'Kritik Karakteristikler' }),
-    t('gauge', 'Ölçüm Sistemi', 180, { derived: 'Kontrol Planı' }),
-    sel('dataType', 'Veri Tipi', LISTS.dataType, 90, { help: 'Değişken → GR&R; nitel (attribute) → Attribute Agreement' }),
-    sel('study', 'Çalışma', LISTS.msaStudy, 160),
-    sel('status', 'Durum', LISTS.msaStatus, 150),
-    t('result', 'Sonuç (%GRR, ndc ...)', 160),
-    long('notes', 'Notlar', 200),
-  ],
-  capability: [
-    { key: 'kcId', label: 'KC', width: 90, type: 'ref', ref: 'kcs' },
-    long('characteristic', 'Karakteristik', 200, { derived: 'Kritik Karakteristikler' }),
-    { key: 'lsl', label: 'LSL', width: 70, type: 'number' },
-    { key: 'usl', label: 'USL', width: 70, type: 'number' },
-    { key: 'target', label: 'Hedef', width: 70, type: 'number' },
-    long('data', 'Ölçüm Verisi', 220, { help: 'Değerleri üretim sırasıyla boşluk, satır veya ; ile ayırarak yapıştırın' }),
-    { key: 'subgroupSize', label: 'Alt Grup', width: 66, type: 'number', help: '1 veya boş = bireysel değer (I-MR); 2–10 = Xbar-R' },
-    sel('distribution', 'Dağılım', LISTS.distribution, 100),
-    ...(['n', 'mean', 'cp', 'cpk', 'pp', 'ppk'] as const).map((k) =>
-      comp(k, k === 'mean' ? 'Ort.' : k.toUpperCase().replace('CPK', 'Cpk').replace('PPK', 'Ppk').replace('CP', 'Cp').replace('PP', 'Pp'), (r, p) => {
-        const v = capOf(r, p)[k];
-        return v == null ? '' : k === 'n' ? v : Number(v.toFixed(3));
-      }, 64),
-    ),
-    comp('normality', 'Normallik', (r, p) => {
-      const a = capOf(r, p);
-      return a.adP == null ? '' : `${a.normal ? 'Normal' : 'Normal değil'} (AD p=${a.adP.toFixed(3)})`;
-    }, 140),
-    comp('stability', 'Kararlılık', (r, p) => {
-      const a = capOf(r, p);
-      return a.stable == null ? '' : a.stable ? `Kararlı (${a.method})` : `Kararsız: ${a.outOfControl.length} nokta`;
-    }, 130),
-    comp('result', 'Geçerlilik / Sonuç', (r, p) => verdictText(capOf(r, p), p.settings.targetCpk), 220),
-    comp('reasons', 'Açıklama', (r, p) => capOf(r, p).reasons.join(' '), 260),
-    long('notes', 'Notlar', 160),
-  ],
+  // v4-cap: yapılandırılmış MSA ve AS9145 Tablo 1 capability kolonları (capColumns.ts)
+  msa: MSA_COLUMNS,
+  capability: CAP_COLUMNS,
   actions: [
     { key: 'sourceId', label: 'Kaynak FMEA', width: 130, type: 'ref', ref: ['dfmea', 'pfmea'] },
     long('description', 'Aksiyon', 260),
@@ -391,6 +418,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     t('requestedBy', 'Talep Eden', 120),
     { key: 'date', label: 'Tarih', width: 120, type: 'date' },
     long('decision', 'Karar', 180),
+    { key: 'ppapResubmission', label: 'PPAP Yeniden Sunum', width: 100, type: 'bool', help: 'PPAP onayından sonra uygulanan ürün/proses değişikliğinde otomatik işaretlenir (PPAP webinar s.38)' }, // v4-apqp
   ],
   aiRuns: [
     t('at', 'Zaman', 150, { readonly: true }),
@@ -409,20 +437,22 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     { key: 'cached', label: 'Önbellek', width: 70, type: 'bool', readonly: true },
     long('message', 'Mesaj', 220, { readonly: true }),
   ],
+  pfdItems: RISK_COLS.pfdItems, // v4-risk
 };
 
-const capCache = new WeakMap<object, CapabilityAnalysis>();
-/** Satır başına analiz önbelleği (aynı render içinde 10 kolon aynı sonucu kullanır). */
-function capOf(r: AnyRow, p: Project): CapabilityAnalysis {
-  const hit = capCache.get(r);
-  if (hit) return hit;
-  const c = r as CapabilityRow;
-  const a = capabilityAnalysis(parseData(c.data), c.lsl, c.usl, c.target, p.settings, c.subgroupSize, c.distribution);
-  capCache.set(r, a);
-  return a;
+// v4-kc: KC/CI (9145), SR ve proses KC kolonları. SCMH projelerinde otomotiv KC sınıfı/kategorisi gizlenir.
+{
+  const kc = kcExtraColumns();
+  for (const c of COLUMNS.kcs) if (kc.hideInScmh.includes(c.key)) c.mode = 'AIAG-VDA';
+  const src = COLUMNS.kcs.find((c) => c.key === 'sourceId');
+  if (src) Object.assign(src, { ref: ['dfmea', 'pfmea', 'requirements'], label: 'Kaynak (FMEA / Gereksinim)', help: 'DF-/PF- satırı veya müşteri KC’si için gereksinim (REQ-)' });
+  COLUMNS.kcs.unshift(...kc.first);
+  COLUMNS.kcs.push(...kc.rest);
+  COLUMNS.requirements.push(...requirementExtraColumns());
+  COLUMNS.pfmea.push(...appGroup(pfmeaExtraColumns()));
 }
 
-const LONG_LABEL: Record<string, string> = { s: 'Severity (S)', o: 'Occurrence (O)', d: 'Detection (D)', severity: 'Severity (S)', newS: 'Yeni Severity', newO: 'Yeni Occurrence', newD: 'Yeni Detection' };
+const LONG_LABEL: Record<string, string> = { s: 'Severity (S)', o: 'Occurrence (O)', d: 'Detection (D)', severity: 'Severity (S)', newS: 'Yeni Severity', newO: 'Yeni Occurrence', newD: 'Yeni Detection', predS: 'Tahmini Severity', predO: 'Tahmini Occurrence', predD: 'Tahmini Detection' };
 
 export function fieldLabel(table: string, field: string): string {
   if (LONG_LABEL[field]) return LONG_LABEL[field];
@@ -464,3 +494,57 @@ export function rowLabel(p: Project, id: string): string {
 }
 
 export type FmeaLike = DfmeaRow | PfmeaRow;
+
+// ───────── SCMH 7.2.10 / 7.2.11 düzeni (Ayarlar → Tablo düzeni) ─────────
+
+const SCMH_GROUPS = {
+  dfmea: 'Design Failure Mode and Effects Analysis – SCMH 7.2.10',
+  pfmea: 'Process Failure Mode and Effects Analysis – SCMH 7.2.11',
+  results: 'Recommended Action(s) and Action Results',
+};
+const actionDone = comp('actionDone', 'Gerçekleşen Tarih', (r, p) => p.actions.find((a) => a.id === (r as DfmeaRow).actionId)?.completionDate ?? '', 110, 'Aksiyonlar ekranındaki tamamlanma tarihi');
+const SCMH_SPEC: Record<'dfmea' | 'pfmea', [string, string, string][]> = {
+  // [kolon anahtarı, SCMH sütunu, SCMH başlığı]
+  dfmea: [
+    ['lineNo', 'B', 'Doc (Line) #'], ['item', 'C', 'Item'], ['function', 'D', 'Function'], ['requirement', 'E', 'Requirement'], ['reqIds', '', 'Gereksinim ID'],
+    ['failureMode', 'F', 'Potential Failure Mode'], ['effect', 'G', 'Potential Effect(s) of Failure'], ['s', 'H', 'SEV'], ['cause', 'I', 'Potential Cause(s) of Failure'],
+    ['prevention', 'J', 'Current Prevention Controls'], ['o', 'K', 'OCC'], ['detection', 'L', 'Current Detection Controls'], ['d', 'M', 'DET'], ['so', 'N', 'SEV * OCC'], ['rpn', 'O', 'RPN'],
+    ['specialChar', 'P', 'Classification'], ['recommendedAction', 'Q', 'Recommended Action(s)'], ['owner', 'R', 'Responsibility'], ['dueDate', 'S', 'Target Date'],
+    ['actionTaken', 'T', 'Actions Taken & Results'], ['actionDone', 'U', 'Actual Completion Date'], ['newS', 'V', 'Action Results SEV'], ['newO', 'W', 'Action Results OCC'], ['newD', 'X', 'Action Results DET'], ['newRpn', 'Y', 'Action Results RPN'],
+  ],
+  pfmea: [
+    ['lineNo', 'B', 'Doc (Line) #'], ['stepLabel', 'C', 'Process Step'], ['processFunction', 'D', 'Process Description'], ['productRequirement', 'E', 'Product Requirements'], ['processRequirement', 'F', 'Process Requirements'], ['reqIds', '', 'Gereksinim ID'],
+    ['failureMode', 'G', 'Potential Failure Mode'], ['effect', 'H', 'Potential Effect(s) of Failure'], ['s', 'I', 'SEV'], ['cause', 'J', 'Potential Cause(s) of Failure'],
+    ['prevention', 'K', 'Current Prevention Controls'], ['o', 'L', 'OCC'], ['detection', 'M', 'Current Detection Controls'], ['d', 'N', 'DET'], ['so', 'O', 'SEV * OCC'], ['rpn', 'P', 'RPN'],
+    ['specialChar', 'Q', 'Classification'], ['recommendedAction', 'R', 'Recommended Action(s)'], ['owner', 'S', 'Responsibility'], ['dueDate', 'T', 'Target Date'],
+    ['actionTaken', 'U', 'Actions Taken & Results'], ['actionDone', 'V', 'Actual Completion Date'], ['newS', 'W', 'Action Result SEV'], ['newO', 'X', 'Action Result OCC'], ['newD', 'Y', 'Action Result DET'], ['newRpn', 'Z', 'Action Result RPN'],
+  ],
+};
+const SCMH_EXTRA: Record<string, Col> = {
+  item: comp('item', 'Item', (r, p) => p.structure.find((s) => s.id === (r as DfmeaRow).functionId)?.element || (r as DfmeaRow).component || '', 140, 'Yapı & Fonksiyon elemanı (bağlı fonksiyondan)'),
+  stepLabel: comp('stepLabel', 'Proses Adımı (Op)', (r) => [(r as PfmeaRow).opNo, (r as PfmeaRow).stepName].filter(Boolean).join(' '), 150, 'Proses Akışı adımı (Adım ID ile bağlanır)'),
+  actionDone,
+};
+
+const layoutCache = new Map<string, Col[]>();
+/** DFMEA / PFMEA kolonları seçili tablo düzenine göre; diğer tablolar değişmez. */
+export function tableColumns(table: TableKey, format: 'SCMH' | 'F33' | undefined): Col[] {
+  if ((table !== 'dfmea' && table !== 'pfmea') || format === 'F33') return COLUMNS[table];
+  const hit = layoutCache.get(table);
+  if (hit) return hit;
+  const base = COLUMNS[table];
+  const spec = SCMH_SPEC[table];
+  const g = SCMH_GROUPS[table];
+  const firstAction = spec.findIndex(([k]) => k === 'recommendedAction');
+  const head = spec.map(([key, letter, label], i) => {
+    const c = base.find((x) => x.key === key) ?? SCMH_EXTRA[key];
+    return { ...c, formCol: letter || undefined, formLabel: label, group: i >= firstAction ? SCMH_GROUPS.results : g, secondary: false };
+  });
+  const used = new Set(spec.map(([k]) => k));
+  // F33 formuna özgü kolonlar (tahmini S/O/D, Results) SCMH'de ikincil
+  const f33Only = new Set(['predS', 'predO', 'predD', 'predRpn', 'results']);
+  const rest = base.filter((c) => !used.has(c.key)).map((c) => ({ ...c, formCol: undefined, formLabel: undefined, group: FORM_GROUPS.app, secondary: c.secondary || f33Only.has(c.key) }));
+  const out = [...head, ...rest];
+  layoutCache.set(table, out);
+  return out;
+}

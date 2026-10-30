@@ -18,11 +18,17 @@ export type Origin = 'manual' | 'ai' | 'import' | 'extraction' | 'template' | 's
 export type Basis = 'SOURCE DATA' | 'ENGINEERING KNOWLEDGE' | 'AI INFERENCE' | '';
 export type Cause4M = 'Man' | 'Machine' | 'Material' | 'Method' | 'Measurement' | 'Environment' | '';
 export type KcCategory = 'Normal' | 'Significant' | 'Critical' | 'Key Characteristic' | 'Safety Characteristic' | 'Regulatory Characteristic' | '';
-export type CharType = 'Product Characteristic' | 'Process Characteristic' | 'Process Parameter' | '';
+// v4-apqp: + bakım ve yazılım konfigürasyonu KP kalemleri (CP Q&A Q6, Q8); ürün bağlantısı gerektirmez.
+export type CharType = 'Product Characteristic' | 'Process Characteristic' | 'Process Parameter' | 'Maintenance / Equipment' | 'Software configuration' | '';
 export type Verification = 'VERIFIED' | 'VERIFIED – farklı konum' | 'SOURCE NOT VERIFIED' | 'MANUAL VERIFICATION REQUIRED' | '';
 export type ActionStatus = 'Open' | 'In Progress' | 'Completed' | 'Cancelled' | '';
 export type IssueStatus = 'Open' | 'Under Review' | 'Waiting Customer' | 'Resolved' | 'Closed' | '';
 export type KcClass = 'KC-1 Critical' | 'KC-2 Significant' | 'KC-3 Process KC' | '';
+// v4-kc
+export type KcItemType = 'KC' | 'CI' | '';
+export type KcType = 'Product' | 'Process' | '';
+export type KcLifecycle = 'Preliminary' | 'Potential' | 'Confirmed' | 'Eliminated' | '';
+export type YesNo = 'Yes' | 'No' | '';
 export type Score = number | null;
 
 export interface BaseRow {
@@ -35,6 +41,10 @@ export interface BaseRow {
   evidenceIds?: string[];
   /** 2.0: AI önerisi reddedildiyse gerekçe (§72). */
   rejectReason?: string;
+  // v4-risk: sabit satır numarası (SCMH "Doc (Line) #"); bir kez atanır, yeniden kullanılmaz.
+  lineNo?: number;
+  /** Otomatik doldurulan alanlar; elle değiştirilen alan listeden çıkar ve artık otomatik güncellenmez. */
+  autoFields?: string[];
 }
 
 export interface ProjectMeta {
@@ -71,6 +81,16 @@ export interface ProjectMeta {
   dfmeaLevel: string;
   /** PFMEA / Control Plan aşaması checkbox'ı: SCMH_PHASES ('Pre-Production' | 'Production') veya ''. */
   scmhPhase: string;
+  // v4-kc: SCMH 7.2.16 KC Traceability Form başlığı ve KC listesinin müşteri mutabakatı (7.2.3 p22)
+  kcFormRevision: string;
+  kcFormDate: string;
+  kcContacts: string;
+  kcListAgreedBy: string;
+  kcListAgreedDate: string;
+  kcListAgreementRef: string;
+  // 4.4.0: parça malzemesi ve seçilen proses akışı şablonları (anahtarlar ';' ile; flowLib.FLOW_TEMPLATES)
+  material?: string;
+  flowTemplates?: string;
 }
 
 export interface Settings {
@@ -78,8 +98,10 @@ export interface Settings {
   kcSeverityThreshold: number;
   /** Bu değer ve üzeri Severity → High Severity vurgusu. */
   highSeverityThreshold: number;
-  /** RPN aksiyon eşiği (boş = kullanılmaz; SCMH eşiksiz çalışır). */
+  /** RPN aksiyon eşiği (4.4.0: varsayılan 100; boş = kullanılmaz). RPN tek başına kriter değildir; needsAction'a ek tetiktir. */
   rpnThreshold: number | null;
+  /** 4.4.0: RPN eşiği aşılınca boş "Önerilen Aksiyon" AI RECOMMENDATION ile dolsun (eski dosyalarda yok = açık). */
+  rpnAutoAction?: boolean;
   /** Capability hedefleri (boş = VERİ YOK). */
   targetCpk: number | null;
   minSamples: number | null;
@@ -101,6 +123,46 @@ export interface Settings {
   reasonFields: string[];
   /** Puanlama/önceliklendirme standardı. SCMH: RPN eşiği yok, S 9–10 her zaman incelenir. */
   scoringStandard: 'SCMH' | 'AIAG-VDA';
+  /** DFMEA / PFMEA ekran ve Excel kolon düzeni: SCMH 7.2.10 / 7.2.11 (varsayılan) veya şirket formu F33.03 / F05.04. */
+  tableFormat?: 'SCMH' | 'F33';
+  // v4-kc: KC/CI numaralandırma ({PN}, {nnn}); SCMH 7.2.17 §1.2.1.
+  kcNumbering: string;
+  ciNumbering: string;
+  // v4-risk: SCMH inceleme listesi (ekibin kararı): RPN / S×O / S×D sıralamasında ilk N satır. Boş = kullanılmaz
+  // (SCMH sabit eşik tanımlamaz: DFMEA Guidance O19; SCMH 7.2.3 p59 SO/SD/RPN ile önceliklendirme).
+  scmhReviewTopN: number | null;
+  /** v4-risk: SCMH çıktısında kontrol/etki metnine puanı "(n)" olarak ekle (SCMH 7.2.19 örnekleri). */
+  scmhInlineRanks: boolean;
+  /** v4-risk: SCMH çıktısında tablonun sağına "Comments" sütunu (puan gerekçesi, karar, notlar; 7.2.19 Z/AA). */
+  scmhCommentsColumn: boolean;
+  // v4-cap: capability kabul bantları, alt grup minimumu ve MSA kabul kriterleri (capDefaults.ts)
+  /** AS9145 Tablo 1: ≥accept kabul; conditional ≤ indeks < accept koşullu; < conditional ret. */
+  capAcceptance: CapAcceptance;
+  /** Kontrol limitleri için minimum alt grup sayısı (boş = 20, CAP webinar p38). */
+  minSubgroups: number | null;
+  /** MSA kabul kriterleri: GR&R limiti müşteriden gelir; boşsa VERİ YOK. */
+  msaCriteria: MsaCriteria;
+}
+
+// v4-cap
+export interface CapAcceptance {
+  accept: number;
+  conditional: number;
+  source: string;
+}
+
+// v4-cap
+export interface MsaCriteria {
+  /** Müşteri GR&R üst limiti (%); boş = VERİ YOK (MSA webinar p35–36 eşik vermez). */
+  maxGrrPct: number | null;
+  basis: '%Tolerance' | '%Study Var';
+  minNdc: number | null;
+  minKappa: number | null;
+  /** Tolerans aralığı / çözünürlük oranı alt sınırı (MSA webinar p30: 10). */
+  resolutionRatio: number;
+  /** Test belirsizlik oranı alt sınırı (MSA webinar p17–19, p31: 4). */
+  tur: number;
+  source: string;
 }
 
 export interface DocumentRow extends BaseRow {
@@ -140,6 +202,9 @@ export interface RequirementRow extends BaseRow {
   balloon: string;
   evidenceText: string;
   confidence: Confidence;
+  // v4-kc: 9145 Special Requirement (SR) – 7.2.3 p40 (kapasite sınırı, karmaşıklık, olgunluk)
+  specialRequirement: boolean;
+  srReason: string;
 }
 
 export type StructureLevel = 'System' | 'Subsystem' | 'Product' | 'Assembly' | 'Component' | 'Part' | 'Feature';
@@ -157,6 +222,8 @@ export interface StructureRow extends BaseRow {
   performanceReq: string;
   constraint: string;
   interface: string;
+  /** Otomatik önerilen yapı/fonksiyon satırları "AI Proposed" gelir; mühendis onaylar veya reddeder. */
+  approval: Approval | '';
 }
 
 interface FmeaCommon extends BaseRow {
@@ -194,7 +261,23 @@ interface FmeaCommon extends BaseRow {
   dEvidence: string;
   dConf: Confidence;
   basis: Basis;
+  // v4-risk: aksiyon kararı (SCMH 7.2.19 "None (deemed ALARP)"), sonuç dayanağı, S 9–10 kararı
+  riskDecision: RiskDecision;
+  riskDecisionReason: string;
+  riskDecisionBy: string;
+  /** Aksiyon sonucu S/O/D: öngörülen mü gerçekleşen mi? Boş = aksiyon durumundan türetilir. */
+  resultBasis: '' | 'Projected' | 'Actual';
+  sDisposition: string;
+  sDispositionReason: string;
+  // F33.03 / F05.04 form: "Recommended Actions and Predicted Risk" (Q–S) ve "Results" (V). Eski dosyalarda yoktur.
+  predS?: Score;
+  predO?: Score;
+  predD?: Score;
+  results?: string;
 }
+
+// v4-risk
+export type RiskDecision = '' | 'Action required' | 'No action – ALARP' | 'No action – accepted';
 
 export interface DfmeaRow extends FmeaCommon {
   system: string;
@@ -207,6 +290,12 @@ export interface DfmeaRow extends FmeaCommon {
   localEffect: string;
   higherEffect: string;
   verification: string;
+  // v4-risk: çok seviyeli DFMEA (alt seviye hata modu = bu satırın nedeni), etki seviyesi puanları, kapsam etiketleri
+  causeFromIds: string[];
+  localEffectS: Score;
+  higherEffectS: Score;
+  riskCategory: string[];
+  noiseFactor: string[];
 }
 
 export interface ProcessStepRow extends BaseRow {
@@ -226,6 +315,11 @@ export interface ProcessStepRow extends BaseRow {
   stepTypeOther: string;
   /** SCMH Classification: KC / CI ID'leri (örn. "KC-001; KC-002"). Boşsa PFMEA/KP bağlantılarından türetilir. */
   classification: string;
+  // v4-risk: PFD bütünlüğü (dış kaynak, alternatif rota, rework dönüşü)
+  external: boolean;
+  externalSupplier: string;
+  alternateOf: string;
+  returnTo: string;
 }
 
 export const SCMH_DFMEA_LEVELS = ['System', 'Subsystem', 'Component'] as const;
@@ -253,6 +347,37 @@ export interface PfmeaRow extends FmeaCommon {
   why4: string;
   why5: string;
   rootCause: string;
+  // v4-kc: 7.2.3 p63 – risk tasarım aksiyonuyla (O/S azaltma) düşürülebilir mi? 'No' → proses KC adayı
+  designActionFeasible: '' | 'Yes' | 'No';
+  // v4-apqp: ön PFMEA (DRA ile eşzamanlı, SCMH 7.2.3 s.36) / yayımlanmış
+  stage?: 'Preliminary' | 'Released' | '';
+  // v4-risk: SCMH 7.2.11 Rev A ürün / proses gereksinimi; KP kapsamı; DFMEA'ya tasarım talebi; PFD girdi/çıktı bağı
+  productRequirement: string;
+  processRequirement: string;
+  cpDecision: '' | 'In CP' | 'Not required';
+  cpExclusionReason: string;
+  significantRisk: boolean;
+  designActionRequest: boolean;
+  outputId: string;
+  causeInputIds: string[];
+  /** Gereksinimler ekranından doğrudan bağlanan gereksinimler; ürün / proses gereksinimi metnini doldurur. */
+  reqIds?: string[];
+}
+
+/** v4-risk: PFD adım girdisi / çıktısı (PF webinar p14, p20, p22). */
+export interface PfdItemRow extends BaseRow {
+  stepId: string;
+  kind: 'Input' | 'Output' | '';
+  text: string;
+  cat4M: Cause4M;
+  charId: string;
+  reqId: string;
+  kcId: string;
+  control: string;
+  mistakeProofing: string;
+  sourceOfVariation: boolean;
+  source: string;
+  notes: string;
 }
 
 /** 2.0 Special Process Engine (§23): proses parametresi → ürün karakteristiği → hata modu → kontrol. */
@@ -294,6 +419,45 @@ export interface KcRow extends BaseRow {
   fCapability: boolean;
   fHistorical: boolean;
   fDetection: boolean;
+  // v4-kc: SCMH / AS9145 KC–CI modeli (kcScmh.ts)
+  /** KC veya Critical Item (CI). Boş = KC. */
+  itemType: KcItemType;
+  /** Ürün / proses KC. Boşsa kaynaktan türetilir (DF/REQ → Product, PF → Process). */
+  kcType: KcType;
+  /** Yaşam döngüsü; Eliminated kayıt silinmez (7.2.17 §1.2.1). Boş = aday (karar yok). */
+  lifecycle: KcLifecycle;
+  /** PN-KC-XXX numarası (7.2.17 §1.2.1); bir kez verilir, tekrar kullanılmaz. */
+  kcNo: string;
+  eliminatedBy: string;
+  eliminatedRef: string;
+  eliminatedDate: string;
+  eliminationNote: string;
+  designatedBy: '' | 'Customer' | 'Organization';
+  /** Oluşturulduğundaki aday tetikleyicileri (S, SO, SD, OD, RPN, Safety, Customer, SR). */
+  triggers: string[];
+  /** SCMH KC karar akışı cevapları (CAP webinar p54 / DRA webinar slide 43). */
+  qSafetyCritical: YesNo;
+  qCriticalOther: YesNo;
+  qUnsafe: YesNo;
+  qAffectsOther: YesNo;
+  qVariation: YesNo;
+  /** Ek bağlantılar (DF/PF/OP/CP/FN ID); kaynak dışındaki FMEA satırlarına akış. */
+  linkedIds: string[];
+  /** Proses KC'yi süren proses parametreleri ve kontrol ettiği ürün KC'leri (G-16). */
+  ppIds: string[];
+  relatedKcIds: string[];
+  /** CI için yapı elemanı (FN-xxx). */
+  structureId: string;
+  /** Tasarım kaydı (7.2.3 p40 "indicated in the design records"). */
+  designRecordDocId: string;
+  designRecordRef: string;
+  onDrawing: boolean;
+  flowDownTo: string;
+  flowDownDate: string;
+  /** 7.2.16 IMPACT ve Originating Document. */
+  impact: string[];
+  originatingDoc: string[];
+  customerAgreed: boolean;
 }
 
 export interface ControlPlanRow extends BaseRow {
@@ -324,6 +488,29 @@ export interface ControlPlanRow extends BaseRow {
   ppId: string;
   /** SCMH CP "Reference": resim konumu / şartname bölümü (PFD ve PFMEA ile aynı numara). */
   reference: string;
+  // v4-apqp: KP fazları (Prototype / Pre-launch / Production); boş = tüm fazlar
+  phases?: import('./apqpModel').CpPhase[];
+  // v4-cap: capability sınırlama (containment) bağlantısı ve SPC kurulumu (CAP webinar p42–46)
+  capId?: string;
+  spcChart?: string;
+  spcSubgroup?: number | null;
+  spcCenter?: number | null;
+  spcUcl?: number | null;
+  spcLcl?: number | null;
+  spcBaselineCapId?: string;
+  spcLimitsFixedOn?: string;
+  // v4-risk: kontrol tipi / hata önleme, karakteristik ID, ürün↔proses eşleşmesi, talimat, reaksiyon MUST öğeleri
+  controlKind: string;
+  epDevice: string;
+  epVerification: string;
+  charId: string;
+  controlsCpIds: string[];
+  noPairReason: string;
+  wiDocId: string;
+  wiSection: string;
+  reactionSegregate: boolean;
+  reactionCorrection: string;
+  reactionContact: string;
 }
 
 export interface MsaRow extends BaseRow {
@@ -337,6 +524,34 @@ export interface MsaRow extends BaseRow {
   autoCreated: boolean;
   notes: string;
   dataType: 'Variable' | 'Attribute' | '';
+  // v4-cap: yapılandırılmış MSA (MSA webinar p11–36)
+  measType: string;
+  tolerance: number | null;
+  resolution: number | null;
+  gaugeUncertainty: number | null;
+  stabilityDrift: number | null;
+  linearity: '' | 'OK' | 'NOK';
+  calibrationRef: string;
+  calibrationDue: string;
+  calibrationVerified: boolean;
+  softwareDependent: boolean;
+  multiGauge: boolean;
+  grrParts: number | null;
+  grrOperators: number | null;
+  grrTrials: number | null;
+  pctStudyVar: number | null;
+  pctTolerance: number | null;
+  ndc: number | null;
+  kappa: number | null;
+  effectiveness: number | null;
+  custMaxGrr: number | null;
+  custBasis: '' | '%Tolerance' | '%Study Var';
+  custMinNdc: number | null;
+  custMinKappa: number | null;
+  custSource: string;
+  trigger: string;
+  refMsaId: string;
+  actionId: string;
 }
 
 export interface CapabilityRow extends BaseRow {
@@ -349,6 +564,25 @@ export interface CapabilityRow extends BaseRow {
   notes: string;
   subgroupSize: number | null;
   distribution: 'Normal' | 'Non-normal' | 'Unknown' | '';
+  // v4-cap: nitel capability, veri kaynağı ve AS9145 Tablo 1 tepkileri
+  dataKind: '' | 'Variable' | 'Attribute';
+  attrKind: '' | 'Defectives' | 'Defects';
+  defects: number | null;
+  units: number | null;
+  opportunities: number | null;
+  dataSource: '' | 'Production run' | 'Pre-launch' | 'Prototype';
+  runRef: string;
+  dateFrom: string;
+  dateTo: string;
+  operators: string;
+  samplePlan: string;
+  term: '' | 'Short-term' | 'Long-term';
+  disposition: string;
+  containmentCpId: string;
+  actionId: string;
+  customerIssueId: string;
+  customerContactRef: string;
+  customerAccepted: boolean;
 }
 
 export interface ActionRow extends BaseRow {
@@ -379,6 +613,8 @@ export interface IssueRow extends BaseRow {
   dueDate: string;
   status: IssueStatus;
   answer: string;
+  /** VERİ YOK içeren gereksinimden otomatik açılan konu: kaynak gereksinim ID (reqIssues.ts). */
+  autoReqId?: string;
 }
 
 export interface LessonRow extends BaseRow {
@@ -426,6 +662,8 @@ export interface ChangeRequestRow extends BaseRow {
   requestedBy: string;
   date: string;
   decision: string;
+  // v4-apqp: PPAP onayından sonra uygulanan ürün/proses değişikliği → yeniden sunum gerekir
+  ppapResubmission?: boolean;
 }
 
 /** 2.0 AI çalıştırma kaydı (§37, §64). */
@@ -573,6 +811,22 @@ export interface Project {
   auditLog: AuditEntry[];
   /** Doküman analiz çıktısı (yerel ayrıştırma); kaynak doğrulama için dosyada saklanır. */
   docIndex: Record<string, import('./docmodel').ExtractedDoc>;
+  /** v4-kc: KC/CI numara sayaçları; asla azalmaz (7.2.17 §1.2.1 – numara tekrar kullanılmaz). */
+  kcRegistry: { kc: number; ci: number };
+  // v4-apqp: APQP/PPAP proje kaydı (7.2.12, 7.2.14, 7.2.15, 7.2.20, PPAP)
+  apqp: import('./apqpModel').ApqpData;
+  // v4-risk
+  pfdItems: PfdItemRow[];
+  /** Tablo başına son atanan satır numarası (azalmaz). */
+  lineCounters: Partial<Record<string, number>>;
+  /** Mühendis incelemesi sonrası tablo onayı ("Tabloyu onayla"); kaldırılabilir. */
+  tableApprovals: Partial<Record<TableKey, TableApproval>>;
+}
+
+export interface TableApproval {
+  user: string;
+  at: string;
+  revision: string;
 }
 
 export type TableKey =
@@ -593,6 +847,7 @@ export type TableKey =
   | 'processParams'
   | 'evidence'
   | 'changeRequests'
-  | 'aiRuns';
+  | 'aiRuns'
+  | 'pfdItems'; // v4-risk
 
 export type AnyRow = Project[TableKey][number];

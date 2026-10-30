@@ -3,16 +3,30 @@
 // kurallar diğer ekranlardaki bağlı alanları günceller. Ortaya çıkan tüm etkiler (Effect) kullanıcıya
 // onay için gösterilir; onaylanırsa kopya projenin yerine geçer, reddedilirse hiçbir şey değişmez.
 
+import { REQ_AUTO_FIELDS, REQ_AUTO_INPUTS, reqAutoValues } from './reqAutofill';
 import { blankRow, nextId, tableOfId } from './model';
 import { isKcCandidate } from './scoring';
+import { KC_LOCK_MSG, kcLocked, kcOnSet } from './kcScmh'; // v4-kc
+import { crTouchesPpap, isUpdateTrigger, lessonReassessText, ppapApprovedDate } from './apqp'; // v4-apqp
+import { capOnDelete, capOnSet } from './capEngine'; // v4-cap
+import { cpRequired, joinedRequirement } from './risk'; // v4-risk
+import { ensureLineNumbers, splitRequirement } from './riskModel'; // v4-risk
+import { REQ_ISSUE_TRIGGERS, syncReqIssue } from './reqIssues';
+import { rpnActionValues } from './rpnAction';
+import { FLOW_SOURCE, stepIo } from './flowLib';
+import { materialFamily } from './failureLib';
 import type {
   ActionRow,
   AnyRow,
+  ChangeRequestRow, // v4-apqp
   ControlPlanRow,
   DfmeaRow,
   KcRow,
+  LessonRow, // v4-apqp
+  PfdItemRow,
   PfmeaRow,
   ProcessParamRow,
+  ProcessStepRow,
   Project,
   RequirementRow,
   Settings,
@@ -50,7 +64,8 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stri
 const today = () => new Date().toISOString().slice(0, 10);
 /** §29 gerçek reaksiyon planı sırası. Şirket prosedürüne göre mühendis düzenler. */
 export const DEFAULT_REACTION =
-  '1) Prosesi durdur 2) Şüpheli ürünü ayır (karantina) 3) Son kabul edilen parçayı belirle 4) Etkilenen lot/seri numaralarını belirle 5) Kaliteyi bilgilendir 6) NCR aç 7) Karar (disposition) 8) Kök neden analizi 9) FMEA yeniden değerlendirme 10) Kontrol planı güncelleme (AI SUGGESTION – şirket prosedürüyle doğrulayın)';
+  '1) Prosesi durdur 2) Şüpheli ürünü ayır (karantina) 3) Vardiya amirini (supervisor) ve Kaliteyi bilgilendir 4) Son kabul edilen parçayı belirle 5) Etkilenen lot/seri numaralarını belirle 6) Düzeltme yöntemi: VERİ YOK – doğrulanmalı 7) NCR aç 8) Karar (disposition) 9) Kök neden analizi 10) FMEA yeniden değerlendirme 11) Kontrol planı güncelleme (AI SUGGESTION – şirket prosedürüyle doğrulayın)';
+// v4-risk: CP webinar p30 MUST öğeleri (ayır, düzeltme yöntemi, amire bildirim) eklendi; düzeltme yöntemi prosese özgüdür → VERİ YOK.
 const NO_DATA = 'VERİ YOK – doğrulanmalı';
 
 const ACTION_SYNC: [keyof DfmeaRow & keyof ActionRow | 'recommendedAction' | 'actionStatus', keyof ActionRow][] = [
@@ -119,6 +134,18 @@ class Ctx {
 }
 
 // ---------------------------------------------------------------- yardımcılar
+
+const PROCESS_REQ_TYPES = new Set(['Manufacturing', 'Process', 'Inspection']);
+
+/** PFMEA'ya bağlı gereksinimler: üretim / proses / muayene tipi → proses gereksinimi, diğerleri → ürün gereksinimi. */
+function pfmeaReqText(c: Ctx, p: PfmeaRow, reason: string) {
+  const reqs = (p.reqIds ?? []).map((rid) => c.find<RequirementRow>('requirements', rid)).filter(Boolean) as RequirementRow[];
+  const text = (xs: RequirementRow[]) => xs.map((r) => `${r.id}: ${r.text}`).join('\n');
+  const proc = reqs.filter((r) => PROCESS_REQ_TYPES.has(r.reqType));
+  const prod = reqs.filter((r) => !PROCESS_REQ_TYPES.has(r.reqType));
+  if (prod.length) c.set('pfmea', p.id, 'productRequirement', text(prod), reason);
+  if (proc.length) c.set('pfmea', p.id, 'processRequirement', text(proc), reason);
+}
 
 function requirementText(c: Ctx, reqIds: string[]) {
   return reqIds
@@ -217,7 +244,7 @@ function syncKcCandidate(c: Ctx, table: 'dfmea' | 'pfmea', id: string) {
   }
   if (!cand) {
     for (const k of kcs)
-      if (k.autoCreated && k.status === 'AI Proposed')
+      if (k.autoCreated && k.status === 'AI Proposed' && !kcLocked(k)) // v4-kc: numaralı KC silinmez
         c.del('kcs', k.id, `${id} artık KC eşiğinin altında; onaylanmamış otomatik KC adayı kaldırılır`);
   }
 }
@@ -317,6 +344,26 @@ function flagReassess(c: Ctx, why: string, match: (source: string) => boolean) {
       if (r.source && match(r.source)) c.set(t, r.id, 'reassess', `FMEA Reassessment Required – ${why}`, why);
 }
 
+/** Kabul kriteri, doğrulama yöntemi ve ölçü alanlarını gereksinimden doldurur (boş veya daha önce otomatik dolmuşsa). */
+function autofillRequirement(c: Ctx, id: string) {
+  const r = c.find<RequirementRow>('requirements', id);
+  if (!r || !r.text?.trim()) return;
+  const vals = reqAutoValues(r);
+  const fields = Object.keys(vals);
+  if (!fields.length) return;
+  const auto = [...new Set([...(r.autoFields ?? []), ...fields])];
+  if (!same(auto, r.autoFields ?? [])) c.set('requirements', id, 'autoFields', auto, 'Otomatik doldurulan alanlar');
+  for (const f of fields) c.set('requirements', id, f, vals[f as keyof typeof vals], `${id} gereksinim metninden otomatik dolduruldu`);
+}
+
+/** Elle girilen değer otomatik değerden farklıysa alan otomatik güncellemeden çıkar. */
+function keepOrReleaseAuto(c: Ctx, id: string, field: string, to: unknown) {
+  const r = c.find<RequirementRow>('requirements', id);
+  if (!r?.autoFields?.includes(field)) return;
+  const expect = reqAutoValues(r)[field as keyof ReturnType<typeof reqAutoValues>];
+  if (!same(expect, to) && !(to === '' || to == null)) c.set('requirements', id, 'autoFields', r.autoFields.filter((f) => f !== field), `${field} elle değiştirildi`);
+}
+
 // ---------------------------------------------------------------- kurallar
 
 function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
@@ -325,8 +372,13 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
 
   if (table === 'settings') {
     if (field === 'kcSeverityThreshold' || field === 'autoKcCandidates') syncAllKcCandidates(c);
+    if (field === 'rpnThreshold' || field === 'rpnAutoAction') {
+      for (const r of c.rows<DfmeaRow>('dfmea')) rpnAction(c, 'dfmea', r.id);
+      for (const r of c.rows<PfmeaRow>('pfmea')) rpnAction(c, 'pfmea', r.id);
+    }
     return;
   }
+  capOnSet(c, table, id, field, e.from, e.to); // v4-cap: capability bandı, MSA yeniden çalışma ve kapsam kuralları
 
   switch (table) {
     case 'documents': {
@@ -338,7 +390,12 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
       break;
     }
     case 'requirements': {
+      if (REQ_AUTO_INPUTS.includes(field)) autofillRequirement(c, id);
+      if (REQ_ISSUE_TRIGGERS.includes(field)) syncReqIssue(c, id);
+      if ((REQ_AUTO_FIELDS as readonly string[]).includes(field)) keepOrReleaseAuto(c, id, field, e.to);
       if (field === 'text' || field === 'acceptance' || field === 'lsl' || field === 'usl' || field === 'nominal' || field === 'unit' || field === 'tolerance') {
+        if (field === 'text')
+          for (const pf of c.rows<PfmeaRow>('pfmea').filter((x) => x.reqIds?.includes(id))) pfmeaReqText(c, pf, `${id} gereksinim metni değişti`);
         for (const d of c.rows<DfmeaRow>('dfmea').filter((d) => d.reqIds.includes(id))) {
           c.set('dfmea', d.id, 'requirement', requirementText(c, d.reqIds), `${id} gereksinim metni değişti`);
           if (!fresh) c.set('dfmea', d.id, 'reassess', `FMEA Reassessment Required – ${id} değişti (${today()})`, `${id} değişti`);
@@ -376,10 +433,12 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
         for (const k of c.rows<KcRow>('kcs').filter((k) => k.sourceId === id && k.autoCreated && k.status === 'AI Proposed'))
           c.set('kcs', k.id, 'characteristic', kcCharacteristic(c, d), `${id} tanımı değişti`);
       syncActionFromFmea(c, 'dfmea', d, field);
+      if (field === 's' || field === 'o' || field === 'd') rpnAction(c, 'dfmea', id);
       break;
     }
     case 'pfmea': {
       const p = c.find<PfmeaRow>('pfmea', id)!;
+      if (field === 'reqIds') pfmeaReqText(c, p, 'Gereksinim listesinden bağlandı');
       if (field === 'stepId') {
         const st = c.find<AnyRow & { opNo: string; name: string }>('processSteps', p.stepId);
         c.set('pfmea', id, 'opNo', st?.opNo ?? '', 'Proses adımı bağlandı');
@@ -403,10 +462,12 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
         }
       }
       syncActionFromFmea(c, 'pfmea', p, field);
+      if (field === 's' || field === 'o' || field === 'd') rpnAction(c, 'pfmea', id);
       break;
     }
     case 'processSteps': {
       const st = c.find<AnyRow & { opNo: string; name: string; machine: string; tool: string }>('processSteps', id)!;
+      if (field === 'name' && !e.from) deriveStepIo(c, id);
       for (const p of c.rows<PfmeaRow>('pfmea').filter((p) => p.stepId === id)) {
         if (field === 'opNo') c.set('pfmea', p.id, 'opNo', st.opNo, `${id} operasyon numarası değişti`);
         if (field === 'name') c.set('pfmea', p.id, 'stepName', st.name, `${id} proses adı değişti`);
@@ -436,6 +497,8 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
         for (const m of c.rows<AnyRow & { kcId: string }>('msa').filter((m) => m.kcId === id)) c.set('msa', m.id, 'characteristic', k.characteristic, `${id} karakteristik tanımı değişti`);
         for (const m of c.rows<AnyRow & { kcId: string }>('capability').filter((m) => m.kcId === id)) c.set('capability', m.id, 'characteristic', k.characteristic, `${id} karakteristik tanımı değişti`);
       }
+      // v4-kc: KC numarası, eleme tarihi, müşteri mutabakatının düşmesi (kcScmh.ts)
+      if (k) for (const x of kcOnSet(c.p, k, field, fresh)) c.set(x.table, x.id, x.field, x.value, x.reason);
       if (field === 'status' && k.status === 'Approved') onKcApproved(c, k);
       if (field === 'status' && k.status === 'Rejected') onKcRejected(c, k);
       break;
@@ -500,9 +563,190 @@ function onSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
       if (field === 'status' && a.status === 'Completed' && !a.completionDate) c.set('actions', id, 'completionDate', today(), 'Aksiyon tamamlandı');
       break;
     }
+    // v4-apqp: FMEA güncelleme tetikleyicileri (NCR, üretim koşusu, sürekli iyileştirme; SCMH 7.2.3 s.59, s.82, s.99–100)
+    // ve PPAP onayı sonrası uygulanan değişiklik → yeniden sunum (PPAP webinar s.38). Etkiler onay penceresinde listelenir.
+    case 'lessons': {
+      const l = c.find<LessonRow>('lessons', id)!;
+      if ((field === 'linkedFmeaIds' || field === 'sourceType') && isUpdateTrigger(l))
+        for (const fid of l.linkedFmeaIds) {
+          const t = tableOfId(fid);
+          const row = t === 'dfmea' || t === 'pfmea' ? c.find<DfmeaRow | PfmeaRow>(t, fid) : undefined;
+          if (row && !(row.reassess ?? '').includes(id)) c.set(t as TableKey, fid, 'reassess', lessonReassessText(l), `${id} (${l.sourceType}) FMEA satırına bağlandı`);
+        }
+      break;
+    }
+    case 'changeRequests': {
+      const cr = c.find<ChangeRequestRow>('changeRequests', id)!;
+      if (field === 'status' && cr.status === 'Implemented' && ppapApprovedDate(c.p) && crTouchesPpap(cr))
+        c.set('changeRequests', id, 'ppapResubmission', true, `${id} PPAP onayından sonra uygulandı → PPAP yeniden sunumu gerekir`);
+      break;
+    }
     default:
       break;
   }
+  riskOnSet(c, e); // v4-risk
+}
+
+// ---------------------------------------------------------------- v4-risk kuralları
+// DFMEA ↔ PFMEA iki yönlü güncelleme (SCMH 7.2.3 p32 "Updates to either may impact the other"), çok seviyeli DFMEA
+// (DRA webinar slide 42), PFD girdi/çıktı (PF webinar p20/p22), hata önleme KP satırı (CP webinar p29), karakteristik
+// ID (CP Q&A Q31), ürün↔proses eşleşmesi (CP webinar p24) ve talimat güncellemesi (CP Q&A Q20). Hepsi onay penceresinde
+// gösterilir; öneriler AI SUGGESTION olarak işaretlenir ve değer uydurulmaz.
+const EP_NONE = (s: string) => !s || /^None/i.test(s.trim());
+
+function balloonFor(c: Ctx, cp: ControlPlanRow): string {
+  const dfIds: string[] = [];
+  const k = cp.kcId ? c.find<KcRow>('kcs', cp.kcId) : undefined;
+  if (k?.sourceId.startsWith('DF-')) dfIds.push(k.sourceId);
+  const pf = cp.pfId ? c.find<PfmeaRow>('pfmea', cp.pfId) : undefined;
+  if (pf) dfIds.push(...pf.dfIds);
+  if (k?.sourceId.startsWith('PF-')) dfIds.push(...(c.find<PfmeaRow>('pfmea', k.sourceId)?.dfIds ?? []));
+  for (const id of dfIds)
+    for (const rid of c.find<DfmeaRow>('dfmea', id)?.reqIds ?? []) {
+      const r = c.find<RequirementRow>('requirements', rid);
+      if (r && (r.balloon || r.sourceCell)) return (r.balloon || r.sourceCell).trim();
+    }
+  return '';
+}
+
+function riskOnSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
+  const { table, id, field } = e;
+  const fresh = e.from === undefined;
+  if (table === 'settings') return;
+  if ((table === 'dfmea' || table === 'pfmea') && field === 'riskDecision' && e.to) {
+    const r = c.find<DfmeaRow | PfmeaRow>(table, id);
+    if (r && !r.riskDecisionBy && c.p.settings.userName) c.set(table, id, 'riskDecisionBy', c.p.settings.userName, 'Kararı veren kullanıcı');
+  }
+  if (table === 'dfmea') {
+    const d = c.find<DfmeaRow>('dfmea', id);
+    if (!d) return;
+    if (field === 'causeFromIds' && !d.cause.trim()) {
+      const txt = d.causeFromIds.map((x) => c.find<DfmeaRow>('dfmea', x)).filter((x) => x && x.failureMode).map((x) => `${x!.id}: ${x!.failureMode}`).join('\n');
+      if (txt) c.set('dfmea', id, 'cause', txt, 'Alt seviye DFMEA hata modu bu satırın nedeni olarak önerildi (DRA webinar slide 42)');
+    }
+    if (field === 'failureMode' && !fresh)
+      for (const parent of c.rows<DfmeaRow>('dfmea').filter((x) => x.causeFromIds?.includes(id)))
+        c.set('dfmea', parent.id, 'reassess', `FMEA Reassessment Required – alt seviye ${id} hata modu değişti (${today()})`, `${id} (alt seviye) hata modu değişti`);
+    return;
+  }
+  if (table === 'pfmea') {
+    const p = c.find<PfmeaRow>('pfmea', id);
+    if (!p) return;
+    // PFMEA → DFMEA geri bildirimi (DFMEA'dan gelen S senkronu hariç)
+    const syncS = field === 's' && p.s === maxLinkedSeverity(c, p.dfIds);
+    if ((field === 'failureMode' || field === 'cause' || field === 's') && !fresh && !syncS)
+      for (const dfId of p.dfIds)
+        c.set('dfmea', dfId, 'reassess', `FMEA Reassessment Required – PFMEA ${id} değişti; DRA/DFMEA etkisi değerlendirilmeli (${today()})`, `PFMEA ${id} ${field} değişti`);
+    if (field === 'designActionRequest' && e.to === true) {
+      const open = c.rows<AnyRow & { source: string; status: string }>('issues').some((x) => x.source === id && x.status !== 'Closed' && x.status !== 'Resolved');
+      if (!open)
+        c.add('issues', {
+          description: `PFMEA ${id}: neden tasarımla giderilebilir mi? ${p.cause || p.failureMode}`.trim(),
+          priority: 'Important', source: id, relatedFmea: p.dfIds.join(', '), status: 'Open',
+          recommendedAction: p.dfIds.length ? 'Bağlı DFMEA/DRA satırında tasarım değişikliği değerlendirilmeli' : 'DFMEA bağlantısı yok: ilgili DFMEA/DRA satırı belirlenmeli',
+        } as Partial<AnyRow>, `${id} tasarım talebi → açık konu (SCMH 7.2.3 p40 adım 4)`);
+      for (const dfId of p.dfIds) c.set('dfmea', dfId, 'reassess', `FMEA Reassessment Required – PFMEA ${id} tasarım değişikliği talep etti`, `${id} tasarım talebi`);
+    }
+    if (field === 'dfIds' && p.dfIds.length) {
+      const dfs = p.dfIds.map((x) => c.find<DfmeaRow>('dfmea', x)).filter(Boolean) as DfmeaRow[];
+      if (!p.productRequirement.trim() || p.productRequirement.startsWith(NO_DATA)) {
+        const req = dfs.map((d) => d.requirement).filter(Boolean).join('\n');
+        if (req) c.set('pfmea', id, 'productRequirement', req, 'Bağlı DFMEA gereksinimi ürün gereksinimi olarak önerildi');
+      }
+      if (!p.effect.trim()) {
+        const eff = dfs.filter((d) => d.failureMode).map((d) => `${d.failureMode} (${d.id})`).join('; ');
+        if (eff) {
+          c.set('pfmea', id, 'effect', eff, 'DFMEA hata modu → PFMEA etkisi (PF webinar p31) – AI SUGGESTION');
+          if (!p.dataStatus) c.set('pfmea', id, 'dataStatus', 'AI SUGGESTION', 'Etki önerisi');
+        }
+      }
+    }
+    if (field === 'productRequirement' || field === 'processRequirement')
+      c.set('pfmea', id, 'requirement', joinedRequirement(p.productRequirement, p.processRequirement), 'Ürün / proses gereksinimi');
+    if (field === 'requirement' && !p.productRequirement.trim() && !p.processRequirement.trim() && p.requirement.trim()) {
+      const sp = splitRequirement(c.p, p);
+      if (sp.product) c.set('pfmea', id, 'productRequirement', sp.product, 'Gereksinim ayrımı (SCMH 7.2.11 Rev A)');
+      if (sp.process) c.set('pfmea', id, 'processRequirement', sp.process, 'Gereksinim ayrımı (SCMH 7.2.11 Rev A)');
+    }
+    if (field === 'causeInputIds' && !p.cause4M) {
+      const inp = p.causeInputIds.map((x) => c.find<PfdItemRow>('pfdItems', x)).find((x) => x?.cat4M);
+      if (inp) c.set('pfmea', id, 'cause4M', inp.cat4M, `${inp.id} girdisinin 4M kategorisi`);
+    }
+    if ((field === 'errorProofing' || field === 'significantRisk' || field === 's') && !EP_NONE(p.errorProofing) && cpRequired(c.p, p)
+      && !c.rows<ControlPlanRow>('controlPlan').some((r) => r.pfId === id && r.controlKind === 'Error proofing')) {
+      const st = c.find<AnyRow & { machine: string; opNo: string; name: string }>('processSteps', p.stepId);
+      c.add('controlPlan', {
+        pfId: id, stepId: p.stepId, opNo: st?.opNo ?? p.opNo, processName: st?.name ?? p.stepName, machine: st?.machine ?? '',
+        controlKind: 'Error proofing', epDevice: p.errorProofing, charType: 'Process Characteristic',
+        processChar: `Hata önleme cihazı çalışıyor: ${p.errorProofing}`, method: 'Cihaz doğrulaması (referans/deneme parçası) – AI SUGGESTION',
+        sampleSize: NO_DATA, frequency: NO_DATA, epVerification: NO_DATA, reactionPlan: DEFAULT_REACTION, autoCreated: true,
+      } as Partial<ControlPlanRow>, `${id} hata önleme cihazı kontrol planında izlenmeli (CP webinar p29) – AI SUGGESTION`);
+    }
+    return;
+  }
+  if (table === 'pfdItems') {
+    const it = c.find<PfdItemRow>('pfdItems', id);
+    if (!it) return;
+    if (field === 'text' && !fresh && e.from)
+      for (const p of c.rows<PfmeaRow>('pfmea').filter((x) => x.outputId === id || x.causeInputIds?.includes(id)))
+        c.set('pfmea', p.id, 'reassess', `FMEA Reassessment Required – PFD ${it.kind === 'Output' ? 'çıktısı' : 'girdisi'} ${id} değişti`, `${id} değişti`);
+    // Akış şablonundan gelen çıktılar için taslak üretilmez: PFMEA "Kütüphaneden öner" ile bu çıktıya bağlanır.
+    if ((field === 'text' || field === 'kind' || field === 'stepId') && it.kind === 'Output' && it.text.trim() && it.stepId && it.origin !== 'template'
+      && !c.rows<PfmeaRow>('pfmea').some((x) => x.outputId === id)) {
+      const st = c.find<AnyRow & { opNo: string; name: string }>('processSteps', it.stepId);
+      for (const m of ['yok (no output)', 'kısmi / yetersiz (partial / under)', 'fazla (over)', 'aralıklı (intermittent)'])
+        c.add('pfmea', {
+          stepId: it.stepId, opNo: st?.opNo ?? '', stepName: st?.name ?? '', outputId: id, productRequirement: it.text,
+          failureMode: `${it.text} – ${m}`, approval: 'AI Proposed', dataStatus: 'AI SUGGESTION', origin: 'ai', source: id,
+        } as Partial<PfmeaRow>, `${id} PFD çıktısı → hata modu taslağı (PF webinar p20) – AI SUGGESTION`);
+    }
+    return;
+  }
+  if (table === 'controlPlan') {
+    const cp = c.find<ControlPlanRow>('controlPlan', id);
+    if (!cp) return;
+    if ((field === 'kcId' || field === 'pfId') && !cp.charId.trim()) {
+      const b = balloonFor(c, cp);
+      if (b) c.set('controlPlan', id, 'charId', b, 'Bağlı gereksinimin resim balonu / konumu (CP Q&A Q31)');
+    }
+    if (['method', 'frequency', 'sampleSize', 'controlMethod', 'reactionPlan'].includes(field) && !fresh && cp.wiDocId)
+      c.set('documents', cp.wiDocId, 'reassess', `Talimat güncellemesi gerekli – ${id} ${field} değişti (${today()})`, `${id} kontrol yöntemi değişti (CP Q&A Q20)`);
+    if ((field === 'specification' || field === 'processChar') && !fresh)
+      for (const t of cp.controlsCpIds ?? [])
+        c.set('controlPlan', t, 'reassess', `FMEA Reassessment Required – bağlı proses karakteristiği ${id} değişti`, `${id} değişti`);
+    return;
+  }
+}
+
+/** 4.4.0: RPN ≥ eşik ve önerilen aksiyon boşsa satırın neden/kontrol bilgisinden AI RECOMMENDATION yazar (rpnAction.ts). */
+function rpnAction(c: Ctx, table: 'dfmea' | 'pfmea', id: string) {
+  const row = c.find<DfmeaRow | PfmeaRow>(table, id);
+  if (!row) return;
+  const vals = rpnActionValues(c.p, row, table === 'pfmea');
+  for (const [f, v] of Object.entries(vals))
+    c.set(table, id, f, v, `${id} RPN eşiği (${c.p.settings.rpnThreshold}) aşıldı – önerilen aksiyon (AI RECOMMENDATION)`);
+}
+
+const SPECIAL_AREAS = new Set(['Metal Finishing', 'Heat Treatment', 'Welding', 'Cure', 'Bonding', 'NDT']);
+
+/** 4.4.0: adı yeni girilen proses adımına kütüphaneden PFD girdi/çıktı ve proses parametresi adları (limit VERİ YOK). */
+function deriveStepIo(c: Ctx, stepId: string) {
+  const st = c.find<ProcessStepRow>('processSteps', stepId);
+  if (!st?.name?.trim()) return;
+  if (c.rows<PfdItemRow>('pfdItems').some((x) => x.stepId === stepId) || c.rows<ProcessParamRow>('processParams').some((x) => x.stepId === stepId)) return;
+  const hit = stepIo(st, materialFamily(c.p));
+  if (!hit) return;
+  // 4.5.0: AS9100 özel proses alanları (sonucu ancak tahribatlı testle doğrulanabilen prosesler) işaretlenir; mühendis kaldırabilir.
+  if (SPECIAL_AREAS.has(hit.area) && !st.specialProcess)
+    c.set('processSteps', stepId, 'specialProcess', true, `${stepId} ${hit.area} özel proses alanı (ENGINEERING SUGGESTION – doğrulayın)`);
+  const src = `${FLOW_SOURCE} (${hit.area})`;
+  const why = `${stepId} proses akışı adımı → ${hit.area} kütüphanesi (ENGINEERING SUGGESTION)`;
+  for (const text of hit.io.outputs)
+    c.add('pfdItems', { stepId, kind: 'Output', text, source: src, origin: 'template' } as Partial<PfdItemRow>, why);
+  for (const [text, cat4M] of hit.io.inputs)
+    c.add('pfdItems', { stepId, kind: 'Input', text, cat4M, sourceOfVariation: true, source: src, origin: 'template' } as Partial<PfdItemRow>, why);
+  for (const parameter of hit.io.params)
+    c.add('processParams', { stepId, parameter, source: `${src} – limit VERİ YOK`, notes: 'VERİ YOK – doğrulanmalı (limitleri proses spesifikasyonundan girin)', origin: 'template' } as Partial<ProcessParamRow>, why);
 }
 
 function syncActionFromFmea(c: Ctx, table: 'dfmea' | 'pfmea', row: DfmeaRow | PfmeaRow, field: string) {
@@ -525,12 +769,14 @@ function onAdd(c: Ctx, e: Extract<Event, { type: 'add' }>) {
 function onDelete(c: Ctx, e: Extract<Event, { type: 'delete' }>) {
   const { table, id } = e;
   const why = `${id} silindi`;
+  capOnDelete(c, table, id); // v4-cap
   switch (table) {
     case 'requirements':
       for (const d of c.rows<DfmeaRow>('dfmea').filter((d) => d.reqIds.includes(id)))
         c.set('dfmea', d.id, 'reqIds', d.reqIds.filter((x) => x !== id), why);
       for (const s of c.rows<AnyRow & { reqIds: string[] }>('structure').filter((s) => s.reqIds.includes(id)))
         c.set('structure', s.id, 'reqIds', s.reqIds.filter((x) => x !== id), why);
+      syncReqIssue(c, id);
       break;
     case 'structure':
       for (const d of c.rows<DfmeaRow>('dfmea').filter((d) => d.functionId === id)) c.set('dfmea', d.id, 'functionId', '', why);
@@ -538,14 +784,20 @@ function onDelete(c: Ctx, e: Extract<Event, { type: 'delete' }>) {
       break;
     case 'dfmea':
     case 'pfmea':
-      if (table === 'dfmea')
+      if (table === 'dfmea') {
         for (const p of c.rows<PfmeaRow>('pfmea').filter((p) => p.dfIds.includes(id))) c.set('pfmea', p.id, 'dfIds', p.dfIds.filter((x) => x !== id), why);
+        for (const d of c.rows<DfmeaRow>('dfmea').filter((d) => d.causeFromIds?.includes(id))) c.set('dfmea', d.id, 'causeFromIds', d.causeFromIds.filter((x) => x !== id), why); // v4-risk
+      }
       if (table === 'pfmea') {
         for (const cp of c.rows<ControlPlanRow>('controlPlan').filter((r) => r.pfId === id)) c.set('controlPlan', cp.id, 'pfId', '', why);
         for (const pp of c.rows<ProcessParamRow>('processParams').filter((r) => r.pfIds.includes(id)))
           c.set('processParams', pp.id, 'pfIds', pp.pfIds.filter((x) => x !== id), why);
       }
-      for (const k of c.rows<KcRow>('kcs').filter((k) => k.sourceId === id)) c.del('kcs', k.id, `Kaynağı ${why}`);
+      for (const k of c.rows<KcRow>('kcs').filter((k) => k.sourceId === id)) {
+        // v4-kc: numaralı KC kayıtta kalır (7.2.17 §1.2.1); yalnızca yeniden değerlendirme işaretlenir
+        if (kcLocked(k)) c.set('kcs', k.id, 'reassess', `FMEA Reassessment Required – kaynak ${why}; KC durumunu değerlendirin (Eliminated + gerekçe)`, `Kaynağı ${why}`);
+        else c.del('kcs', k.id, `Kaynağı ${why}`);
+      }
       for (const a of c.rows<ActionRow>('actions').filter((a) => a.sourceId === id)) c.del('actions', a.id, `Kaynağı ${why}`);
       for (const l of c.rows<AnyRow & { linkedFmeaIds: string[] }>('lessons').filter((l) => l.linkedFmeaIds.includes(id)))
         c.set('lessons', l.id, 'linkedFmeaIds', l.linkedFmeaIds.filter((x) => x !== id), why);
@@ -554,6 +806,11 @@ function onDelete(c: Ctx, e: Extract<Event, { type: 'delete' }>) {
       for (const p of c.rows<PfmeaRow>('pfmea').filter((p) => p.stepId === id)) c.set('pfmea', p.id, 'stepId', '', why);
       for (const cp of c.rows<ControlPlanRow>('controlPlan').filter((r) => r.stepId === id)) c.set('controlPlan', cp.id, 'stepId', '', why);
       for (const pp of c.rows<ProcessParamRow>('processParams').filter((r) => r.stepId === id)) c.set('processParams', pp.id, 'stepId', '', why);
+      for (const x of c.rows<PfdItemRow>('pfdItems').filter((r) => r.stepId === id)) c.set('pfdItems', x.id, 'stepId', '', why); // v4-risk
+      for (const st of c.rows<AnyRow & { alternateOf: string; returnTo: string }>('processSteps')) { // v4-risk
+        if (st.alternateOf === id) c.set('processSteps', st.id, 'alternateOf', '', why);
+        if (st.returnTo === id) c.set('processSteps', st.id, 'returnTo', '', why);
+      }
       break;
     case 'kcs':
       for (const cp of c.rows<ControlPlanRow>('controlPlan').filter((r) => r.kcId === id)) {
@@ -567,6 +824,8 @@ function onDelete(c: Ctx, e: Extract<Event, { type: 'delete' }>) {
       for (const m of c.rows<AnyRow & { kcId: string }>('msa').filter((r) => r.kcId === id)) c.set('msa', m.id, 'kcId', '', why);
       break;
     case 'controlPlan':
+      for (const x of c.rows<ControlPlanRow>('controlPlan').filter((r) => r.controlsCpIds?.includes(id))) // v4-risk
+        c.set('controlPlan', x.id, 'controlsCpIds', x.controlsCpIds.filter((v) => v !== id), why);
       for (const m of c.rows<AnyRow & { cpId: string; autoCreated: boolean }>('msa').filter((r) => r.cpId === id)) {
         if (m.autoCreated) c.del('msa', m.id, `Bağlı kontrol planı satırı ${why}`);
         else c.set('msa', m.id, 'cpId', '', why);
@@ -582,6 +841,12 @@ function onDelete(c: Ctx, e: Extract<Event, { type: 'delete' }>) {
     }
     case 'processParams':
       for (const cp of c.rows<ControlPlanRow>('controlPlan').filter((r) => r.ppId === id)) c.set('controlPlan', cp.id, 'ppId', '', why);
+      break;
+    case 'pfdItems': // v4-risk
+      for (const p of c.rows<PfmeaRow>('pfmea')) {
+        if (p.outputId === id) c.set('pfmea', p.id, 'outputId', '', why);
+        if (p.causeInputIds?.includes(id)) c.set('pfmea', p.id, 'causeInputIds', p.causeInputIds.filter((x) => x !== id), why);
+      }
       break;
     case 'evidence':
       for (const t of ['requirements', 'dfmea', 'pfmea', 'kcs', 'controlPlan', 'processParams'] as TableKey[])
@@ -607,6 +872,11 @@ export function planEdits(project: Project, edits: Edit[], propagate = true): Pl
     } else if (ed.kind === 'add') {
       c.add(ed.table, ed.row, 'Kullanıcı ekledi');
     } else if (ed.kind === 'delete') {
+      // v4-kc: numaralı KC/CI silinemez; silme isteği yeniden değerlendirme notuna dönüşür
+      if (ed.table === 'kcs' && kcLocked(c.find<KcRow>('kcs', ed.id))) {
+        c.set('kcs', ed.id, 'reassess', KC_LOCK_MSG, 'Silme reddedildi');
+        continue;
+      }
       c.del(ed.table, ed.id, 'Kullanıcı sildi');
     } else {
       c.setting(ed.field, ed.value, 'Kullanıcı değişikliği');
@@ -623,6 +893,7 @@ export function planEdits(project: Project, edits: Edit[], propagate = true): Pl
     }
   }
   c.queue = [];
+  ensureLineNumbers(c.p); // v4-risk: yeni satırlara sabit satır numarası
   const at = new Date().toISOString();
   for (const ef of c.effects)
     if (ef.table !== 'settings')

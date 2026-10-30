@@ -1,4 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
+import { approvedReqIds, dfmeaTargets, dfmeaTargetText } from '../../shared/dfmeaInput';
+import { approvedExamples, exampleProposalData, expertBrief, type ExampleKind } from '../../shared/expert';
+import { materialFamily } from '../../shared/failureLib';
 import { AI_ERROR_TEXT, LOW_CONF_TEXT, type AiResult } from '../../shared/aischema';
 import { findRequirementCandidates, locText, type ExtractedDoc } from '../../shared/docmodel';
 import { COMPOSITE_KB, isComposite } from '../../shared/kb';
@@ -10,16 +13,25 @@ import type { AnyRow, DocumentRow, Project } from '../../shared/types';
 import { api, isDesktop } from '../api';
 import { useStore } from '../store';
 
-export function projectContext(p: Project): string {
+/** 4.5.0: örnek seçimi için sorgu; bu projenin onaylı satırları da aday olur. */
+function exampleQuery(p: Project, kind: ExampleKind, target: string) {
+  return { kind, family: materialFamily(p), text: target, local: approvedExamples(p) };
+}
+
+/** approvedReqsOnly: yalnızca Approved gereksinimler ve fonksiyonların onaylı REQ bağlantıları yazılır (DFMEA önerisi). */
+export function projectContext(p: Project, opts: { approvedReqsOnly?: boolean } = {}): string {
   const lines: string[] = [];
+  const ok = opts.approvedReqsOnly ? approvedReqIds(p) : null;
+  const reqs = ok ? p.requirements.filter((r) => ok.has(r.id)) : p.requirements;
+  const fnReqs = (ids: string[]) => (ok ? ids.filter((id) => ok.has(id)) : ids).join(',');
   const m = p.meta;
   lines.push(`PROJE: ${m.name} | Parça: ${m.partNumber} ${m.partName} | Müşteri: ${m.customer} | Program: ${m.program} | Ürün tipi: ${p.settings.productType || 'belirtilmedi'} | FMEA ${m.fmeaRevision}`);
   if (m.scope) lines.push(`Kapsam: ${m.scope}`);
   lines.push(`KC Severity eşiği: ${p.settings.kcSeverityThreshold} | AP tablosu: ${p.scoring.apName || (p.scoring.apTable ? 'Şirket tablosu' : 'AIAG-VDA 2019')}`);
   lines.push('PUANLAMA KRİTERLERİ (S/O/D, DFMEA | PFMEA):', ...(['severity', 'occurrence', 'detection'] as const).flatMap((k) => p.scoring[k].map((e) => `${k[0].toUpperCase()}${e.rank}: ${e.df} | ${e.pf}`)));
   if (p.documents.length) lines.push('\nDOKÜMANLAR:', ...p.documents.map((d) => `${d.id} | ${d.docNumber} | ${d.name} | Rev ${d.revision} | ${d.docType}`));
-  if (p.requirements.length) lines.push('\nGEREKSİNİMLER:', ...p.requirements.map((r) => `${r.id} [${r.reqType}] ${r.text} | Kabul: ${r.acceptance || 'VERİ YOK'}${r.lsl != null || r.usl != null ? ` | Limit: ${r.lsl ?? '–'}…${r.usl ?? '–'} ${r.unit}` : ''} | Kaynak: ${r.source}`));
-  if (p.structure.length) lines.push('\nYAPI & FONKSİYON:', ...p.structure.map((s) => `${s.id} ${s.level} ${s.element} (üst: ${s.parentId || '-'}) → ${s.function}${s.performanceReq ? ` | Performans: ${s.performanceReq}` : ''} | REQ: ${s.reqIds.join(',')}`));
+  if (reqs.length) lines.push(ok ? '\nGEREKSİNİMLER (yalnızca onaylı / Approved):' : '\nGEREKSİNİMLER:', ...reqs.map((r) => `${r.id} [${r.reqType}] ${r.text} | Kabul: ${r.acceptance || 'VERİ YOK'}${r.lsl != null || r.usl != null ? ` | Limit: ${r.lsl ?? '–'}…${r.usl ?? '–'} ${r.unit}` : ''} | Kaynak: ${r.source}`));
+  if (p.structure.length) lines.push('\nYAPI & FONKSİYON:', ...p.structure.map((s) => `${s.id} ${s.level} ${s.element} (üst: ${s.parentId || '-'}) → ${s.function}${s.performanceReq ? ` | Performans: ${s.performanceReq}` : ''} | REQ: ${fnReqs(s.reqIds)}`));
   if (p.dfmea.length) lines.push('\nDFMEA:', ...p.dfmea.map((d) => `${d.id} fn:${d.functionId} req:${d.reqIds.join(',')} | FM: ${d.failureMode} | Etki: ${d.effect} | Neden: ${d.cause} | Önleme: ${d.prevention} | Tespit: ${d.detection} | S${d.s ?? '-'} O${d.o ?? '-'} D${d.d ?? '-'} AP:${apOf(p, d.s, d.o, d.d)}`));
   if (p.processSteps.length) lines.push('\nPROSES AKIŞI:', ...p.processSteps.map((s) => `${s.id} Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} | ${s.description} | Makine: ${s.machine}`));
   if (p.processParams.length) lines.push('\nPROSES PARAMETRELERİ:', ...p.processParams.map((x) => `${x.id} step:${x.stepId} ${x.parameter} ${x.lsl ?? ''}…${x.usl ?? ''} ${x.unit} | ürün kar.: ${x.productCharacteristic} | izleme: ${x.monitoring}`));
@@ -75,7 +87,7 @@ export function ProposalDialog({ initial, onClose }: { initial: ProposalSet; onC
         <div className="modal-head">
           <div className="icon ai">✦</div>
           <div>
-            <h2>AI önerileri – her birini kabul edin, düzenleyin veya reddedin</h2>
+            <h2>{set.meta.provider === 'local' ? 'Örnek kütüphanesi önerileri' : 'AI önerileri'} – her birini kabul edin, düzenleyin veya reddedin</h2>
             <p>
               {set.meta.role} · {set.meta.model || set.meta.provider} · {set.meta.mode === 'strict' ? 'Strict Engineering Mode' : 'Engineering Knowledge Mode'}
               {set.meta.cached ? ' · önbellekten' : ''} · {set.meta.tokensIn + set.meta.tokensOut} token. Kabul edilenler “AI Proposed” eklenir; onay mühendisindir.
@@ -213,7 +225,7 @@ export function useAi() {
       toast(AI_ERROR_TEXT.OFFLINE, 'warn');
       return false;
     }
-    if (!s.configured && s.provider === 'anthropic') {
+    if (!s.configured && s.provider !== 'local') {
       toast('Önce Ayarlar › AI bölümünden API anahtarını girin.', 'warn');
       window.dispatchEvent(new CustomEvent('open-settings'));
       return false;
@@ -271,29 +283,56 @@ export function useAi() {
     }
     const candidates = extracted ? findRequirementCandidates(extracted) : [];
     const label = doc ? `${doc.docNumber} ${doc.name} Rev ${doc.revision}` : 'Yapıştırılan metin';
-    await run('Doküman analiz ediliyor ve gereksinimler çıkarılıyor…', 'requirements', `${docId}: ${label}`, () =>
+    await run('Doküman analiz ediliyor ve gereksinimler çıkarılıyor… (büyük dokümanlar parça parça işlenir, birkaç dakika sürebilir)', 'requirements', `${docId}: ${label}`, () =>
       api.aiRequirements({ doc: extracted, filePath: doc?.filePath, docId: docId ?? '', docLabel: label, existing: p.requirements.map((r) => `${r.id}: ${r.text}`), candidates, mode }),
       docId, p,
     );
   };
 
   const suggestDfmea = async (fnIds: string[]) => {
-    const fns = project.structure.filter((s) => fnIds.length === 0 || fnIds.includes(s.id)).filter((s) => s.function);
-    if (!fns.length) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
-    await run('DFMEA önerileri hazırlanıyor…', 'dfmea', fns.map((f) => f.id).join(', '), () =>
-      api.aiDfmea({ context: projectContext(project), target: 'Hedef fonksiyonlar:\n' + fns.map((f) => `${f.id}: ${f.element} → ${f.function} (REQ: ${f.reqIds.join(', ')})`).join('\n'), mode }),
+    if (!project.structure.some((s) => s.function && (!fnIds.length || fnIds.includes(s.id)))) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
+    // 4.6.3: yalnızca onaylı gereksinimler; onaylı gereksinimi olmayan fonksiyon atlanır
+    const { ready, skipped } = dfmeaTargets(project, fnIds);
+    if (!ready.length) return toast('DFMEA önerisi yalnızca onaylı (Approved) gereksinimlerden üretilir. Seçili fonksiyonların onaylı gereksinimi yok; Gereksinimler ekranında onaylayın ve fonksiyonlara bağlayın.', 'warn');
+    if (skipped.length) toast(`Onaylı gereksinimi olmayan ${skipped.length} fonksiyon atlandı: ${skipped.map((f) => f.id).join(', ')}`, 'warn');
+    const target = dfmeaTargetText(ready);
+    await run('DFMEA önerileri hazırlanıyor…', 'dfmea', ready.map(({ fn }) => fn.id).join(', '), () =>
+      api.aiDfmea({ context: projectContext(project, { approvedReqsOnly: true }), target, mode, expert: expertBrief(project, 'dfmea'), exampleQuery: exampleQuery(project, 'dfmea', target) }),
     );
   };
 
   const suggestPfmea = async (stepIds: string[]) => {
     const steps = project.processSteps.filter((s) => stepIds.length === 0 || stepIds.includes(s.id));
     if (!steps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
-    const composite = isComposite(project.settings.productType) || steps.some((s) => s.specialProcess)
+    // 4.5.0: kompozit bilgi tabanı yalnız kompozit parçada (eskiden özel proses adımı olan her parçaya gidiyordu)
+    const composite = materialFamily(project) === 'composite' || (isComposite(project.settings.productType) && materialFamily(project) !== 'metal')
       ? COMPOSITE_KB.map((k) => `${k.area}: hata modları ${k.failureModes.join(', ')}; tipik nedenler ${k.causes.join(', ')}; parametreler ${k.parameters.join(', ')}`).join('\n')
-      : '(ürün tipi kompozit değil)';
+      : '';
+    const target = 'Hedef proses adımları:\n' + steps.map((s) => `${s.id}: Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${s.description}`).join('\n');
     await run('PFMEA önerileri hazırlanıyor…', 'pfmea', steps.map((s) => s.id).join(', '), () =>
-      api.aiPfmea({ context: projectContext(project), composite, target: 'Hedef proses adımları:\n' + steps.map((s) => `${s.id}: Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${s.description}`).join('\n'), mode }),
+      api.aiPfmea({ context: projectContext(project), composite, target, mode, expert: expertBrief(project, 'pfmea', steps.map((s) => s.id)), exampleQuery: exampleQuery(project, 'pfmea', target) }),
     );
+  };
+
+  /** 4.6.0: AI'sız – onaylı örnek kütüphanesinden benzer satırları önerir; internet / API anahtarı gerekmez. */
+  const suggestFromExamples = async (kind: ExampleKind) => {
+    if (kind === 'dfmea' && !project.structure.some((s) => s.function)) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
+    if (kind === 'pfmea' && !project.processSteps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
+    const pool = await api.examplesList();
+    if (!pool.length) return toast('Örnek kütüphanesi boş. Onaylı (Approved / Engineer Reviewed) satırları olan projeleri açıp kaydedin.', 'warn');
+    const data = exampleProposalData(project, kind, pool);
+    if (!data.rows.length) return toast(`Kütüphanede (${pool.length} örnek) bu projeye yeterince benzeyen ${kind.toUpperCase()} örneği bulunamadı.`, 'warn');
+    const meta = { role: 'Örnek kütüphanesi', provider: 'local', model: 'onaylı örnekler (AI yok)', at: new Date().toISOString(), mode, tokensIn: 0, tokensOut: 0, cached: false, retries: 0 };
+    const set = buildProposals(project, kind, data, meta, {
+      inputs: `Örnek kütüphanesi (${pool.length} satır)`,
+      note: 'Bu öneriler AI kullanmadan, daha önce onayladığınız benzer satırlardan getirildi. Metin ve S/O/D başka parçadan geldiği için her satırı bu parçaya göre düzeltin.',
+    });
+    set.items.forEach((it, i) => {
+      const src = String(data.rows[i]?.exampleSource ?? '');
+      it.row = { ...it.row, origin: 'similar', source: `Örnek kütüphanesi: ${src}` };
+      it.warnings = [`Kaynak örnek: ${src}`, ...it.warnings];
+    });
+    setProposal(set);
   };
 
   const dialogs = (
@@ -313,7 +352,7 @@ export function useAi() {
     </>
   );
 
-  return { extractRequirements, suggestDfmea, suggestPfmea, dialogs, busy: !!busy };
+  return { extractRequirements, suggestDfmea, suggestPfmea, suggestFromExamples, dialogs, busy: !!busy };
 }
 
 export function PasteTextDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (t: string) => void }) {

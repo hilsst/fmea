@@ -3,7 +3,8 @@ import type { TableKey } from './types';
 
 export type ScreenKey =
   | 'dashboard' | 'project' | 'documents' | 'requirements' | 'dfmea' | 'pfmea' | 'risk' | 'kcs' | 'controlPlan' | 'msa'
-  | 'capability' | 'actions' | 'lessons' | 'traceability' | 'impact' | 'quality' | 'aiReview' | 'approval' | 'baseline' | 'settings';
+  | 'capability' | 'actions' | 'lessons' | 'traceability' | 'impact' | 'quality' | 'aiReview' | 'approval' | 'baseline' | 'settings'
+  | 'apqp' | 'ppap'; // v4-apqp
 
 export interface SubTab {
   key: string;
@@ -23,6 +24,15 @@ export interface Screen {
 export const SCREENS: Screen[] = [
   { key: 'dashboard', label: 'Gösterge Paneli', group: 'Genel', stage: 'Genel bakış', hint: 'Projenin durumu, kalite skoru, bekleyen kararlar ve sıradaki onay adımı.' },
   { key: 'project', label: 'Proje', group: 'Genel', stage: 'Adım 1 · Planlama', hint: 'Kapsam, ekip, parça, ürün tipi ve revizyon bilgileri.' },
+  // v4-apqp
+  {
+    key: 'apqp', label: 'APQP', group: 'Genel', stage: 'SCMH 7.2 · APQP', hint: 'Proje tipi, eleman uygulanabilirliği (7.2.12 / 7.2.15), fazlar ve kilometre taşları, teslimat onayları, ekip, ambalaj onayı (7.2.20).',
+    subs: [
+      { key: 'elements', label: 'Elemanlar' }, { key: 'phases', label: 'Fazlar & Kilometre Taşları' }, { key: 'approvals', label: 'Teslimat Onayları' },
+      { key: 'team', label: 'Ekip & Kriterler' }, { key: 'dra', label: 'P-Diyagramı / DRA' }, { key: 'cp', label: 'KP Fazları & Başlık' },
+      { key: 'packaging', label: 'Ambalaj 7.2.20' }, { key: 'reuse', label: 'Aile & Tetikleyiciler' }, { key: 'maturity', label: 'Olgunluk 7.2.14' },
+    ],
+  },
   {
     key: 'documents', label: 'Dokümanlar', group: 'Girdi', stage: 'Document Intelligence', hint: 'Dokümanları ekleyin ve yerel olarak analiz edin. Kanıtlar ve açık konular burada tutulur.',
     subs: [{ key: 'documents', label: 'Dokümanlar', table: 'documents' }, { key: 'evidence', label: 'Kanıtlar', table: 'evidence' }, { key: 'issues', label: 'Açık Konular', table: 'issues' }],
@@ -34,10 +44,14 @@ export const SCREENS: Screen[] = [
   },
   {
     key: 'pfmea', label: 'PFMEA', group: 'Analiz', stage: 'Adım 2–6 · Proses FMEA', hint: 'Proses adımı → Proses elemanı (4M/5M) → Fonksiyon → Gereksinim → Hata modu → Neden (5 Neden) → Kontroller.',
-    subs: [{ key: 'processSteps', label: 'Proses Akışı (PFD)', table: 'processSteps' }, { key: 'processParams', label: 'Proses Parametreleri', table: 'processParams' }, { key: 'pfmea', label: 'PFMEA', table: 'pfmea' }],
+    subs: [{ key: 'processSteps', label: 'Proses Akışı (PFD)', table: 'processSteps' }, { key: 'pfdItems', label: 'PFD Girdi / Çıktı', table: 'pfdItems' } /* v4-risk */, { key: 'processParams', label: 'Proses Parametreleri', table: 'processParams' }, { key: 'pfmea', label: 'PFMEA', table: 'pfmea' }],
   },
   { key: 'risk', label: 'Risk', group: 'Analiz', stage: 'Risk Engine', hint: 'Puanlama standardı (IAQG SCMH veya AIAG-VDA), S/O/D kriterleri ve önceliklendirme.' },
-  { key: 'kcs', label: 'Özel Karakteristikler', group: 'Analiz', stage: 'Special Characteristic Engine', hint: 'KC adayları faktörleriyle değerlendirilir; karar ve kategori mühendisindir.' },
+  {
+    key: 'kcs', label: 'Özel Karakteristikler', group: 'Analiz', stage: 'Special Characteristic Engine', hint: 'KC adayları faktörleriyle değerlendirilir; karar ve kategori mühendisindir.',
+    // v4-kc: SCMH / AS9145 KC–CI bölümleri
+    subs: [{ key: 'kcs', label: 'KC / CI Listesi', table: 'kcs' }, { key: 'kcFlow', label: 'Adaylar & Karar Akışı' }, { key: 'kcTrace', label: 'İzlenebilirlik & 7.2.16' }],
+  },
   { key: 'controlPlan', label: 'Kontrol Planı', group: 'Kontrol', stage: 'Control Plan Engine', hint: 'Ürün karakteristiği, proses karakteristiği ve proses parametresi ayrı tutulur.' },
   { key: 'msa', label: 'MSA', group: 'Kontrol', stage: 'Ölçüm Sistemi Analizi', hint: 'Ölçüm tipine göre çalışma önerilir; her ölçüm için GR&R zorunlu değildir.' },
   { key: 'capability', label: 'Capability', group: 'Kontrol', stage: 'Capability Validation', hint: 'Cp/Cpk/Pp/Ppk yalnızca normallik, kararlılık ve yeterli örnekle geçerlidir.' },
@@ -55,6 +69,11 @@ export const SCREENS: Screen[] = [
   {
     key: 'aiReview', label: 'AI İnceleme', group: 'Doğrulama', stage: 'AI Review Engine', hint: 'Bağımsız AI denetçi önerileri. AI hiçbir kaydı onaylamaz.',
     subs: [{ key: 'review', label: 'AI İnceleme' }, { key: 'aiRuns', label: 'AI Çalıştırmaları', table: 'aiRuns' }],
+  },
+  // v4-apqp
+  {
+    key: 'ppap', label: 'PPAP', group: 'Onay', stage: 'PPAP · Faz 4', hint: '11 PPAP elemanı, hazırlık kuralları, PRR kapısı ve müşteri kararı (Full / Interim / Rejected). Yazılı onay olmadan sevkiyat yapılmaz.',
+    subs: [{ key: 'elements', label: 'PPAP Elemanları' }, { key: 'prr', label: 'PRR Kapısı' }, { key: 'submissions', label: 'Sunum & Karar' }],
   },
   {
     key: 'approval', label: 'Onay', group: 'Onay', stage: 'Engineering Approval', hint: 'AI Draft → Mühendis → Tasarım → Üretim → Kalite → Final onay → Baseline.',
