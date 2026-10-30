@@ -1,6 +1,7 @@
 // Human-in-the-loop (§70): AI çıktısı → kontrol edilebilir öneriler. Kabul edilenler "AI Proposed" eklenir,
 // kanıtlar EV kayıtlarına dönüşür ve kaynakta doğrulanmayan sayısal değerler silinir (§14, §64).
 import type { AiRunMeta } from './aischema';
+import { approvedReqIds } from './dfmeaInput';
 import { locText, verifySource, type DocLoc, type ExtractedDoc, type SourceCheck } from './docmodel';
 import { blankRow, nextId } from './model';
 import type { AiRunRow, AnyRow, Basis, Confidence, DataStatus, EvidenceRow, Project, TableKey, Verification } from './types';
@@ -123,9 +124,14 @@ export function buildProposals(p: Project, kind: ProposalSet['kind'], data: Reco
       Object.assign(row, common);
       if (kind === 'dfmea') {
         const fn = p.structure.find((x) => x.id === r.functionId);
+        // 4.6.3: DFMEA satırı yalnızca onaylı (Approved) gereksinime bağlanır
+        const ok = approvedReqIds(p);
+        const reqIds = ((r.reqIds as string[]) ?? []).filter((x) => p.requirements.some((q) => q.id === x));
+        const dropped = reqIds.filter((x) => !ok.has(x));
+        if (dropped.length) warnings.push(`Onaylı olmayan gereksinim bağlantısı çıkarıldı: ${dropped.join(', ')}`);
         Object.assign(row, {
           functionId: fn ? fn.id : '', function: fn?.function ?? '',
-          reqIds: ((r.reqIds as string[]) ?? []).filter((x) => p.requirements.some((q) => q.id === x)),
+          reqIds: reqIds.filter((x) => ok.has(x)),
           localEffect: s(r.localEffect), higherEffect: s(r.higherEffect), verification: s(r.verification),
         });
         if (r.functionId && !fn) warnings.push(`Fonksiyon ${s(r.functionId)} projede yok; bağlantı boş bırakıldı.`);
