@@ -278,7 +278,7 @@ export function useAi() {
     }
     const candidates = extracted ? findRequirementCandidates(extracted) : [];
     const label = doc ? `${doc.docNumber} ${doc.name} Rev ${doc.revision}` : 'Yapıştırılan metin';
-    await run('Doküman analiz ediliyor ve gereksinimler çıkarılıyor…', 'requirements', `${docId}: ${label}`, () =>
+    await run('Doküman analiz ediliyor ve gereksinimler çıkarılıyor… (büyük dokümanlar parça parça işlenir, birkaç dakika sürebilir)', 'requirements', `${docId}: ${label}`, () =>
       api.aiRequirements({ doc: extracted, filePath: doc?.filePath, docId: docId ?? '', docLabel: label, existing: p.requirements.map((r) => `${r.id}: ${r.text}`), candidates, mode }),
       docId, p,
     );
