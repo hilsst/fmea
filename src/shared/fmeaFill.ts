@@ -96,6 +96,12 @@ const PROCESS_FUNCTION: Record<string, string> = {
   Welding: 'Parçaları onaylı kaynak prosedürüne (WPS) göre birleştirmek',
   'Heat Treatment': 'Parçayı onaylı ısıl işlem çevrimiyle istenen mekanik özelliğe getirmek',
   'Metal Finishing': 'Yüzeyi onaylı proses kartıyla spesifikasyon kalınlığında kaplamak',
+  // 4.9.0: kompozit alt prosesleri
+  'Wet Lay-up': 'Reçineyi doğru oranda hazırlayıp elyafı kabarcıksız ve doğru reçine oranıyla sermek',
+  Infusion: 'Kuru elyafı vakum altında reçineyle tam ve kuru bölgesiz emdirmek',
+  RTM: 'Kapalı kalıptaki preformu onaylı enjeksiyon reçetesiyle reçineyle tam doldurmak',
+  'Filament Winding': 'Elyafı onaylı sarım açısı, gerginlik ve reçine içeriğiyle mandrele sarmak',
+  'Compression Molding': 'Şarjı onaylı sıcaklık, basınç ve sürede preste kalıplamak',
 };
 
 /** Alanla ilişkili gereksinimleri bulmak için anahtar kelimeler. */

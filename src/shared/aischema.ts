@@ -123,11 +123,26 @@ export const DFMEA_SCHEMA = obj({
   issues: { type: 'array', items: ISSUE },
 });
 
+/** 4.9.0: dokümandan yapı ağacı ve fonksiyonlar. ref aynı eleman için tekrar edebilir (bir elemanın birden çok fonksiyonu);
+ *  parentRef başka bir satırın ref'i, mevcut FN-xxx ID'si veya kök için boş metindir. */
+export const STRUCTURE_SCHEMA = obj({
+  rows: {
+    type: 'array',
+    items: obj({
+      ref: str, parentRef: str,
+      level: { type: 'string', enum: ['System', 'Subsystem', 'Product', 'Assembly', 'Component', 'Part', 'Feature'] },
+      element: str, function: str, functionType: str, performanceReq: str, interface: str, constraint: str, reqIds: strs,
+      confidence: conf, basis, evidence: { type: 'array', items: EVIDENCE },
+    }),
+  },
+  issues: { type: 'array', items: ISSUE },
+});
+
 export const PFMEA_SCHEMA = obj({
   rows: {
     type: 'array',
     items: obj({
-      stepId: str, processFunction: str, requirement: str, dfIds: strs, processElement: str,
+      stepId: str, processFunction: str, requirement: str, dfIds: strs, reqIds: strs, processElement: str,
       cause4M: { type: 'string', enum: ['Man', 'Machine', 'Material', 'Method', 'Measurement', 'Environment'] },
       why: strs, rootCause: str, errorProofing: str, measurement: str, reactionPlan: str, ...FMEA_COMMON,
     }),

@@ -36,7 +36,7 @@ export interface ProposalItem {
 }
 
 export interface ProposalSet {
-  kind: 'requirements' | 'dfmea' | 'pfmea';
+  kind: 'requirements' | 'structure' | 'dfmea' | 'pfmea';
   items: ProposalItem[];
   issues: { description: string; priority: string; source: string; risk: string; recommendedAction: string; decision: Decision }[];
   params: Record<string, unknown>[];
@@ -113,6 +113,28 @@ export function buildProposals(p: Project, kind: ProposalSet['kind'], data: Reco
       }
       if (/VERİ YOK|DOĞRULAMA GEREKLİ/.test(s(r.acceptance)) || !s(r.acceptance)) row.acceptance = s(r.acceptance) || 'VERİ YOK';
       if (r.lowConfidenceReason) warnings.push(`LOW CONFIDENCE: ${s(r.lowConfidenceReason)}`);
+    } else if (kind === 'structure') {
+      // 4.9.0: dokümandan yapı & fonksiyon. _ref/_parentRef kabulde gerçek FN ID'lerine çevrilir (proposalEdits).
+      const reqIds = ((r.reqIds as string[]) ?? []).filter((x) => p.requirements.some((q) => q.id === x && q.approval !== 'Rejected'));
+      const unknown = ((r.reqIds as string[]) ?? []).filter((x) => !reqIds.includes(x));
+      if (unknown.length) warnings.push(`Projede olmayan / reddedilmiş gereksinim bağlantısı çıkarıldı: ${unknown.join(', ')}`);
+      const parentRef = s(r.parentRef).trim();
+      Object.assign(row, {
+        _ref: s(r.ref).trim() || `E${i + 1}`, _parentRef: parentRef,
+        level: s(r.level), element: s(r.element), function: s(r.function), functionType: s(r.functionType),
+        performanceReq: s(r.performanceReq), interface: s(r.interface), constraint: s(r.constraint), reqIds,
+        source: src || 'AI önerisi (doküman)', notes: 'AI önerisi (dokümandan yapı & fonksiyon) – mühendis onayı gerekli',
+      });
+      // Kaynakta doğrulanamayan sayı performans gereksinimine yazılmaz (VERİ YOK kuralı)
+      for (const k of ['performanceReq', 'constraint', 'interface'] as const) {
+        const v = s(row[k]);
+        const nums = v.match(/\d+(?:[.,]\d+)?/g) ?? [];
+        if (nums.length && !(checks.some(verifiedOk) && nums.every((n) => numberInText(Number(n.replace(',', '.')), quoteAll)))) {
+          row[k] = '';
+          warnings.push(`${k}: "${v}" kaynak alıntısında doğrulanamadı → boş bırakıldı (VERİ YOK).`);
+        }
+      }
+      if (/^FN-/.test(parentRef) && !p.structure.some((x) => x.id === parentRef)) warnings.push(`Üst eleman ${parentRef} projede yok; kök olarak eklenecek.`);
     } else {
       const common = {
         failureMode: s(r.failureMode), effect: s(r.effect), cause: s(r.cause), prevention: s(r.prevention), detection: s(r.detection),
@@ -142,6 +164,7 @@ export function buildProposals(p: Project, kind: ProposalSet['kind'], data: Reco
         Object.assign(row, {
           stepId: st ? st.id : '', processFunction: s(r.processFunction), requirement: s(r.requirement), processElement: s(r.processElement),
           dfIds: ((r.dfIds as string[]) ?? []).filter((x) => p.dfmea.some((q) => q.id === x)),
+          reqIds: ((r.reqIds as string[]) ?? []).filter((x) => p.requirements.some((q) => q.id === x && q.approval !== 'Rejected')), // 4.9.0
           cause4M: s(r.cause4M), why1: why[0] ?? '', why2: why[1] ?? '', why3: why[2] ?? '', why4: why[3] ?? '', why5: why[4] ?? '',
           rootCause: s(r.rootCause), errorProofing: s(r.errorProofing), measurement: s(r.measurement), reactionPlan: s(r.reactionPlan),
         });
@@ -152,7 +175,9 @@ export function buildProposals(p: Project, kind: ProposalSet['kind'], data: Reco
     if (confidence === 'Low') warnings.push('Engineer verification required');
     if (kind === 'dfmea' || kind === 'pfmea') warnings.push(...secondCheck(row as never, kind)); // 4.8.0: otomatik ikinci kontrol
     const critical =
-      kind === 'requirements'
+      kind === 'structure'
+        ? false
+        : kind === 'requirements'
         ? ['Safety', 'Regulatory'].includes(s(r.reqType))
         : (score(r.s) ?? 0) >= 9 || /safety|emniyet|regülasyon|regulat/i.test(s(r.effect));
     return { key: `${kind}-${i}`, table: kind, row, evidence, checks, confidence, basis, critical, warnings, decision: 'pending', rejectReason: '' };
@@ -189,8 +214,16 @@ export function proposalEdits(p: Project, set: ProposalSet): { edits: AddEdit[];
   work = { ...work, aiRuns: [...work.aiRuns, { id: runId } as AiRunRow] };
   const accepted = set.items.filter((i) => i.decision === 'accepted');
   const rejected = set.items.filter((i) => i.decision === 'rejected');
+  // 4.9.0: yapı önerilerinde ref → yeni FN ID eşlemesi (aynı ref'li satırlar aynı elemandır).
+  const refId = new Map<string, string>();
+  const parentOf: [AnyRow, string][] = [];
   for (const it of accepted) {
-    const rowId = add(it.table, it.row);
+    const { _ref, _parentRef, ...data } = it.row as Record<string, unknown> & { _ref?: string; _parentRef?: string };
+    const rowId = add(it.table, data);
+    if (it.table === 'structure') {
+      if (_ref && !refId.has(_ref)) refId.set(_ref, rowId);
+      parentOf.push([edits[edits.length - 1].row, _parentRef ?? '']);
+    }
     const evIds: string[] = [];
     it.evidence.forEach((e, k) => {
       const c = it.checks[k];
@@ -207,12 +240,16 @@ export function proposalEdits(p: Project, set: ProposalSet): { edits: AddEdit[];
       (last.row as AnyRow).evidenceIds = evIds;
     }
   }
+  for (const [row, ref] of parentOf) {
+    const pid = refId.get(ref) ?? (p.structure.some((x) => x.id === ref) ? ref : '');
+    (row as AnyRow & { parentId: string }).parentId = pid === row.id ? '' : pid;
+  }
   for (const iss of set.issues.filter((x) => x.decision === 'accepted'))
     add('issues', { description: iss.description, priority: iss.priority, source: iss.source, risk: iss.risk, recommendedAction: iss.recommendedAction, status: 'Open', origin: 'ai' });
   const run: Partial<AiRunRow> = {
     role: set.meta.role, provider: set.meta.provider, model: set.meta.model, at: set.meta.at, inputs: set.inputs, mode: set.meta.mode, status: 'ok',
     items: set.items.length, accepted: accepted.length, rejected: rejected.length, tokensIn: set.meta.tokensIn, tokensOut: set.meta.tokensOut, cached: set.meta.cached,
-    message: [set.note, ...rejected.map((r) => `Reddedildi: ${s(r.row.text || r.row.failureMode).slice(0, 80)} – ${r.rejectReason || 'neden yok'}`)].filter(Boolean).join(' | '),
+    message: [set.note, ...rejected.map((r) => `Reddedildi: ${s(r.row.text || r.row.failureMode || r.row.element).slice(0, 80)} – ${r.rejectReason || 'neden yok'}`)].filter(Boolean).join(' | '),
   };
   edits.push({ kind: 'add', table: 'aiRuns', row: { ...blankRow('aiRuns', runId), ...run, id: runId } as AnyRow });
   return { edits, runId, accepted: accepted.length, rejected: rejected.length };

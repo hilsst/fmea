@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import {
-  DFMEA_SCHEMA, PFMEA_SCHEMA, REQUIREMENTS_SCHEMA, REVIEW_SCHEMA, parseJson, validate,
+  DFMEA_SCHEMA, PFMEA_SCHEMA, REQUIREMENTS_SCHEMA, REVIEW_SCHEMA, STRUCTURE_SCHEMA, parseJson, validate,
   type AiResult, type AiRunMeta, type Json,
 } from '../../shared/aischema';
 import { chunkDoc, estimateTokens, locText, retrieve, type Chunk, type ExtractedDoc, type RequirementCandidate } from '../../shared/docmodel';
@@ -80,18 +80,18 @@ const isDrawing = (doc: ExtractedDoc) =>
   /drawing|resim|dwg|dxf|step|iges/i.test(`${doc.fileName} ${doc.parser} ${Object.keys(doc.meta).join(' ')}`) || doc.parser === 'dxf';
 
 /** Dokümanı AI'ye gidecek içeriğe çevirir: metin varsa konum etiketli parçalar, yoksa (taranmış/görsel) dosyanın kendisi. */
-async function docContent(doc: ExtractedDoc | null, filePath: string | undefined, focus: string): Promise<{ blocks: ContentBlock[]; note: string; role: AiRole }> {
+async function docContent(doc: ExtractedDoc | null, filePath: string | undefined, focus: string, budget = DOC_TOKEN_BUDGET): Promise<{ blocks: ContentBlock[]; note: string; role: AiRole }> {
   if (doc?.status === 'unsupported') throw new AiError('UNSUPPORTED_DOCUMENT', 'Bu dosya formatı analiz için desteklenmiyor.');
   if (doc && doc.blocks.length) {
     const chunks = chunkDoc(doc);
     const total = chunks.reduce((a, c) => a + c.tokens, 0);
     let use = chunks;
     let note = '';
-    if (total > DOC_TOKEN_BUDGET) {
+    if (total > budget) {
       use = [];
       let tok = 0;
       for (const c of retrieve(chunks, focus, chunks.length)) {
-        if (tok + c.tokens > DOC_TOKEN_BUDGET) break;
+        if (tok + c.tokens > budget) break;
         use.push(c);
         tok += c.tokens;
       }
@@ -303,8 +303,45 @@ export function suggestPfmea(env: AiEnv, a: { context: string; target: string; c
   return run(env, 'Process Analyst', a.mode, [
     { type: 'text', text: a.context },
     ...extra(a),
-    { type: 'text', text: `GÖREV: Aşağıdaki proses adım(lar)ı için PFMEA satırları öner. dfIds ilgili DFMEA ID’leri. cause4M zorunlu; why dizisi 5 Neden (en fazla 5), rootCause sistem zafiyeti olmalı. Özel proseslerde params listesine izlenmesi gereken parametreleri ekle (limit yazma).${a.composite ? `\nKompozit bilgi tabanı (ENGINEERING KNOWLEDGE):\n${a.composite}` : ''}\nMevcut hata modlarını tekrarlama.\nHer adım için tek bir hata modu yazma: adımın her çıktısı / gereksinimi için yapılmadı (atlandı), kısmi / eksik, fazla / aşırı, yanlış (yanlış parça, ayar, malzeme), aralıklı ve elleçleme hasarı tiplerini değerlendir ve uygulanabilir olan TÜM hata modlarını ayrı satır olarak ver. Bir hata modunun 4M (Man, Machine, Method, Material, Measurement, Environment) kategorilerindeki her olası nedeni ayrı satırdır.\nprevention ve errorProofing alanlarında yöntemleri maliyet-etkinliğe göre, en düşük maliyetli etkili yöntem başta olacak şekilde sırala (ör. rota onayı / ilk parça onayı → fikstür, şablon, parametre kilidi → sensör, barkod → otomasyon); S 9–10 satırlarda yalnız idari kontrol (talimat, eğitim) yeterli değildir. Fiyat veya tutar yazma.\n${a.target}` },
+    { type: 'text', text: `GÖREV: Aşağıdaki proses adım(lar)ı için PFMEA satırları öner. Kaynaklar: (1) yukarıdaki DFMEA satırları – özellikle S≥8, KC adayı veya üretilebilirlik riski olanlar; bu tasarım hata modlarına / karakteristiklere bu adımda yol açabilecek proses hata modlarını yaz ve dfIds ile bağla; (2) proses, muayene, boyutsal ve özel (SR) gereksinimler – bu adımda karşılanmazsa oluşacak proses hata modlarını yaz ve reqIds ile bağla; (3) adımın türüne özgü proses bilgisi. dfIds ve reqIds yalnızca yukarıdaki listelerde olan ID’lerdir; ilişki yoksa boş dizi. cause4M zorunlu; why dizisi 5 Neden (en fazla 5), rootCause sistem zafiyeti olmalı. Özel proseslerde params listesine izlenmesi gereken parametreleri ekle (limit yazma).${a.composite ? `\nKompozit bilgi tabanı (ENGINEERING KNOWLEDGE):\n${a.composite}` : ''}\nMevcut hata modlarını tekrarlama.\nHer adım için tek bir hata modu yazma: adımın her çıktısı / gereksinimi için yapılmadı (atlandı), kısmi / eksik, fazla / aşırı, yanlış (yanlış parça, ayar, malzeme), aralıklı ve elleçleme hasarı tiplerini değerlendir ve uygulanabilir olan TÜM hata modlarını ayrı satır olarak ver. Bir hata modunun 4M (Man, Machine, Method, Material, Measurement, Environment) kategorilerindeki her olası nedeni ayrı satırdır.\nprevention ve errorProofing alanlarında yöntemleri maliyet-etkinliğe göre, en düşük maliyetli etkili yöntem başta olacak şekilde sırala (ör. rota onayı / ilk parça onayı → fikstür, şablon, parametre kilidi → sensör, barkod → otomasyon); S 9–10 satırlarda yalnız idari kontrol (talimat, eğitim) yeterli değildir. Fiyat veya tutar yazma.\n${a.target}` },
   ], PFMEA_SCHEMA);
+}
+
+/** 4.9.0: Yapı & Fonksiyon dokümanın kendisinden (gereksinim cümlelerinden değil) önerilir. */
+const STRUCTURE_FOCUS = 'yapı montaj alt montaj parça bileşen komponent eleman parça listesi malzeme listesi BOM assembly part component feature fonksiyon görev amaç arayüz bağlantı yük taşır sağlar korur iletir sızdırmazlık interface function purpose';
+
+export async function suggestStructure(env: AiEnv, a: { context: string; docs: { doc: ExtractedDoc | null; filePath?: string; label: string }[]; mode: AiMode }) {
+  const blocks: ContentBlock[] = [];
+  const notes: string[] = [];
+  const budget = Math.floor(DOC_TOKEN_BUDGET / Math.max(1, a.docs.length));
+  for (const d of a.docs) {
+    try {
+      const c = await docContent(d.doc, d.filePath, STRUCTURE_FOCUS, budget);
+      blocks.push({ type: 'text', text: `── DOKÜMAN: ${d.label} ──` }, ...c.blocks);
+      if (c.note) notes.push(`${d.label}: ${c.note}`);
+    } catch (e) {
+      notes.push(`${d.label}: ${e instanceof Error ? e.message : String(e)} (bu doküman atlandı)`);
+    }
+  }
+  if (!blocks.length) {
+    return { ok: false as const, error: { kind: 'SOURCE_NOT_FOUND' as const, message: `Analiz edilebilecek doküman yok. ${notes.join(' | ')}`.trim() } };
+  }
+  const r = await run(env, 'Structure Analyst', a.mode, [
+    ...blocks,
+    { type: 'text', text: a.context },
+    { type: 'text', text: `GÖREV: Yukarıdaki dokümanlara göre DFMEA yapı ağacını ve fonksiyonlarını oluştur.
+- Her satır bir (eleman, fonksiyon) çiftidir. Aynı elemanın birden çok fonksiyonu varsa her fonksiyon ayrı satırdır ve aynı ref'i kullanır.
+- ref: kısa benzersiz eleman kodu (E1, E2…). parentRef: üst elemanın ref'i; üst eleman projede zaten varsa onun FN-xxx ID'si; kök eleman için boş.
+- Üst elemanlar alt elemanlardan önce gelir. Kök genellikle ürünün kendisidir (Product veya System).
+- Elemanlar yalnızca dokümanda adı geçen ürün, montaj, parça ve özelliklerdir (ör. parça listesi, resim görünüşleri, şartname bölümleri). Dokümanda olmayan parça uydurma; emin olmadığın yapıyı issues listesine soru olarak yaz.
+- function: elemanın ne yaptığı, fiil + nesne. Gereksinim cümlesini aynen fonksiyon yapma. Fonksiyonu olmayan ara montaj satırında function boş kalabilir.
+- functionType şunlardan biri: Taşıma, Yük aktarma, Sızdırmazlık, Elektromanyetik performans, Termal dayanım, Geometrik uyum, Bağlantı, Yüzey koruması, Aerodinamik / akış performansı, Titreşim dayanımı, Çevresel dayanım, Diğer.
+- performanceReq / constraint / interface: yalnızca kaynakta yazan değerler; yoksa boş bırak (sayı uydurma).
+- reqIds: yukarıdaki GEREKSİNİMLER listesinden bu fonksiyonu karşılayan ID'ler; uygun olan yoksa boş dizi.
+- Projede zaten olan yapı ve fonksiyonları tekrar önerme; eksikleri ekle.
+- evidence: elemanın / fonksiyonun dayandığı kaynak cümleyi birebir alıntıla, docName olarak doküman adını yaz.` },
+  ], STRUCTURE_SCHEMA);
+  return notes.length ? { ...r, note: notes.join(' | ') } : r;
 }
 
 export function review(env: AiEnv, a: { context: string; local: string; mode: AiMode }) {

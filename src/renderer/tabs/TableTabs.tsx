@@ -4,6 +4,8 @@ import { summarizeChanges, type Edit } from '../../shared/engine';
 import { reqAutoValues } from '../../shared/reqAutofill';
 import type { GenStage } from '../../shared/autogen';
 import { FlowTemplatePicker } from '../components/FlowTemplates';
+import { PfmeaWizard } from '../components/PfmeaWizard';
+import { useAiChain } from '../components/AiChain';
 import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
 import { KC_LOCK_MSG, isCi, kcLocked, scmhKcDecision } from '../../shared/kcScmh'; // v4-kc
 import { isScmh } from '../../shared/scmhScoring'; // v4-kc
@@ -139,6 +141,7 @@ export function RequirementsTab() {
   const [paste, setPaste] = useState(false);
   const [sel, setSel] = useState<string[]>([]);
   const ai = useAi();
+  const chain = useAiChain();
   // Boş kabul kriteri / doğrulama yöntemi / ölçü alanlarını gereksinim metninden doldurur (seçim yoksa tüm satırlar).
   const autofill = async () => {
     const rows = project.requirements.filter((r) => (sel.length ? sel.includes(r.id) : true) && r.text.trim());
@@ -169,10 +172,14 @@ export function RequirementsTab() {
             <button className="btn ai" onClick={() => setPaste(true)}>
               ✦ AI: Metinden çıkar
             </button>
+            <button className="btn primary" disabled={chain.running} onClick={chain.open} title="Onayladığınız gereksinimlerden sırayla Yapı & Fonksiyon, DFMEA, proses akışı, PFMEA, aksiyonlar ve kontrol planını AI ile kurar. Başta yalnız proseslerin hangileri olduğu sorulur; satırlar AI Proposed gelir, sonunda siz incelersiniz.">
+              ✦ AI ile tümünü kur
+            </button>
           </>
         }
-        emptyHint="Gereksinimleri elle girin, Dokümanlar ekranından AI ile çıkarın veya metin yapıştırın."
+        emptyHint="Gereksinimleri elle girin, Dokümanlar ekranından AI ile çıkarın veya metin yapıştırın. Onayladıktan sonra “✦ AI ile tümünü kur” ile FMEA’nın geri kalanını AI kursun."
       />
+      {chain.dialogs}
       {paste && (
         <PasteTextDialog
           onClose={() => setPaste(false)}
@@ -193,6 +200,7 @@ export function StructureTab() {
   const { project, edit } = useStore();
   const [sel, setSel] = useState<string[]>([]);
   const gen = useAutogen();
+  const ai = useAi();
   const addChild = async () => {
     const parent = project.structure.find((s) => s.id === sel[0]);
     const b = batch(project);
@@ -210,14 +218,18 @@ export function StructureTab() {
             <button className="btn" onClick={addChild} disabled={sel.length > 1}>
               ↳ Alt eleman ekle
             </button>
-            <button className="btn" onClick={() => gen(['structure'], 'Gereksinimlerden yapı & fonksiyon')} title="Yapıya bağlı olmayan gereksinimlerden Product → Part → Feature ağacı ve fonksiyonlar önerir (AI Proposed)">
+            <button className="btn" onClick={() => gen(['structure'], 'Gereksinimlerden yapı & fonksiyon')} title="AI kullanmadan, kural tabanlı: yapıya bağlı olmayan her gereksinim cümlesinden bir fonksiyon satırı türetir (AI Proposed). Dokümanın gerçek parça yapısını okumaz; bunun için “✦ AI: Dokümandan oluştur”u kullanın.">
               ⟳ Gereksinimlerden öner
+            </button>
+            <button className="btn ai" onClick={ai.suggestStructure} title="Analiz edilmiş dokümanları (şartname, resim, parça listesi) AI'ye okutur: dokümandaki ürün → montaj → parça → özellik ağacını ve her elemanın fonksiyonunu kanıt alıntısıyla önerir; fonksiyonları ilgili gereksinimlere bağlar. Her öneriyi kabul / düzenle / reddet ile siz onaylarsınız.">
+              ✦ AI: Dokümandan oluştur
             </button>
           </>
         }
-        emptyHint="“⟳ Gereksinimlerden öner” ile ağacı otomatik oluşturun veya Product → Assembly → Part → Feature hiyerarşisini elle kurun."
+        emptyHint="“✦ AI: Dokümandan oluştur” ile yapı ağacını analiz edilmiş dokümandan önerin, “⟳ Gereksinimlerden öner” ile AI'sız taslak alın veya Product → Assembly → Part → Feature hiyerarşisini elle kurun."
       />
       <StructureTree project={project} onSelect={setSel} />
+      {ai.dialogs}
     </div>
   );
 }
@@ -390,14 +402,23 @@ export function DfmeaTab() {
 export function ProcessTab() {
   const { project } = useStore();
   const [flow, setFlow] = useState(false);
+  const [wizard, setWizard] = useState(false);
+  const ai = useAi();
   return (
     <div className="split">
+      {wizard && <PfmeaWizard onClose={() => setWizard(false)} suggestPfmea={ai.suggestPfmea} />}
+      {ai.dialogs}
       <Grid
         table="processSteps"
         toolbar={
-          <button className="btn" onClick={() => setFlow(true)} title="Talaşlı, kaynaklı, sac metal, ısıl işlem, yüzey işlem, kompozit ve montaj akışlarından seçin (çoklu seçim). Mevcut adımlar silinmez.">
-            Akış şablonu ekle
-          </button>
+          <>
+            <button className="btn" onClick={() => setFlow(true)} title="Talaşlı, kaynaklı, sac metal, ısıl işlem, yüzey işlem, kompozit ve montaj akışlarından seçin (çoklu seçim). Mevcut adımlar silinmez.">
+              Akış şablonu ekle
+            </button>
+            <button className="btn ai" onClick={() => setWizard(true)} title="Prosesleri seçin; akış oluşturulur ve PFMEA tablosu kütüphane + AI (gereksinim + DFMEA) ile doldurulur. Sonuç PFMEA sekmesinde görünür.">
+              ✦ Proses seç ve PFMEA oluştur
+            </button>
+          </>
         }
         emptyHint="Proje panelinde parça malzemesini ve akış şablonlarını seçin veya gerçek üretim akışını yüklenen dokümanlardan çıkarın. Her yeni adım için PFD girdi/çıktı ve proses parametreleri otomatik önerilir."
       />
@@ -431,6 +452,7 @@ export function PfmeaTab() {
   const [importDf, setImportDf] = useState(false);
   const [importReq, setImportReq] = useState(false);
   const [checklist, setChecklist] = useState(false);
+  const [wizard, setWizard] = useState(false);
   const ai = useAi();
   const gen = useAutogen();
   const fillBlanks = useFillBlanks('pfmea');
@@ -444,6 +466,9 @@ export function PfmeaTab() {
         filter={notInCp ? (r) => cpCoverageGap(project, r as never) : undefined}
         toolbar={
           <>
+            <button className="btn ai" onClick={() => setWizard(true)} title="Hangi proses(ler) için PFMEA yapılacağını sorar (kompozit: prepreg/otoklav, el yatırması, vakum infüzyon, RTM, filament sarma, pres; metal: talaşlı, sac eğme-bükme, kaynak, ısıl işlem, yüzey işlem; montaj), proses akışını oluşturur, sonra hata kütüphanesi ve AI ile (gereksinim + DFMEA) PFMEA satırlarını önerir">
+              ✦ Proses seç ve PFMEA oluştur
+            </button>
             <label className="check-row" title="S 9–10, KC/CI veya ekibin önemli saydığı riskler: kontrol planında olmalı ya da gerekçeyle dışarıda bırakılmalı (CP webinar p43)"><input type="checkbox" checked={notInCp} onChange={(e) => setNotInCp(e.target.checked)} /> Önemli ama KP’de yok</label>
             <button className="btn" onClick={() => setImportDf(true)} title="DFMEA hata modlarını proses adımlarına aktarır (spesifikasyon §8, §25)">
               DFMEA’dan aktar
@@ -463,13 +488,14 @@ export function PfmeaTab() {
             <button className="btn" onClick={() => ai.suggestFromExamples('pfmea')} title="AI kullanmadan, örnek kütüphanesindeki onaylı (Approved / Engineer Reviewed) benzer satırları önerir. İnternet ve API anahtarı gerekmez.">
               📚 Onaylı örneklerden öner
             </button>
-            <button className="btn ai" onClick={() => ai.suggestPfmea([])}>
+            <button className="btn ai" onClick={() => ai.suggestPfmea([])} title="Proses Akışı'ndaki tüm adımlar için gereksinimler ve DFMEA'dan PFMEA satırları önerir (adımlar 4'erli gruplar halinde)">
               ✦ AI: PFMEA öner
             </button>
           </>
         }
-        emptyHint="PFMEA’ya “DFMEA’dan aktar” veya “Gereksinimlerden aktar” ile başlayın."
+        emptyHint="“✦ Proses seç ve PFMEA oluştur” ile başlayın: hangi prosesler için PFMEA yapılacağını seçin, tablo kütüphane ve AI (gereksinim + DFMEA) ile doldurulsun. Ya da “DFMEA’dan aktar” / “Gereksinimlerden aktar” ile elle başlayın."
       />
+      {wizard && <PfmeaWizard onClose={() => setWizard(false)} suggestPfmea={ai.suggestPfmea} />}
       {importDf && <ImportFromDfmea onClose={() => setImportDf(false)} />}
       {importReq && <ImportFromRequirements onClose={() => setImportReq(false)} />}
       {checklist && <CompositeChecklist onClose={() => setChecklist(false)} />}

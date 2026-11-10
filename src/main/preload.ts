@@ -46,6 +46,7 @@ const api = {
   examplesClear: () => ipcRenderer.invoke('examples:clear'),
   aiRequirements: (a: unknown): Promise<AiResult & { note?: string }> => ipcRenderer.invoke('ai:requirements', a),
   aiDfmea: (a: unknown): Promise<AiResult> => ipcRenderer.invoke('ai:dfmea', a),
+  aiStructure: (a: unknown): Promise<AiResult & { note?: string }> => ipcRenderer.invoke('ai:structure', a),
   aiPfmea: (a: unknown): Promise<AiResult> => ipcRenderer.invoke('ai:pfmea', a),
   aiReview: (a: unknown): Promise<AiResult> => ipcRenderer.invoke('ai:review', a),
   ifsGet: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('ifs:get'),

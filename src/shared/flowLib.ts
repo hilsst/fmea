@@ -37,7 +37,7 @@ export const FLOW_TAIL: FlowStep[] = [
 export const FLOW_TEMPLATES: FlowTemplate[] = [
   {
     key: 'composite',
-    label: 'Kompozit imalat akışı',
+    label: 'Kompozit – prepreg / otoklav',
     hint: 'Prepreg serim, torbalama, kür, kalıptan çıkarma, kenar kesme, NDT',
     steps: [
       op('Malzeme hazırlama (çözdürme)', 'Prepreg çözdürme, out-time takibi'),
@@ -50,6 +50,82 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
       op('Kalıptan çıkarma', 'Parçanın kalıptan hasarsız çıkarılması'),
       op('Kenar kesme ve delme', 'Kenar trim ve delik delme'),
       insp('NDT muayenesi', 'Tahribatsız muayene (UT / tap test, spesifikasyona göre)', true),
+    ],
+  },
+  // 4.9.0: kompozit alt prosesleri
+  {
+    key: 'handLayup',
+    label: 'Kompozit – el yatırması (ıslak serim)',
+    hint: 'Kalıp hazırlığı, elyaf kesimi, reçine karışımı, el yatırması ve rulolama, kür, kalıptan çıkarma',
+    steps: [
+      op('Kalıp hazırlığı (ayırıcı uygulama)', 'Kalıp temizliği ve ayırıcı uygulaması'),
+      op('Elyaf kumaş kesimi', 'Kumaş / mat kesimi ve kitleme'),
+      op('Reçine hazırlama (karışım)', 'Reçine ve sertleştiricinin oranında tartılıp karıştırılması'),
+      op('El yatırması ve rulolama', 'Islak serim, reçine emdirme ve rulolama', true),
+      op('Kür (oda sıcaklığı / fırın)', 'Onaylı kür çevrimi', true),
+      op('Kalıptan çıkarma', 'Parçanın kalıptan hasarsız çıkarılması'),
+      op('Kenar kesme ve delme', 'Kenar trim ve delik delme'),
+      insp('Görsel ve tap test muayenesi', 'Görsel muayene ve tap test (spesifikasyona göre)'),
+    ],
+  },
+  {
+    key: 'infusion',
+    label: 'Kompozit – vakum infüzyon',
+    hint: 'Kuru elyaf serimi, akış ağı ve port yerleşimi, torbalama, reçine infüzyonu, kür',
+    steps: [
+      op('Kalıp hazırlığı (ayırıcı uygulama)', 'Kalıp temizliği ve ayırıcı uygulaması'),
+      op('Kuru elyaf serimi (preform)', 'Kuru kumaşların kalıba sıra ve oryantasyonla serimi'),
+      op('Akış ağı ve port yerleşimi', 'Peel ply, akış ağı, reçine giriş ve vakum portlarının yerleşimi'),
+      op('Vakum torbalama', 'Torbalama ve sızdırmazlık testi'),
+      op('Reçine hazırlama (karışım, gaz alma)', 'Reçine ve sertleştiricinin oranında karıştırılması ve gazının alınması'),
+      op('Reçine infüzyonu', 'Vakum altında reçine emdirme', true),
+      op('Kür (fırın / oda sıcaklığı)', 'Onaylı kür çevrimi', true),
+      op('Kalıptan çıkarma', 'Parçanın kalıptan hasarsız çıkarılması'),
+      op('Kenar kesme ve delme', 'Kenar trim ve delik delme'),
+      insp('NDT muayenesi', 'Tahribatsız muayene (UT / tap test, spesifikasyona göre)', true),
+    ],
+  },
+  {
+    key: 'rtm',
+    label: 'Kompozit – RTM (reçine transfer kalıplama)',
+    hint: 'Preform hazırlama, kalıba yerleştirme, kalıp kapama, reçine enjeksiyonu, kalıpta kür',
+    steps: [
+      op('Preform hazırlama', 'Kuru kumaşların kesimi, serimi ve binder ile sabitlenmesi'),
+      op('Preformun kalıba yerleştirilmesi', 'Preformun kalıpta konumlandırılması'),
+      op('Kalıp kapama ve sızdırmazlık', 'Kalıp kapama, conta ve vakum kontrolü'),
+      op('Reçine enjeksiyonu (RTM)', 'Onaylı enjeksiyon reçetesiyle reçine enjeksiyonu', true),
+      op('Kalıpta kür', 'Onaylı kalıp sıcaklığında kür', true),
+      op('Kalıptan çıkarma', 'Parçanın kalıptan hasarsız çıkarılması'),
+      op('Kenar kesme ve delme', 'Kenar trim ve delik delme'),
+      insp('NDT muayenesi', 'Tahribatsız muayene (UT / tap test, spesifikasyona göre)', true),
+    ],
+  },
+  {
+    key: 'winding',
+    label: 'Kompozit – filament (şerit) sarma',
+    hint: 'Mandrel hazırlığı, reçine banyosu, sarım, kür, mandrel çıkarma',
+    steps: [
+      op('Mandrel hazırlığı', 'Mandrel temizliği ve ayırıcı uygulaması'),
+      op('Elyaf ve reçine banyosu hazırlığı', 'Elyaf makaraları ve reçine banyosunun hazırlanması'),
+      op('Filament / şerit sarma', 'Onaylı sarım programıyla sarım', true),
+      op('Kür (fırın)', 'Onaylı kür çevrimi', true),
+      op('Mandrel çıkarma', 'Parçanın mandrelden hasarsız çıkarılması'),
+      op('Kenar kesme ve delme', 'Kenar trim ve delik delme'),
+      insp('NDT muayenesi', 'Tahribatsız muayene (UT / tap test, spesifikasyona göre)', true),
+    ],
+  },
+  {
+    key: 'press',
+    label: 'Kompozit – pres kalıplama (SMC / prepreg)',
+    hint: 'Şarj hazırlama, kalıp ısıtma, şarj yerleşimi, pres kalıplama, çapak alma',
+    steps: [
+      op('Şarj hazırlama (SMC / prepreg)', 'Şarj kesimi ve tartımı'),
+      op('Kalıp ısıtma ve ayırıcı uygulama', 'Kalıbın sıcaklığa getirilmesi ve ayırıcı uygulaması'),
+      op('Şarjın kalıba yerleştirilmesi', 'Şarjın yerleşim planına göre konumlandırılması'),
+      op('Pres kalıplama (sıkıştırma)', 'Onaylı pres reçetesiyle kalıplama ve kür', true),
+      op('Kalıptan çıkarma', 'Parçanın kalıptan hasarsız çıkarılması'),
+      op('Flaş (çapak) alma', 'Kalıp ayrım çizgisindeki flaşın alınması'),
+      insp('Boyutsal ve görsel kontrol', 'Kalınlık, ölçü ve görünüm kontrolü'),
     ],
   },
   {
@@ -68,7 +144,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
   },
   {
     key: 'sheet',
-    label: 'Sac metal şekillendirme akışı',
+    label: 'Sac kesme ve eğme-bükme akışı',
     hint: 'Sac kesme, büküm / şekillendirme, çapak alma, boyutsal kontrol',
     steps: [
       op('Sac kesme (lazer / punch)', 'Sac açınımın kesilmesi'),
@@ -135,7 +211,9 @@ export const MATERIALS = [
 export function suggestFlowTemplates(material: string, productType: string): string[] {
   const m = `${material} ${productType}`.toLocaleLowerCase('tr');
   const out = new Set<string>();
-  if (/kompozit|composite|sandviç|sandwich|radom|radome|bonded/.test(m)) out.add('composite');
+  if (/infüzyon|infusion/.test(m)) out.add('infusion');
+  else if (/ıslak serim|el yatırma|wet lay/.test(m)) out.add('handLayup');
+  else if (/kompozit|composite|sandviç|sandwich|radom|radome|bonded/.test(m)) out.add('composite');
   if (/metal|alüminyum|çelik|titanyum|metallic/.test(m)) out.add('machining');
   if (/karma/.test(m)) out.add('assembly');
   if (/assembly|montaj/.test(m)) out.add('assembly');
@@ -206,6 +284,12 @@ export const STEP_IO: Record<string, StepIo> = {
   Deburring: { outputs: ['Çapaksız, kabul kriterine uygun kenar'], inputs: [['Çapak alma aleti / tezgâhı', 'Machine'], ['Kenar kabul kriteri / referans numune', 'Method'], OPR], params: [] },
   Cutting: { outputs: ['Çizim konturuna uygun, çapaksız kenarlı açınım'], inputs: [['Levha (alaşım / temper / kalınlık)', 'Material'], ['Lazer / plazma / su jeti tezgâhı', 'Machine'], ['Kesim programı (nesting)', 'Method'], OPR], params: ['Güç', 'Kesme hızı', 'Gaz basıncı'] },
   'Metal Finishing': { outputs: ['Spesifikasyon kalınlığında, yapışan ve lekesiz kaplama'], inputs: [['Kaplama banyosu (konsantrasyon / sıcaklık)', 'Material'], ['Doğrultucu / askı', 'Machine'], ['Onaylı proses kartı', 'Method'], ['Kaplama kalınlık ölçer', 'Measurement'], OPR], params: ['Banyo süresi', 'Akım yoğunluğu', 'Banyo sıcaklığı'] },
+  // 4.9.0: kompozit alt prosesleri
+  'Wet Lay-up': { outputs: ['Doğru elyaf / reçine oranında, kabarcıksız ıslak laminat'], inputs: [['Reçine / sertleştirici (lot, pot life)', 'Material'], ['Terazi / dozaj ekipmanı', 'Measurement'], WI, OPR, ENV], params: ['Karışım oranı', 'Pot life', 'Ortam sıcaklığı', 'Ortam nemi'] },
+  Infusion: { outputs: ['Tam emdirilmiş, kuru bölgesiz laminat'], inputs: [['Reçine (viskozite, jel süresi)', 'Material'], ['Vakum pompası / vakum ölçer', 'Machine'], ['Port ve akış ağı planı', 'Method'], OPR, ENV], params: ['Vakum seviyesi', 'Reçine sıcaklığı', 'Kalıp sıcaklığı', 'İnfüzyon süresi'] },
+  RTM: { outputs: ['Tam dolmuş, kuru noktasız parça'], inputs: [['Reçine (lot, sıcaklık)', 'Material'], ['Enjeksiyon makinesi ve kapalı kalıp', 'Machine'], ['Enjeksiyon reçetesi', 'Method'], ['Basınç / sıcaklık sensörleri', 'Measurement'], OPR], params: ['Enjeksiyon basıncı', 'Enjeksiyon debisi', 'Kalıp sıcaklığı', 'Reçine sıcaklığı', 'Vakum seviyesi'] },
+  'Filament Winding': { outputs: ['Onaylı sarım açısı, gerginlik ve reçine içeriğinde sarım'], inputs: [['Elyaf ve reçine (lot)', 'Material'], ['Sarım makinesi ve mandrel', 'Machine'], ['Sarım programı', 'Method'], OPR, ENV], params: ['Sarım açısı', 'Lif gerginliği', 'Sarım hızı', 'Reçine banyosu sıcaklığı'] },
+  'Compression Molding': { outputs: ['Tam dolmuş, kalınlık ve yüzeyi uygun kalıplanmış parça'], inputs: [['SMC / prepreg şarjı (lot, ağırlık)', 'Material'], ['Pres ve kalıp', 'Machine'], ['Pres reçetesi / şarj yerleşim planı', 'Method'], OPR], params: ['Kalıp sıcaklığı', 'Pres basıncı', 'Kapanma hızı', 'Bekleme süresi', 'Şarj ağırlığı'] },
 };
 
 /** Proses adımı için kütüphane girdi/çıktı + parametre adları; tanınmayan adım için undefined. */
