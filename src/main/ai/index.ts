@@ -307,41 +307,77 @@ export function suggestPfmea(env: AiEnv, a: { context: string; target: string; c
   ], PFMEA_SCHEMA);
 }
 
-/** 4.9.0: Yapı & Fonksiyon dokümanın kendisinden (gereksinim cümlelerinden değil) önerilir. */
-const STRUCTURE_FOCUS = 'yapı montaj alt montaj parça bileşen komponent eleman parça listesi malzeme listesi BOM assembly part component feature fonksiyon görev amaç arayüz bağlantı yük taşır sağlar korur iletir sızdırmazlık interface function purpose';
+/**
+ * 4.9.2: Yapı & Fonksiyon, mühendisin ONAYLADIĞI gereksinim listesinden önerilir; doküman yeniden okunmaz
+ * (gereksinim listesi sistemin tek kaynağıdır, her gereksinim kendi kanıt alıntısını ve kaynağını taşır).
+ * Büyük listeler 40'ar gereksinimlik gruplara bölünür; önceki gruplarda bulunan elemanlar sonrakine bildirilir.
+ */
+export const STRUCTURE_REQS_PER_CALL = 40;
 
-export async function suggestStructure(env: AiEnv, a: { context: string; docs: { doc: ExtractedDoc | null; filePath?: string; label: string }[]; mode: AiMode }) {
-  const blocks: ContentBlock[] = [];
-  const notes: string[] = [];
-  const budget = Math.floor(DOC_TOKEN_BUDGET / Math.max(1, a.docs.length));
-  for (const d of a.docs) {
-    try {
-      const c = await docContent(d.doc, d.filePath, STRUCTURE_FOCUS, budget);
-      blocks.push({ type: 'text', text: `── DOKÜMAN: ${d.label} ──` }, ...c.blocks);
-      if (c.note) notes.push(`${d.label}: ${c.note}`);
-    } catch (e) {
-      notes.push(`${d.label}: ${e instanceof Error ? e.message : String(e)} (bu doküman atlandı)`);
-    }
-  }
-  if (!blocks.length) {
-    return { ok: false as const, error: { kind: 'SOURCE_NOT_FOUND' as const, message: `Analiz edilebilecek doküman yok. ${notes.join(' | ')}`.trim() } };
-  }
-  const r = await run(env, 'Structure Analyst', a.mode, [
-    ...blocks,
-    { type: 'text', text: a.context },
-    { type: 'text', text: `GÖREV: Yukarıdaki dokümanlara göre DFMEA yapı ağacını ve fonksiyonlarını oluştur.
+const sNorm = (x: unknown) => String(x ?? '').toLocaleLowerCase('tr').replace(/\s+/g, ' ').trim();
+
+export async function suggestStructure(env: AiEnv, a: { context: string; reqs: { id: string; text: string; reqType: string; acceptance: string; source: string; docName: string; page: string; section: string; evidence: string }[]; mode: AiMode }) {
+  if (!a.reqs.length) return { ok: false as const, error: { kind: 'SOURCE_NOT_FOUND' as const, message: 'Onaylı gereksinim yok; önce gereksinimleri onaylayın.' } };
+  const groups: (typeof a.reqs)[] = [];
+  for (let i = 0; i < a.reqs.length; i += STRUCTURE_REQS_PER_CALL) groups.push(a.reqs.slice(i, i + STRUCTURE_REQS_PER_CALL));
+  const reqBlock = (g: typeof a.reqs) =>
+    `── BU ÇAĞRIDA YAPIYA DÖNÜŞTÜRÜLECEK ONAYLI GEREKSİNİMLER ──\n` +
+    g.map((r) => `${r.id} [${r.reqType}] ${r.text}${r.acceptance ? ` | Kabul: ${r.acceptance}` : ''}\n   Kaynak: ${r.docName || r.source}${r.page ? ` s.${r.page}` : ''}${r.section ? ` §${r.section}` : ''}${r.evidence ? `\n   Kanıt alıntısı: "${r.evidence}"` : ''}`).join('\n');
+
+  const task = (found: { ref: string; element: string; level: string }[]) => `GÖREV: Yukarıdaki onaylı gereksinim listesine göre DFMEA yapı ağacını ve fonksiyonlarını oluştur. Doküman yeniden okunmaz: gereksinim listesi tek kaynaktır.
 - Her satır bir (eleman, fonksiyon) çiftidir. Aynı elemanın birden çok fonksiyonu varsa her fonksiyon ayrı satırdır ve aynı ref'i kullanır.
-- ref: kısa benzersiz eleman kodu (E1, E2…). parentRef: üst elemanın ref'i; üst eleman projede zaten varsa onun FN-xxx ID'si; kök eleman için boş.
+- ref: kısa benzersiz eleman kodu. parentRef: üst elemanın ref'i; üst eleman projede zaten varsa onun FN-xxx ID'si; kök eleman için boş.
 - Üst elemanlar alt elemanlardan önce gelir. Kök genellikle ürünün kendisidir (Product veya System).
-- Elemanlar yalnızca dokümanda adı geçen ürün, montaj, parça ve özelliklerdir (ör. parça listesi, resim görünüşleri, şartname bölümleri). Dokümanda olmayan parça uydurma; emin olmadığın yapıyı issues listesine soru olarak yaz.
+- Elemanlar yalnızca gereksinimlerde ve proje bilgisinde adı geçen ürün, montaj, parça ve özelliklerdir. Listede olmayan parça uydurma; emin olmadığın yapıyı issues listesine soru olarak yaz.
 - function: elemanın ne yaptığı, fiil + nesne. Gereksinim cümlesini aynen fonksiyon yapma. Fonksiyonu olmayan ara montaj satırında function boş kalabilir.
 - functionType şunlardan biri: Taşıma, Yük aktarma, Sızdırmazlık, Elektromanyetik performans, Termal dayanım, Geometrik uyum, Bağlantı, Yüzey koruması, Aerodinamik / akış performansı, Titreşim dayanımı, Çevresel dayanım, Diğer.
-- performanceReq / constraint / interface: yalnızca kaynakta yazan değerler; yoksa boş bırak (sayı uydurma).
-- reqIds: yukarıdaki GEREKSİNİMLER listesinden bu fonksiyonu karşılayan ID'ler; uygun olan yoksa boş dizi.
+- performanceReq / constraint / interface: yalnızca gereksinimde yazan değerler; yoksa boş bırak (sayı uydurma).
+- reqIds: bu fonksiyonu karşılayan gereksinim ID'leri (yalnızca yukarıdaki listeden). Her gereksinim en az bir fonksiyona bağlanmalı; proses / muayene gereksinimleri (Manufacturing, Process, Inspection) yapıya değil PFMEA'ya aittir, atla.
 - Projede zaten olan yapı ve fonksiyonları tekrar önerme; eksikleri ekle.
-- evidence: elemanın / fonksiyonun dayandığı kaynak cümleyi birebir alıntıla, docName olarak doküman adını yaz.` },
-  ], STRUCTURE_SCHEMA);
-  return notes.length ? { ...r, note: notes.join(' | ') } : r;
+- evidence: gereksinimin "Kanıt alıntısı"nı birebir kopyala; docName olarak gereksinimin Kaynak dokümanının adını yaz, page / section'ı kaynaktan aktar.${found.length ? `\n- Önceki gruplarda zaten bulunan elemanlar (tekrar yazma; üst eleman olarak ref'iyle kullanabilirsin, yeni ref'leri bunlarla çakışmayacak şekilde ver):\n${found.map((x) => `  ${x.ref}: ${x.element} (${x.level})`).join('\n')}` : ''}`;
+
+  const rows: Json[] = [];
+  const issues: Json[] = [];
+  const seen = new Set<string>();
+  const refOwner = new Map<string, string>();
+  const found: { ref: string; element: string; level: string }[] = [];
+  const notes: string[] = [];
+  let meta: AiRunMeta | undefined;
+  let part = 0;
+  for (const g of groups) {
+    const r = await run(env, 'Structure Analyst', a.mode, [{ type: 'text', text: a.context }, { type: 'text', text: reqBlock(g) }, { type: 'text', text: task(found) }], STRUCTURE_SCHEMA);
+    if (!r.ok) {
+      const why = `${g[0].id}…${g[g.length - 1].id}: ${r.error.kind} – ${r.error.message}`;
+      if (!rows.length && part === 0 && groups.length === 1) return { ok: false as const, error: { kind: r.error.kind, message: why }, meta: r.meta };
+      notes.push(`${why} (bu grup atlandı)`);
+      part++;
+      continue;
+    }
+    part++;
+    // Aynı ref başka bir elemana verilmişse (gruplar arası çakışma) bu grupta yeniden adlandırılır.
+    const remap = new Map<string, string>();
+    for (const row of (r.data.rows as Json[]) ?? []) {
+      const ref = String(row.ref ?? '');
+      if (ref && refOwner.has(ref) && refOwner.get(ref) !== sNorm(row.element) && !remap.has(ref)) remap.set(ref, `${ref}_${part}`);
+    }
+    for (const row of (r.data.rows as Json[]) ?? []) {
+      const ref0 = String(row.ref ?? '');
+      const ref = remap.get(ref0) ?? ref0;
+      const parent0 = String(row.parentRef ?? '');
+      const key = `${sNorm(row.element)}|${sNorm(row.function)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (ref && !refOwner.has(ref)) {
+        refOwner.set(ref, sNorm(row.element));
+        found.push({ ref, element: String(row.element ?? ''), level: String(row.level ?? '') });
+      }
+      rows.push({ ...row, ref, parentRef: remap.get(parent0) ?? parent0 });
+    }
+    issues.push(...(((r.data.issues as Json[] | undefined) ?? [])));
+    meta = meta ? { ...meta, tokensIn: meta.tokensIn + r.meta.tokensIn, tokensOut: meta.tokensOut + r.meta.tokensOut, cached: meta.cached && r.meta.cached, retries: meta.retries + r.meta.retries } : r.meta;
+  }
+  if (!meta) return { ok: false as const, error: { kind: 'API_ERROR' as const, message: notes.join(' | ') || 'AI yanıt vermedi' } };
+  return { ok: true as const, data: { rows, issues } as Json, meta, note: notes.length ? notes.join(' | ') : undefined };
 }
 
 export function review(env: AiEnv, a: { context: string; local: string; mode: AiMode }) {

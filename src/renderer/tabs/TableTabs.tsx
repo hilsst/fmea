@@ -218,15 +218,15 @@ export function StructureTab() {
             <button className="btn" onClick={addChild} disabled={sel.length > 1}>
               ↳ Alt eleman ekle
             </button>
-            <button className="btn" onClick={() => gen(['structure'], 'Gereksinimlerden yapı & fonksiyon')} title="AI kullanmadan, kural tabanlı: yapıya bağlı olmayan her gereksinim cümlesinden bir fonksiyon satırı türetir (AI Proposed). Dokümanın gerçek parça yapısını okumaz; bunun için “✦ AI: Dokümandan oluştur”u kullanın.">
+            <button className="btn" onClick={() => gen(['structure'], 'Gereksinimlerden yapı & fonksiyon')} title="AI kullanmadan, kural tabanlı: yapıya bağlı olmayan her gereksinim cümlesinden bir fonksiyon satırı türetir (AI Proposed). Eleman adlarını ve fonksiyonları akıllıca çıkarmak için “✦ AI: Gereksinimlerden oluştur”u kullanın.">
               ⟳ Gereksinimlerden öner
             </button>
-            <button className="btn ai" onClick={ai.suggestStructure} title="Analiz edilmiş dokümanları (şartname, resim, parça listesi) AI'ye okutur: dokümandaki ürün → montaj → parça → özellik ağacını ve her elemanın fonksiyonunu kanıt alıntısıyla önerir; fonksiyonları ilgili gereksinimlere bağlar. Her öneriyi kabul / düzenle / reddet ile siz onaylarsınız.">
-              ✦ AI: Dokümandan oluştur
+            <button className="btn ai" onClick={ai.suggestStructure} title="Onayladığınız gereksinim listesinden (dokümanı yeniden okumadan, gereksinimlerin kaynak ve kanıt alıntılarıyla) AI önerir: gereksinimlerdeki ürün → montaj → parça → özellik ağacını ve her elemanın fonksiyonunu kanıt alıntısıyla önerir; fonksiyonları ilgili gereksinimlere bağlar. Her öneriyi kabul / düzenle / reddet ile siz onaylarsınız.">
+              ✦ AI: Gereksinimlerden oluştur
             </button>
           </>
         }
-        emptyHint="“✦ AI: Dokümandan oluştur” ile yapı ağacını analiz edilmiş dokümandan önerin, “⟳ Gereksinimlerden öner” ile AI'sız taslak alın veya Product → Assembly → Part → Feature hiyerarşisini elle kurun."
+        emptyHint="“✦ AI: Gereksinimlerden oluştur” ile yapı ağacını onaylı gereksinimlerden önerin, “⟳ Gereksinimlerden öner” ile AI'sız taslak alın veya Product → Assembly → Part → Feature hiyerarşisini elle kurun."
       />
       <StructureTree project={project} onSelect={setSel} />
       {ai.dialogs}

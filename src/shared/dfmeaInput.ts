@@ -25,3 +25,13 @@ export function dfmeaTargets(p: Project, fnIds: string[] = []) {
 
 export const dfmeaTargetText = (ready: DfmeaTarget[]) =>
   'Hedef fonksiyonlar (yalnızca onaylı gereksinimleriyle):\n' + ready.map(({ fn, reqIds }) => `${fn.id}: ${fn.element} → ${fn.function} (REQ: ${reqIds.join(', ')})`).join('\n');
+
+/** 4.9.2: Yapı & Fonksiyon AI girdisi – yalnızca onaylı gereksinimler (+ kendi kaynak ve kanıt alıntıları); doküman yeniden okunmaz. */
+export function structureReqs(p: Project, onlyIds?: string[]) {
+  return p.requirements
+    .filter((r) => r.approval === 'Approved' && r.text.trim() && !['Manufacturing', 'Process', 'Inspection'].includes(r.reqType) && (!onlyIds || onlyIds.includes(r.id)))
+    .map((r) => ({
+      id: r.id, text: r.text, reqType: r.reqType, acceptance: r.acceptance && !r.acceptance.includes('VERİ YOK') ? r.acceptance : '',
+      source: r.source, docName: p.documents.find((d) => d.id === r.sourceDocId)?.name ?? '', page: r.sourcePage, section: r.sourceSection, evidence: (r.evidenceText ?? '').slice(0, 400),
+    }));
+}

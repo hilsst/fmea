@@ -30,3 +30,19 @@ describe('4.9.0 AI ile tümünü kur', () => {
     expect(set.items[0].row.approval).toBe('AI Proposed');
   });
 });
+
+describe('4.9.2 yapı girdisi onaylı gereksinim listesi', () => {
+  it('yalnız onaylı tasarım gereksinimleri, kendi kaynak ve kanıtlarıyla gider', async () => {
+    const { structureReqs } = await import('../src/shared/dfmeaInput');
+    const p = newProject();
+    p.documents = [{ ...blankRow('documents', 'DOC-001'), name: 'sartname.pdf' } as Project['documents'][number]];
+    p.requirements = [
+      { ...blankRow('requirements', 'REQ-001'), text: 'Delik Ø6', reqType: 'Dimensional', approval: 'Approved', sourceDocId: 'DOC-001', sourcePage: '3', evidenceText: 'Delik Ø6 mm olmalı' },
+      { ...blankRow('requirements', 'REQ-002'), text: 'Kür 120 °C', reqType: 'Manufacturing', approval: 'Approved' },
+      { ...blankRow('requirements', 'REQ-003'), text: 'Taslak', reqType: 'Dimensional', approval: 'AI Proposed' },
+    ] as Project['requirements'];
+    const r = structureReqs(p);
+    expect(r.map((x) => x.id)).toEqual(['REQ-001']);
+    expect(r[0]).toMatchObject({ docName: 'sartname.pdf', page: '3', evidence: 'Delik Ø6 mm olmalı' });
+  });
+});
