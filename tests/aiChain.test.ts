@@ -31,9 +31,18 @@ describe('4.9.0 AI ile tümünü kur', () => {
   });
 });
 
-describe('4.9.1 yapı çağrısı taranmış PDF parçaları', () => {
-  it('sayfa aralıkları 4 sayfalık gruplara bölünür', async () => {
-    const { pageRanges } = await import('../src/main/ai/index');
-    expect(pageRanges(10)).toEqual([[0, 3], [4, 7], [8, 9]]);
+describe('4.9.2 yapı girdisi onaylı gereksinim listesi', () => {
+  it('yalnız onaylı tasarım gereksinimleri, kendi kaynak ve kanıtlarıyla gider', async () => {
+    const { structureReqs } = await import('../src/shared/dfmeaInput');
+    const p = newProject();
+    p.documents = [{ ...blankRow('documents', 'DOC-001'), name: 'sartname.pdf' } as Project['documents'][number]];
+    p.requirements = [
+      { ...blankRow('requirements', 'REQ-001'), text: 'Delik Ø6', reqType: 'Dimensional', approval: 'Approved', sourceDocId: 'DOC-001', sourcePage: '3', evidenceText: 'Delik Ø6 mm olmalı' },
+      { ...blankRow('requirements', 'REQ-002'), text: 'Kür 120 °C', reqType: 'Manufacturing', approval: 'Approved' },
+      { ...blankRow('requirements', 'REQ-003'), text: 'Taslak', reqType: 'Dimensional', approval: 'AI Proposed' },
+    ] as Project['requirements'];
+    const r = structureReqs(p);
+    expect(r.map((x) => x.id)).toEqual(['REQ-001']);
+    expect(r[0]).toMatchObject({ docName: 'sartname.pdf', page: '3', evidence: 'Delik Ø6 mm olmalı' });
   });
 });

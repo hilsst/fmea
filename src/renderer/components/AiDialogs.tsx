@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { approvedReqIds, dfmeaTargets, dfmeaTargetText } from '../../shared/dfmeaInput';
+import { approvedReqIds, dfmeaTargets, dfmeaTargetText, structureReqs } from '../../shared/dfmeaInput';
 import { approvedExamples, exampleProposalData, expertBrief, type ExampleKind } from '../../shared/expert';
 import { materialFamily } from '../../shared/failureLib';
 import { AI_ERROR_TEXT, LOW_CONF_TEXT, type AiResult, type AiRunMeta } from '../../shared/aischema';
@@ -312,19 +312,15 @@ export function useAi() {
     );
   };
 
-  /** 4.9.0: Yapı & Fonksiyon, analiz edilmiş dokümanların kendisinden önerilir (gereksinim cümleleri yalnızca bağlantı içindir). */
+  /** 4.9.2: Yapı & Fonksiyon, onaylanmış gereksinim listesinden önerilir (doküman yeniden okunmaz). */
   const suggestStructure = async () => {
-    const docs = project.documents
-      .map((d) => ({ row: d, doc: project.docIndex[d.id] ?? null }))
-      .filter(({ row, doc }) => doc?.status !== 'unsupported' && ((doc?.blocks.length ?? 0) > 0 || !!row.filePath));
-    if (!docs.length) return toast('Önce Dokümanlar ekranında şartname / resim dosyasını bağlayıp “⚙ Analiz et” ile analiz edin.', 'warn');
-    const labels = docs.map(({ row }) => `${row.docNumber || row.name}${row.revision ? ` Rev ${row.revision}` : ''}`.trim());
-    await run(`Dokümanlardan yapı & fonksiyon hazırlanıyor (${docs.length} doküman)…`, 'structure', labels.join(', '), () =>
-      api.aiStructure({ context: projectContext(project), docs: docs.map(({ row, doc }, i) => ({ doc, filePath: row.filePath || undefined, label: labels[i] })), mode }),
+    const reqs = structureReqs(project);
+    if (!reqs.length) return toast('Önce Gereksinimler ekranında gereksinimleri onaylayın (Onay = Approved). Yapı & Fonksiyon onaylı gereksinim listesinden önerilir.', 'warn');
+    await run(`Onaylı ${reqs.length} gereksinimden yapı & fonksiyon hazırlanıyor…`, 'structure', reqs.map((r) => r.id).join(', '), () =>
+      api.aiStructure({ context: projectContext(project, { approvedReqsOnly: true }), reqs, mode }),
     );
   };
 
-  /** 4.9.0: base = henüz render'a yansımamış güncel proje (sihirbaz); adımlar 4'erli gruplar halinde gönderilir (çıktı sınırı / TRUNCATED). */
   const suggestPfmea = async (stepIds: string[], base: Project = project) => {
     const steps = base.processSteps.filter((s) => stepIds.length === 0 || stepIds.includes(s.id));
     if (!steps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');

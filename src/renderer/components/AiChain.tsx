@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { acceptAll, addedSince, chunk, cpRowsFromPfmea } from '../../shared/aiChain';
 import type { AiResult, AiRunMeta } from '../../shared/aischema';
 import { generate } from '../../shared/autogen';
-import { approvedReqIds, dfmeaTargets, dfmeaTargetText } from '../../shared/dfmeaInput';
+import { approvedReqIds, dfmeaTargets, dfmeaTargetText, structureReqs } from '../../shared/dfmeaInput';
 import type { Edit } from '../../shared/engine';
 import { expertBrief } from '../../shared/expert';
 import { FLOW_TEMPLATES, suggestFlowTemplates } from '../../shared/flowLib';
@@ -145,7 +145,7 @@ export function useAiChain() {
       return g.edits.filter((e) => e.kind === 'add').length;
     };
     try {
-      // 1) Yapı & Fonksiyon — yalnız henüz yapıya bağlı olmayan onaylı gereksinimler için
+      // 1) Yapı & Fonksiyon — onaylı gereksinim listesinden (doküman yeniden okunmaz); yalnız henüz yapıya bağlı olmayanlar için
       set('structure', 'run');
       {
         const p = current();
@@ -153,17 +153,15 @@ export function useAiChain() {
         const linked = new Set(p.structure.flatMap((s) => s.reqIds));
         // Proses / muayene gereksinimleri tasarım yapısına değil PFMEA'ya aittir (autogen ile aynı kural)
         const todo = p.requirements.filter((r) => ok.has(r.id) && !linked.has(r.id) && !PROCESS_REQ.has(r.reqType)).map((r) => r.id);
-        const docs = p.documents
-          .map((d) => ({ row: d, doc: p.docIndex[d.id] ?? null }))
-          .filter(({ row, doc }) => doc?.status !== 'unsupported' && ((doc?.blocks.length ?? 0) > 0 || !!row.filePath));
         if (!todo.length) set('structure', 'skip', 'Tüm onaylı tasarım gereksinimleri zaten bir fonksiyona bağlı (proses / muayene gereksinimleri PFMEA’da kullanılır)');
         else {
           let n = 0;
           let note = '';
-          if (useAi && docs.length) {
-            const labels = docs.map(({ row }) => `${row.docNumber || row.name}${row.revision ? ` Rev ${row.revision}` : ''}`.trim());
-            const r = await ai(() => api.aiStructure({ context: projectContext(p, { approvedReqsOnly: true }), docs: docs.map(({ row, doc }, i) => ({ doc, filePath: row.filePath || undefined, label: labels[i] })), mode }), 'Yapı & Fonksiyon', 'structure');
-            if (r) n = addProposals('structure', { rows: (r.data.rows as unknown[]) ?? [], issues: (r.data.issues as unknown[]) ?? [], params: [] }, r.meta, labels.join(', '));
+          if (useAi) {
+            // 4.9.2: doküman yeniden okunmaz; yalnız onaylanmış gereksinim listesi (kaynak ve kanıt alıntılarıyla) gider
+            const reqs = structureReqs(p, todo);
+            const r = await ai(() => api.aiStructure({ context: projectContext(p, { approvedReqsOnly: true }), reqs, mode }), 'Yapı & Fonksiyon', 'structure');
+            if (r) n = addProposals('structure', { rows: (r.data.rows as unknown[]) ?? [], issues: (r.data.issues as unknown[]) ?? [], params: [] }, r.meta, `${reqs.length} onaylı gereksinim`);
             else note = `AI hatası – ${lastErr.current}; `;
           }
           // AI'nin bağlamadığı onaylı gereksinimler kural tabanlı fonksiyonla kapsanır (hiçbir onaylı gereksinim DFMEA dışında kalmasın)
