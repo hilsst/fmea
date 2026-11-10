@@ -69,7 +69,8 @@ describe('4.8.0 firma imkânları ve geçmişten öğrenme', () => {
     };
     const none = mk([]);
     const withBarcode = mk(['barcode']);
-    expect(none).toMatch(/Beklenen etki \(tahmin, AI VARSAYIMI\): ilk seçenek uygulanırsa O 6→/);
+    expect(none).toMatch(/Beklenen etki: oluşumun \(O\) iyileşmesi hedeflenir; yeni puanı .* mühendis girer/);
+    expect(none).not.toMatch(/O 6→|RPN \d+→/); // türetilmiş sayı yazılmaz
     expect(withBarcode).toMatch(/firma imkânı: Barkod/);
     expect(none).not.toMatch(/firma imkânı/);
   });

@@ -112,13 +112,11 @@ export function rpnActionText(p: Pick<Project, 'settings' | 'processSteps'>, r: 
       ? `Tespiti iyileştir: ${det}; ölçümlü / otomatik tespit veya hatayı kaynağında yakalayan kontrol eklenmeli, ölçüm sistemi için MSA yapılmalı${lib.detection.length ? `; kütüphane: ${lib.detection.join(', ')}` : ''}`
       : `Tespiti iyileştir: ${det}; tasarım doğrulamasını öne alan test / analiz planlanmalı (DVP&R)`);
   }
-  // 4.8.0: önerinin beklenen etkisi (tahmin). Puan alanlarına yazılmaz; mühendis aksiyon sonrası kendi puanını girer.
+  // 4.8.0: beklenen etki yalnız niteliksel yazılır. Aksiyon sonrası O/D değeri kanıta dayanır (etkinlik doğrulaması);
+  // kuraldan türetilmiş sayı yazılmaz. Puan alanlarına (Tahmini S/O/D) dokunulmaz.
   const top = lib.ranked[0];
-  if (top) {
-    const dropO = top.strength === 3 ? 2 : top.strength === 2 ? 1 : 0;
-    const o2 = Math.max(1, o - dropO);
-    if (focusO && o2 < o) parts.push(`Beklenen etki (tahmin, AI VARSAYIMI): ilk seçenek uygulanırsa O ${o}→${o2}, RPN ${s * o * d}→${s * o2 * d}; aksiyon sonrası puanı mühendis girer`);
-  }
+  if (top && (focusO || focusD))
+    parts.push(`Beklenen etki: ${focusO ? 'oluşumun (O)' : 'tespitin (D)'} iyileşmesi hedeflenir; yeni puanı aksiyon tamamlanıp etkinliği doğrulandıktan sonra mühendis girer (AI VARSAYIMI: puan tahmini yazılmadı)`);
   const other = reasons.filter((x) => !x.startsWith('RPN'));
   const head = rpnOver(p, r) ? `[RPN ${s * o * d} ≥ ${p.settings.rpnThreshold}] ` : other.length ? `[${other.join(' / ')} · RPN ${s * o * d}] ` : '';
   return `${head}${parts.join(' | ')} (${AI_REC})`;
