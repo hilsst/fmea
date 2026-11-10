@@ -295,7 +295,7 @@ export function suggestDfmea(env: AiEnv, a: { context: string; target: string; m
   return run(env, 'FMEA Generator', a.mode, [
     { type: 'text', text: a.context },
     ...extra(a),
-    { type: 'text', text: `GÖREV: Aşağıdaki fonksiyon(lar) için DFMEA satırları öner. Yalnızca yukarıdaki ONAYLI gereksinimlere dayan; yüklenen dokümanlardan veya onaysız gereksinimlerden yeni gereksinim türetme. functionId yukarıdaki fonksiyonlardan, reqIds yalnızca hedef fonksiyonun onaylı REQ listesinden seçilir. Her S/O/D için sWhy/oWhy/dWhy gerekçesi ver (puanlama kriter tablosuna atıf). Mevcut hata modlarını tekrarlama. Bir fonksiyon için tam kayıp, kısmi, aralıklı, istenmeyen fonksiyon hata modlarını değerlendir.\n${a.target}` },
+    { type: 'text', text: `GÖREV: Aşağıdaki fonksiyon(lar) için DFMEA satırları öner. Yalnızca yukarıdaki ONAYLI gereksinimlere dayan; yüklenen dokümanlardan veya onaysız gereksinimlerden yeni gereksinim türetme. functionId yukarıdaki fonksiyonlardan, reqIds yalnızca hedef fonksiyonun onaylı REQ listesinden seçilir. Her S/O/D için sWhy/oWhy/dWhy gerekçesi ver (puanlama kriter tablosuna atıf). Mevcut hata modlarını tekrarlama. Her fonksiyon için tek bir hata modu yazma: tam kayıp, kısmi, zamanla azalan, aralıklı ve istenmeyen fonksiyon tiplerinin her birini değerlendir ve uygulanabilir olan TÜM hata modlarını ayrı satır olarak ver; bir hata modunun birden fazla olası nedeni varsa her neden ayrı satırdır. prevention alanında önleme yöntemlerini maliyet-etkinliğe göre, en düşük maliyetli etkili yöntem başta olacak şekilde sırala (ör. tasarım kuralı / benzer tasarım incelemesi → analiz → tasarımda hata önleme → tasarım değişikliği); fiyat veya tutar yazma.\n${a.target}` },
   ], DFMEA_SCHEMA);
 }
 
@@ -303,7 +303,7 @@ export function suggestPfmea(env: AiEnv, a: { context: string; target: string; c
   return run(env, 'Process Analyst', a.mode, [
     { type: 'text', text: a.context },
     ...extra(a),
-    { type: 'text', text: `GÖREV: Aşağıdaki proses adım(lar)ı için PFMEA satırları öner. dfIds ilgili DFMEA ID’leri. cause4M zorunlu; why dizisi 5 Neden (en fazla 5), rootCause sistem zafiyeti olmalı. Özel proseslerde params listesine izlenmesi gereken parametreleri ekle (limit yazma).${a.composite ? `\nKompozit bilgi tabanı (ENGINEERING KNOWLEDGE):\n${a.composite}` : ''}\nMevcut hata modlarını tekrarlama.\n${a.target}` },
+    { type: 'text', text: `GÖREV: Aşağıdaki proses adım(lar)ı için PFMEA satırları öner. dfIds ilgili DFMEA ID’leri. cause4M zorunlu; why dizisi 5 Neden (en fazla 5), rootCause sistem zafiyeti olmalı. Özel proseslerde params listesine izlenmesi gereken parametreleri ekle (limit yazma).${a.composite ? `\nKompozit bilgi tabanı (ENGINEERING KNOWLEDGE):\n${a.composite}` : ''}\nMevcut hata modlarını tekrarlama.\nHer adım için tek bir hata modu yazma: adımın her çıktısı / gereksinimi için yapılmadı (atlandı), kısmi / eksik, fazla / aşırı, yanlış (yanlış parça, ayar, malzeme), aralıklı ve elleçleme hasarı tiplerini değerlendir ve uygulanabilir olan TÜM hata modlarını ayrı satır olarak ver. Bir hata modunun 4M (Man, Machine, Method, Material, Measurement, Environment) kategorilerindeki her olası nedeni ayrı satırdır.\nprevention ve errorProofing alanlarında yöntemleri maliyet-etkinliğe göre, en düşük maliyetli etkili yöntem başta olacak şekilde sırala (ör. rota onayı / ilk parça onayı → fikstür, şablon, parametre kilidi → sensör, barkod → otomasyon); S 9–10 satırlarda yalnız idari kontrol (talimat, eğitim) yeterli değildir. Fiyat veya tutar yazma.\n${a.target}` },
   ], PFMEA_SCHEMA);
 }
 

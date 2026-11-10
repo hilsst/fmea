@@ -17,6 +17,8 @@ export interface FailureTemplate {
   cause4M?: string;
   rootCause?: string;
   errorProofing?: string;
+  /** 4.7.0: adımda bu kalıba uyan bir hata modu zaten varsa şablon önerilmez (genel adım modları için). */
+  skipIf?: RegExp;
 }
 
 const T = (failureMode: string, effect: string, cause: string, prevention: string, detection: string, s: number, o: number, d: number, extra: Partial<FailureTemplate> = {}): FailureTemplate => ({ failureMode, effect, cause, prevention, detection, s, o, d, ...extra });
@@ -42,30 +44,55 @@ export const DFMEA_LIB: Record<string, FailureTemplate[]> = {
   ],
   Environmental: [
     T('{x} çevresel koşulda özellik kaybı (sıcaklık / nem / UV)', 'Performans düşüşü, erken bozulma', 'Çevresel ortam profili tasarıma tam yansıtılmamış', 'Çevresel gereksinim analizi, malzeme sıcaklık marjı', 'Çevresel test (termal çevrim, nem, tuz sisi – şartnameye göre)', 7, 3, 5),
+    T('{x} korozyon / kimyasal etkiyle bozuluyor', 'Kesit kaybı, görünüm ve dayanım kaybı', 'Malzeme–kaplama seçimi ve galvanik uyum değerlendirilmemiş', 'Galvanik uyum tablosu, kaplama / sızdırmazlık seçim kuralı', 'Tuz sisi / kimyasal dayanım testi (şartnameye göre)', 7, 3, 5),
+    T('{x} termal genleşme farkı nedeniyle gerilme / boşluk oluşuyor', 'Çatlak, gevşeme veya arayüz boşluğu', 'Farklı malzemelerin genleşme katsayıları hesaba katılmamış', 'Termal gerilme / genleşme analizi', 'Termal çevrim testi', 6, 3, 5),
   ],
   Reliability: [
     T('{x} öngörülen ömürden önce bozuluyor (aşınma / yorulma)', 'Erken arıza, bakım maliyeti, fonksiyon kaybı', 'Ömür / güvenilirlik analizi eksik', 'Güvenilirlik analizi, benzer ürün saha verisi', 'Ömür / dayanıklılık testi', 7, 3, 5),
+    T('{x} titreşim altında gevşiyor / rezonansa giriyor', 'Bağlantı kaybı, yorulma çatlağı, gürültü', 'Titreşim profili ve doğal frekans analizi yapılmamış', 'Modal analiz, kilitleme elemanı seçim kuralı', 'Titreşim testi (sinüs / rastgele – şartnameye göre)', 7, 3, 5),
+    T('{x} bakım / değişim sırasında hasar görüyor', 'Bakım süresi uzar, ikincil hasar', 'Bakım yapılabilirlik (erişim, sökme sırası) değerlendirilmemiş', 'Bakım yapılabilirlik incelemesi (DFMt)', 'Bakım gösterimi (demonstration)', 5, 3, 5),
   ],
   Interface: [
     T('{x} arayüzde uyumsuzluk (montaj yapılamıyor / boşluk)', 'Montajda duruş, rework, fonksiyon kaybı', 'Arayüz kontrol dokümanı (ICD) eksik veya güncel değil', 'ICD, dijital montaj (DMU) kontrolü', 'Montaj denemesi (fit check)', 5, 4, 4),
+    T('{x} ters / yanlış yönde monte edilebiliyor', 'Fonksiyon kaybı veya montajda hasar', 'Tasarımda simetrik geometri; yön belirleyici özellik yok', 'Tasarımda hata önleme (asimetrik pim / tek yönlü geometri)', 'Montaj denemesi (fit check)', 7, 3, 4),
+    T('{x} arayüz yükünü / temasını aktaramıyor', 'Bağlantı gevşer, aşınma veya fretting', 'Bağlantı elemanı / temas yüzeyi seçimi doğrulanmamış', 'Bağlantı analizi, onaylı bağlantı elemanı listesi', 'Bağlantı / tork testi', 7, 3, 5),
   ],
   Safety: [
     T('{x} emniyet fonksiyonunu yerine getirmiyor', 'Emniyet riski – kullanıcı / uçuş emniyeti etkilenebilir', 'Emniyet gereksinimi tasarım çözümüne tam yansıtılmamış', 'Emniyet analizi (FHA / FTA), bağımsız tasarım incelemesi', 'Emniyet kalifikasyon testi', 10, 2, 4),
+    T('{x} tek nokta arızasıyla emniyet fonksiyonu kayboluyor', 'Emniyet riski – yedeklilik yok', 'Yedeklilik / fail-safe ilkesi uygulanmamış', 'Fail-safe / yedekli tasarım, FTA', 'Arıza enjeksiyon / kalifikasyon testi', 10, 2, 5),
+    T('{x} istenmeyen şekilde (yanlış zamanda) devreye giriyor', 'Emniyet riski – beklenmeyen davranış', 'İstenmeyen fonksiyon senaryoları analiz edilmemiş', 'FHA – istenmeyen fonksiyon analizi', 'Emniyet testi (sınır / hatalı kullanım senaryoları)', 10, 2, 5),
   ],
   Regulatory: [
     T('{x} regülasyon gereksinimine uygun değil', 'Sertifikasyon / yasal uygunsuzluk', 'Uygulanabilir regülasyon tasarım girdilerine eklenmemiş', 'Uygunluk matrisi (compliance checklist)', 'Uygunluk gösterimi (analiz / test)', 9, 2, 4),
+    T('{x} yasaklı / kısıtlı madde içeriyor (REACH, RoHS vb.)', 'Yasal uygunsuzluk, sevkiyat durması', 'Malzeme / kaplama beyanı kontrol edilmemiş', 'Onaylı malzeme listesi, tedarikçi madde beyanı', 'Malzeme beyanı incelemesi', 8, 2, 4),
+    T('{x} işaretleme / izlenebilirlik gereksinimi tasarımda yok', 'Sertifikasyon reddi, izlenebilirlik kaybı', 'İşaretleme gereksinimi çizime aktarılmamış', 'Çizim kontrol listesi (işaretleme notu)', 'Çizim incelemesi + FAI', 6, 3, 3),
   ],
   Manufacturing: [
     T('{x} üretim kabiliyeti dışında tasarlanmış', 'Yüksek hurda / rework, teslimat gecikmesi', 'DFM incelemesi yapılmamış; tolerans proses kabiliyetine göre atanmamış', 'DFM/DFA incelemesi, proses kabiliyet verisiyle tolerans ataması', 'Prototip / pilot üretim ve ölçüm', 5, 4, 5),
+    T('{x} mevcut takım / ekipmanla üretilemiyor (erişim, takım yarıçapı)', 'Özel takım ihtiyacı, maliyet ve gecikme', 'Takım erişimi ve standart takım ölçüleri tasarımda dikkate alınmamış', 'DFM kontrol listesi (standart yarıçap, takım erişimi)', 'Üretim mühendisliği incelemesi + pilot üretim', 5, 4, 4),
   ],
   Inspection: [
     T('{x} muayene edilemiyor (erişim / yöntem yok)', 'Uygunsuz ürün tespit edilemeden sevk edilebilir', 'Muayene edilebilirlik tasarım incelemesinde değerlendirilmemiş', 'Muayene edilebilirlik incelemesi (DFI)', 'Muayene yöntemi doğrulaması (POD / referans standart)', 7, 3, 5),
+    T('{x} için ölçüm datumu / kabul kriteri tanımsız', 'Farklı ölçüm sonuçları, yanlış kabul / ret', 'Datum yapısı ve kabul kriteri çizimde eksik', 'GD&T datum incelemesi, kabul kriteri – şartname izlenebilirliği', 'Ölçüm planı doğrulaması (MSA)', 6, 3, 4),
   ],
   Functional: [
     T('{x} fonksiyonu yerine getirmiyor', 'Ürün fonksiyonu kaybolur', 'Fonksiyon gereksinimi tasarım çözümüne tam yansıtılmamış', 'Gereksinim izlenebilirlik matrisi, tasarım incelemesi', 'Fonksiyon testi', 7, 3, 5),
     T('{x} fonksiyonu kısmen / aralıklı yerine getiriyor', 'Performans düşüşü, kullanıcı şikâyeti', 'Tasarım marjı yetersiz', 'Tasarım marjı analizi', 'Fonksiyon testi (sınır koşullarında)', 6, 3, 5),
   ],
 };
+
+/**
+ * 4.7.0: her fonksiyon için değerlendirilmesi gereken hata modu tipleri (AIAG-VDA / SCMH: fonksiyon yok, kısmi,
+ * zamanla azalan, aralıklı, istenmeyen fonksiyon). Gereksinim tipine özgü kütüphane bu tiplerden birini zaten
+ * kapsıyorsa (benzer metin) tekrar eklenmez.
+ */
+export const DFMEA_FUNCTION_TYPES: FailureTemplate[] = [
+  { ...T('{x} fonksiyonu hiç yerine getirilmiyor (fonksiyon yok)', 'Ürün fonksiyonu tamamen kaybolur', 'Fonksiyon gereksinimi tasarım çözümüne tam yansıtılmamış', 'Gereksinim izlenebilirlik matrisi, tasarım incelemesi', 'Fonksiyon testi', 7, 3, 5), skipIf: /yerine getirmiyor/ },
+  { ...T('{x} fonksiyonu kısmen yerine getiriliyor (gereksinim altında)', 'Performans gereksinimi karşılanmaz', 'Tasarım marjı yetersiz', 'Tasarım marjı analizi', 'Fonksiyon testi (sınır koşullarında)', 6, 3, 5), skipIf: /kısmen|gereksinimini karşılamıyor/ },
+  { ...T('{x} fonksiyonu zamanla azalıyor (degradasyon)', 'Servis süresince performans kaybı', 'Yaşlanma / aşınma / çevresel etkiler tasarımda dikkate alınmamış', 'Yaşlanma ve çevresel faktör analizi', 'Şartlandırma / ömür testi sonrası fonksiyon testi', 6, 3, 5), skipIf: /zamanla|degrad|ömürden önce/ },
+  { ...T('{x} fonksiyonu aralıklı yerine getiriliyor', 'Öngörülemeyen davranış, tespit zorluğu', 'Gürültü faktörlerine (titreşim, sıcaklık, parçadan parçaya değişim) duyarlı tasarım', 'Gürültü faktörü (P-diyagramı) analizi, robust tasarım', 'Sınır / çevresel koşullarda fonksiyon testi', 6, 3, 6), skipIf: /aralıklı/ },
+  { ...T('{x} istenmeyen fonksiyon gösteriyor (fazla / yanlış zamanda)', 'Komşu sistemlere zarar veya beklenmeyen davranış', 'İstenmeyen fonksiyon senaryoları değerlendirilmemiş', 'Arayüz ve istenmeyen fonksiyon analizi (P-diyagramı)', 'Sistem entegrasyon testi', 6, 2, 5), skipIf: /istenmeyen/ },
+];
 DFMEA_LIB.Process = DFMEA_LIB.Manufacturing;
 DFMEA_LIB['Customer-specific'] = DFMEA_LIB.Functional;
 
@@ -125,9 +152,13 @@ export const PFMEA_LIB: Record<string, FailureTemplate[]> = {
   ],
   Demolding: [
     P('Kalıptan çıkarmada parça hasarı', 'Delaminasyon, yüzey hasarı, hurda', 'Yanlış çıkarma yöntemi / aracı', 'Method', 'Çıkarma talimatı ve uygun araç yok', 'Çıkarma talimatı, yumuşak takımlar', 'Görsel muayene + NDT', 7, 3, 5),
+    P('Parça kalıba yapışıyor (ayırıcı yetersiz)', 'Yüzey hasarı, delaminasyon', 'Ayırıcı (release agent) uygulaması / tazeleme aralığı takip edilmiyor', 'Method', 'Kalıp hazırlık kontrol listesi yok', 'Kalıp hazırlık kontrol listesi, ayırıcı uygulama kaydı', 'Görsel muayene', 6, 3, 5),
+    P('Sıcak parça erken çıkarılıyor (çarpılma)', 'Ölçü dışı / çarpılmış parça', 'Çıkarma sıcaklığı tanımlı değil', 'Method', 'Soğuma süresi / sıcaklığı izlenmiyor', 'Tanımlı çıkarma sıcaklığı, termokupl okuması', 'Boyutsal / profil kontrolü', 6, 3, 4),
   ],
   Packaging: [
     P('Taşımada parça hasarı', 'Müşteride hasarlı parça', 'Ambalaj parçayı korumuyor', 'Method', 'Ambalaj tasarımı doğrulanmamış', 'Onaylı ambalaj talimatı', 'Sevk öncesi ambalaj kontrolü', 6, 3, 6),
+    P('Yanlış parça / adet / etiket ile sevk', 'Müşteride karışıklık, izlenebilirlik kaybı', 'Etiket ve sevk listesi elle hazırlanıyor', 'Man', 'Etiket – iş emri eşleştirmesi yok', 'Sistemden basılan etiket, sevk kontrol listesi', 'Sevk öncesi barkod / etiket kontrolü', 6, 3, 4, 'Barcode'),
+    P('Ambalajda korozyon / nem / ESD hasarı', 'Müşteride yüzey veya fonksiyon hasarı', 'Koruyucu ambalaj (VCI, nem alıcı) gereksinimi uygulanmıyor', 'Material', 'Ambalaj gereksinimi iş emrine aktarılmamış', 'Ambalaj talimatında koruma gereksinimi', 'Sevk öncesi ambalaj kontrolü', 6, 2, 6),
   ],
   // 4.4.0: metal imalat akışları (talaşlı, kaynaklı, sac metal, ısıl işlem)
   'Metal Machining': [
@@ -168,8 +199,21 @@ export const PFMEA_LIB: Record<string, FailureTemplate[]> = {
   ],
   Generic: [
     P('Operasyon gereksinimi karşılanmıyor', 'Ürün karakteristiği uygunsuz', 'İş talimatı eksik / belirsiz', 'Method', 'İş talimatı doğrulanmamış', 'Onaylı iş talimatı, operatör eğitimi', 'Operasyon sonu kontrol', 6, 4, 6),
+    P('Operasyon kısmen / eksik yapılıyor', 'Ürün karakteristiği kısmen uygunsuz', 'Operasyon tamamlanma kriteri tanımlı değil', 'Method', 'Tamamlanma kriteri iş talimatında yok', 'İş talimatında tamamlanma kriteri, kontrol listesi', 'Operasyon sonu kontrol', 6, 4, 5),
+    P('Operasyon fazla / aşırı yapılıyor', 'Ürün karakteristiği bozulur (fazla malzeme alma, aşırı işlem)', 'Ekipman ayarı / süre sınırı tanımlı değil', 'Machine', 'Ayar ve süre limitleri kilitli değil', 'Ayar kartı, süre / parametre limiti', 'Operasyon sonu kontrol', 6, 3, 5),
+    P('Yanlış ekipman / takım / ayar kullanılıyor', 'Ürün karakteristiği uygunsuz', 'Ekipman – iş emri eşleştirmesi yapılmıyor', 'Machine', 'Ayar doğrulaması (ilk parça) yok', 'İlk parça onayı, ayar kartı', 'İlk parça kontrolü', 6, 3, 5),
   ],
 };
+
+/**
+ * 4.7.0: her proses adımında, alana özgü kütüphaneye ek olarak değerlendirilmesi gereken genel hata modları
+ * (adım atlanması, yanlış parça / revizyon, elleçleme hasarı). Benzer mod adımda zaten varsa eklenmez.
+ */
+export const PFMEA_STEP_COMMON: FailureTemplate[] = [
+  { ...P('Operasyon atlanıyor (adım yapılmadan sonraki operasyona geçiliyor)', 'Uygunsuz parça sonraki operasyona / müşteriye gider', 'İş emrinde adım onayı zorunlu değil', 'Method', 'Rota adımı imza / sistem onayı zorunlu değil', 'İş emrinde zorunlu adım onayı (rota imzası)', 'Sonraki operasyonda / final muayenede rota kontrolü', 7, 3, 5, 'Sistem rota onayı'), skipIf: /atlan/ },
+  { ...P('Yanlış parça / yanlış revizyona operasyon uygulanıyor', 'Uygunsuz parça, hurda veya karışık lot', 'Parça, iş emri ve doküman revizyonu operasyon başında eşleştirilmiyor', 'Method', 'Revizyon kontrolü manuel', 'İş emri – çizim revizyon kontrolü, parça tanımlama', 'Operasyon başı iş emri / etiket kontrolü', 6, 2, 5), skipIf: /yanlış (parça|revizyon)/ },
+  { ...P('Elleçleme / taşıma sırasında parça hasarı', 'Çizik, ezik, kenar hasarı; hurda veya rework', 'Taşıma aparatı / koruma tanımlı değil', 'Method', 'Elleçleme talimatı ve taşıma aparatı yok', 'Taşıma aparatı / koruyucu, elleçleme talimatı', 'Sonraki operasyon başı görsel kontrol', 5, 3, 5), skipIf: /elleçleme|taşıma|kalıptan çıkarmada/ },
+];
 PFMEA_LIB.Autoclave = PFMEA_LIB.Cure;
 
 /** 4.5.0: projenin malzeme ailesi. Ürün tipi seçiliyse ondan; değilse gereksinim / parça metnindeki malzeme kelimelerinden. */
