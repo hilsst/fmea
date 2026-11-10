@@ -212,7 +212,8 @@ export function controlCatalogue(p: { dfmea?: ControlRow[]; pfmea?: ControlRow[]
 let ctxCache: { p: object; sig: string; ctx: CostContext } | null = null;
 export function costContext(p: { settings?: { companyCapabilities?: string[] }; dfmea?: ControlRow[]; pfmea?: ControlRow[] }): CostContext {
   // Aynı proje için satır başına yeniden kurulmasın: imza yalnız onaylı satırların kontrol alanlarından üretilir.
-  let sig = (p.settings?.companyCapabilities ?? []).join(',') + '#';
+  const capList = Array.isArray(p.settings?.companyCapabilities) ? p.settings!.companyCapabilities! : [];
+  let sig = capList.join(',') + '#';
   for (const r of [...(p.dfmea ?? []), ...(p.pfmea ?? [])]) if (APPROVED.has(r.approval ?? '')) sig += `${r.prevention ?? ''}|${r.errorProofing ?? ''}|${r.detection ?? ''};`;
   if (ctxCache && ctxCache.p === p && ctxCache.sig === sig) return ctxCache.ctx;
   const ctx = buildCostContext(p);
@@ -221,7 +222,7 @@ export function costContext(p: { settings?: { companyCapabilities?: string[] }; 
 }
 function buildCostContext(p: { settings?: { companyCapabilities?: string[] }; dfmea?: ControlRow[]; pfmea?: ControlRow[] }): CostContext {
   const learned = new Set(controlCatalogue(p).filter((e) => e.kind !== 'Tespit').map((e) => stripNote(e.text)));
-  return { capabilities: p.settings?.companyCapabilities ?? [], learned };
+  return { capabilities: Array.isArray(p.settings?.companyCapabilities) ? p.settings!.companyCapabilities! : [], learned };
 }
 
 /** "1) … 2) …" biçiminde, ucuzdan pahalıya. */

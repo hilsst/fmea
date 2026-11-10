@@ -160,6 +160,7 @@ describe('4.8.0 denetim düzeltmeleri', () => {
   });
 
   it('settings ve dashboard gizlenemez; dizi olmayan imkân listesi hata vermez', () => {
+    expect(() => costContext({ settings: { companyCapabilities: 'fixture' as never } })).not.toThrow();
     const keys = visibleScreens({ hiddenScreens: ['settings', 'dashboard'] }, 'pfmea').map((s) => s.key);
     expect(keys).toContain('settings');
     expect(keys).toContain('dashboard');
