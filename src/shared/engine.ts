@@ -9,7 +9,7 @@ import { isKcCandidate } from './scoring';
 import { KC_LOCK_MSG, kcLocked, kcOnSet } from './kcScmh'; // v4-kc
 import { crTouchesPpap, isUpdateTrigger, lessonReassessText, ppapApprovedDate } from './apqp'; // v4-apqp
 import { capOnDelete, capOnSet } from './capEngine'; // v4-cap
-import { cpRequired, joinedRequirement } from './risk'; // v4-risk
+import { cpRequired, joinedRequirement, needsAction } from './risk'; // v4-risk
 import { ensureLineNumbers, splitRequirement } from './riskModel'; // v4-risk
 import { REQ_ISSUE_TRIGGERS, syncReqIssue } from './reqIssues';
 import { rpnActionValues } from './rpnAction';
@@ -722,9 +722,11 @@ function riskOnSet(c: Ctx, e: Extract<Event, { type: 'set' }>) {
 function rpnAction(c: Ctx, table: 'dfmea' | 'pfmea', id: string) {
   const row = c.find<DfmeaRow | PfmeaRow>(table, id);
   if (!row) return;
-  const vals = rpnActionValues(c.p, row, table === 'pfmea');
+  // 4.7.0: yalnız RPN değil, tüm yüksek risk nedenleri (S≥9, AP=H, KC/CI, Top-N) öneriyi tetikler – RPN tek başına ölçüt değildir.
+  const reasons = needsAction(c.p, row).reasons;
+  const vals = rpnActionValues(c.p, row, table === 'pfmea', reasons);
   for (const [f, v] of Object.entries(vals))
-    c.set(table, id, f, v, `${id} RPN eşiği (${c.p.settings.rpnThreshold}) aşıldı – önerilen aksiyon (AI RECOMMENDATION)`);
+    c.set(table, id, f, v, `${id} yüksek risk (${reasons.join(' / ') || `RPN eşiği ${c.p.settings.rpnThreshold}`}) – önerilen aksiyon (AI RECOMMENDATION)`);
 }
 
 const SPECIAL_AREAS = new Set(['Metal Finishing', 'Heat Treatment', 'Welding', 'Cure', 'Bonding', 'NDT']);

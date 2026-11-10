@@ -191,7 +191,7 @@ function decisionValues(p: Project, r: DfmeaRow | PfmeaRow, pf: boolean): Record
   // 4.4.0: öneri satırın neden / kontrol bilgisinden türetilir (rpnAction.ts); puanlar eksikse genel öneri.
   if (s >= 9 || needsAction(p, r).need)
     out.recommendedAction = rowRpn(r) != null
-      ? rpnActionText(p, r, pf)
+      ? rpnActionText(p, r, pf, [...(s >= 9 ? ['S≥9'] : []), ...needsAction(p, r).reasons.filter((x) => x !== 'S≥9')])
       : pf
         ? `Hata önleme (poka-yoke / otomatik izleme) ekle; tespit: ${r.detection || 'yöntem belirlenmeli'} (${AI_REC})`
         : `Önleme kontrolünü güçlendir (tasarım değişikliği / analiz) ve doğrulama testini planla (${AI_REC})`;

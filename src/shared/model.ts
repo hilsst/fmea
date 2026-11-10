@@ -243,6 +243,9 @@ export const DEFAULT_SETTINGS: Settings = {
   workflow: WORKFLOW_STEPS.map((step) => ({ step, enabled: true, role: DEFAULT_STEP_ROLE[step] })),
   reasonFields: ['s', 'o', 'd', 'kcs.status', 'kcs.category', 'kcs.kcClass', 'approval', 'riskDecision', 'sDisposition'], // v4-risk: son 2
   scoringStandard: 'SCMH',
+  companyCapabilities: [],
+  simpleMenu: true, // 4.8.0: Kemal'in seçimi – gelişmiş ekranlar varsayılan gizli, soldaki düğmeyle açılır
+  hiddenScreens: [],
   // v4-kc: SCMH 7.2.17 §1.2.1 numaralandırma
   kcNumbering: DEFAULT_KC_NUMBERING,
   ciNumbering: DEFAULT_CI_NUMBERING,

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { qualityReport } from '../shared/quality';
 import { newProject } from '../shared/model';
-import { SCREENS, SCREEN_BY_KEY, screenOfTable, type ScreenKey } from '../shared/nav';
+import { SCREENS, SCREEN_BY_KEY, screenOfTable, visibleScreens, type ScreenKey } from '../shared/nav';
 import { buildReviewReportHtml } from '../shared/report';
 import { sampleProject } from '../shared/sample';
 import { actionAddressed, needsAction } from '../shared/risk'; // v4-risk
@@ -61,7 +61,7 @@ const fromTab = (t: TabKey): [ScreenKey, string?] => {
 
 export function App() {
   const store = useStore();
-  const { project, filePath, dirty, replace, setPath, markSaved, toast, toasts, undo, redo, canUndo, canRedo, mutate, ask, confirm } = store;
+  const { project, filePath, dirty, replace, setPath, markSaved, toast, toasts, undo, redo, canUndo, canRedo, mutate, ask, confirm, edit } = store;
   const [screen, setScreen] = useState<ScreenKey>('dashboard');
   const [subs, setSubs] = useState<Record<string, string>>({});
   const [help, setHelp] = useState(false);
@@ -225,9 +225,12 @@ export function App() {
   }, [save]);
 
   const def = SCREEN_BY_KEY[screen];
-  const idx = SCREENS.findIndex((s) => s.key === screen);
+  // 4.8.0: Sade menü / gizlenen ekranlar; açık ekran her zaman listede kalır.
+  const menu = visibleScreens(project.settings, screen);
+  const idx = menu.findIndex((s) => s.key === screen);
   const sub = def.subs ? (subs[screen] ?? def.subs[0].key) : undefined;
-  const groups = [...new Set(SCREENS.map((s) => s.group))];
+  const groups = [...new Set(menu.map((s) => s.group))];
+  const hiddenCount = SCREENS.length - menu.length;
   const score = qualityReport(project).score;
 
   return (
@@ -264,9 +267,9 @@ export function App() {
           {groups.map((g) => (
             <div key={g} className="sb-group">
               <div className="sb-title">{g}</div>
-              {SCREENS.filter((s) => s.group === g).map((s) => {
+              {menu.filter((s) => s.group === g).map((s) => {
                 const b = screenBadge(project, s.key);
-                const i = SCREENS.indexOf(s);
+                const i = menu.indexOf(s);
                 return (
                   <button key={s.key} className={`sb-item ${s.key === screen ? 'on' : ''}`} onClick={() => setScreen(s.key)} title={`${s.stage}\n${s.hint}`}>
                     <span className="num">{i + 1}</span>
@@ -277,6 +280,17 @@ export function App() {
               })}
             </div>
           ))}
+          <div className="sb-group">
+            <button
+              className="sb-item"
+              title={project.settings.simpleMenu ? 'APQP, PPAP, MSA, Capability ve diğer gelişmiş ekranları da göster' : 'Yalnızca temel ekranları göster (veri silinmez)'}
+              onClick={() => edit({ kind: 'settings', field: 'simpleMenu', value: !project.settings.simpleMenu }, 'Menü görünümü')}
+            >
+              <span className="num">⇄</span>
+              <span className="lbl">{project.settings.simpleMenu ? 'Tam menüye geç' : 'Sade menüye geç'}</span>
+              {hiddenCount > 0 && <span className="cnt gray">{hiddenCount} gizli</span>}
+            </button>
+          </div>
         </nav>
 
         <div className="main">
@@ -288,8 +302,8 @@ export function App() {
             </div>
             <div className="stepper">
               {(screen === 'dfmea' || screen === 'pfmea') && isDesktop && <button className="btn" onClick={() => setSimilar(true)} title="Önceki bir .fmea dosyasında benzer hata modu desenleri arar">≈ Benzer FMEA</button>}
-              <button className="btn" disabled={idx === 0} onClick={() => setScreen(SCREENS[idx - 1].key)}>← {idx > 0 ? SCREENS[idx - 1].label : ''}</button>
-              <button className="btn" disabled={idx === SCREENS.length - 1} onClick={() => setScreen(SCREENS[idx + 1].key)}>{idx < SCREENS.length - 1 ? SCREENS[idx + 1].label : ''} →</button>
+              <button className="btn" disabled={idx <= 0} onClick={() => setScreen(menu[idx - 1].key)}>← {idx > 0 ? menu[idx - 1].label : ''}</button>
+              <button className="btn" disabled={idx === menu.length - 1} onClick={() => setScreen(menu[idx + 1].key)}>{idx < menu.length - 1 ? menu[idx + 1].label : ''} →</button>
             </div>
           </div>
           {def.subs && (
@@ -421,11 +435,15 @@ function Welcome({ recent, onNew, onOpen, onSample }: { recent: string[]; onNew:
             ))}
           </div>
         )}
-        <ol className="w-steps">
-          {SCREENS.slice(1, 10).map((t, i) => (
-            <li key={t.key}><b>{i + 2}. {t.label}</b> <span>{t.hint}</span></li>
-          ))}
-        </ol>
+        <div className="w-quick">
+          <h3>Nasıl başlarım? 4 adım</h3>
+          <ol className="w-steps">
+            <li><b>1. Doküman ekle</b> <span>Dokümanlar ekranında şartname veya resmi yükleyip “Analiz et”e basın; gereksinimler, yapı, DFMEA ve PFMEA önerileri otomatik gelir.</span></li>
+            <li><b>2. Satırları kontrol et</b> <span>Gelen her satır “AI Proposed” durumundadır. Hata modu, neden, kontrol ve S/O/D’yi inceleyip düzeltin.</span></li>
+            <li><b>3. Eksikleri tamamla</b> <span>Kalite Kontrol ekranındaki “Kapsam denetimi” hangi adımda hangi hata riskinin eksik olduğunu gösterir ve tek tıkla önerir.</span></li>
+            <li><b>4. Onayla ve çıkar</b> <span>Satırları onaylayın; Excel veya SCMH paketi olarak dışa aktarın. Kullanmadığınız ekranlar için soldaki “Sade menüye geç” düğmesini kullanın.</span></li>
+          </ol>
+        </div>
       </div>
     </div>
   );

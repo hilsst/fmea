@@ -362,7 +362,7 @@ export function DfmeaTab() {
             <button className="btn" onClick={fromFunctions} title="DFMEA satırı olmayan her fonksiyon için bir satır açar">
               Fonksiyonlardan oluştur
             </button>
-            <button className="btn" onClick={() => gen(['dfmea'], 'Hata kütüphanesinden DFMEA')} title="DFMEA satırı olmayan her fonksiyon için gereksinim tipine göre hazır hata modu, etki, neden, önleme/tespit kontrolü ve başlangıç S/O/D önerir">
+            <button className="btn" onClick={() => gen(['dfmea'], 'Hata kütüphanesinden DFMEA')} title="Her fonksiyon için olası TÜM hata modlarını önerir (bağlı her gereksinim tipinin kütüphanesi + fonksiyon yok / kısmi / zamanla azalan / aralıklı / istenmeyen); mevcut satırlar korunur, yalnız eksik modlar eklenir. Her satırda hata modu, etki, neden, önleme/tespit kontrolü ve başlangıç S/O/D önerir">
               ⟳ Kütüphaneden öner
             </button>
             <button className="btn" onClick={() => fillBlanks(sel)} title="Seçili (seçim yoksa tüm) satırların boş alanlarını yapı ağacı ve gereksinimlerden doldurur: sistem/komponent, lokal/üst etki, doğrulama, risk kategorisi, gürültü faktörü, özel karakteristik, S 9–10 kararı ve aksiyon önerisi. Dolu alanlar değişmez.">
@@ -454,7 +454,7 @@ export function PfmeaTab() {
             <button className="btn" onClick={() => setChecklist(true)} title="Spesifikasyon §9 kompozit hata modu kontrol listesi">
               Kompozit kontrol listesi
             </button>
-            <button className="btn" onClick={() => gen(['pfmea'], 'Hata kütüphanesinden PFMEA')} title="PFMEA satırı olmayan her proses adımı için hazır hata modu, etki, neden (4M), kök neden, önleme/tespit, hata önleme ve başlangıç S/O/D önerir; özel proses parametreleri için limit dışı hata modlarını ekler">
+            <button className="btn" onClick={() => gen(['pfmea'], 'Hata kütüphanesinden PFMEA')} title="Her proses adımı için olası TÜM hata modlarını önerir (alan kütüphanesi + adım atlama / yanlış parça / elleçleme hasarı); mevcut satırlar korunur, yalnız eksik modlar eklenir. Her satırda hata modu, etki, neden (4M), kök neden, önleme/tespit, hata önleme ve başlangıç S/O/D önerir; özel proses parametreleri için limit dışı hata modlarını ekler">
               ⟳ Kütüphaneden öner
             </button>
             <button className="btn" onClick={() => fillBlanks(sel)} title="Seçili (seçim yoksa tüm) satırların boş alanlarını proses adımı, parametreler, gereksinimler ve DFMEA'dan doldurur: proses fonksiyonu, ürün/proses gereksinimi, bağlı DFMEA, proses elemanı, ölçüm yöntemi, reaksiyon planı, özel karakteristik, S 9–10 kararı ve aksiyon önerisi. Dolu alanlar değişmez.">

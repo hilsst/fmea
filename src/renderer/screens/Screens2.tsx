@@ -8,6 +8,11 @@ import { verifySource } from '../../shared/docmodel';
 import { impactOf } from '../../shared/impact';
 import { COMPOSITE_KB, PRODUCT_TYPES, PRODUCT_TYPE_HINTS } from '../../shared/kb';
 import { FlowTemplatePicker } from '../components/FlowTemplates';
+import { CAPABILITIES, COST_LABEL, STRENGTH_LABEL, controlCatalogue } from '../../shared/controlCost';
+import { coverageGaps } from '../../shared/coverage';
+import { SCREENS } from '../../shared/nav';
+import { useAutogen } from '../components/Autogen';
+import { generate } from '../../shared/autogen';
 import { evaluateKc } from '../../shared/kc';
 import { DEFAULT_SCORING, DEFAULT_SETTINGS, TABLE_LABEL, nextId, tableOfId } from '../../shared/model';
 import { failedRunEdit } from '../../shared/proposals';
@@ -417,6 +422,52 @@ export function ImpactScreen() {
 
 // ───────────────────────── Kalite kontrol ─────────────────────────
 
+/** 4.8.0: Kapsam denetimi – eksik hata modu tipleri ve 4M nedenleri; tek tıkla kütüphaneden tamamlanır. */
+function CoverageCard() {
+  const { project: p } = useStore();
+  const gen = useAutogen();
+  const gaps = useMemo(() => coverageGaps(p), [p]);
+  // Kütüphanenin kapatabildiği eksikler düğmeye girer; kapatamadıkları "elle değerlendirilmeli" olarak ayrılır.
+  const fillable = useMemo(() => {
+    const ids = new Set<string>();
+    for (const e of [...generate(p, ['pfmea']).edits, ...generate(p, ['dfmea']).edits]) {
+      if (e.kind !== 'add') continue;
+      const r = e.row as { stepId?: string; functionId?: string };
+      if (r.stepId) ids.add(r.stepId);
+      if (r.functionId) ids.add(r.functionId);
+    }
+    return ids;
+  }, [p]);
+  const pf = gaps.filter((g) => g.table === 'pfmea' && fillable.has(g.id));
+  const df = gaps.filter((g) => g.table === 'dfmea' && fillable.has(g.id));
+  return (
+    <section className="card">
+      <h3>Kapsam denetimi · tüm hata riskleri değerlendirildi mi?</h3>
+      <p className="muted small">Her proses adımı ve fonksiyon için yok / kısmi / fazla / yanlış / hasar (veya zamanla azalan / aralıklı / istenmeyen) hata tipleri ile 4M nedenleri aranır. Eksik olanlar hata kütüphanesinden önerilir; mevcut satırlar değişmez.</p>
+      {gaps.length === 0 ? <p className="ok-text">✓ Eksik kapsam bulunamadı</p> : (
+        <>
+          <div className="row-btns">
+            {pf.length > 0 && <button className="btn primary" onClick={() => gen(['pfmea'], 'Eksik PFMEA hata modları', { stepIds: pf.map((g) => g.id) })}>PFMEA eksiklerini öner ({pf.length} adım)</button>}
+            {df.length > 0 && <button className="btn primary" onClick={() => gen(['dfmea'], 'Eksik DFMEA hata modları', { fnIds: df.map((g) => g.id) })}>DFMEA eksiklerini öner ({df.length} fonksiyon)</button>}
+          </div>
+          <table className="effects">
+            <tbody>
+              {gaps.slice(0, 40).map((g) => (
+                <tr key={g.table + g.id}>
+                  <td><span className="badge b-amber">{g.table === 'pfmea' ? 'PFMEA' : 'DFMEA'}</span></td>
+                  <td className="rid">{g.id}</td>
+                  <td className="small"><b>{g.name}</b>{!fillable.has(g.id) && <span className="badge b-gray" title="Kütüphanede bu eksiği kapatan öneri yok">elle değerlendirilmeli</span>}<div className="muted">{g.missing.join(' · ')}</div></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {gaps.length > 40 && <p className="muted small">… {gaps.length - 40} kayıt daha</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
 export function QualityScreen({ go }: { go: Go }) {
   const { project: p, toast } = useStore();
   const q = useMemo(() => qualityReport(p), [p]);
@@ -434,6 +485,7 @@ export function QualityScreen({ go }: { go: Go }) {
         <button className="btn" onClick={() => exportReport('html')}>İnceleme raporu (HTML)</button>
         <button className="btn" onClick={() => go('aiReview', 'review')}>AI incelemesine git</button>
       </div>
+      <CoverageCard />
       <div className="two-col">
         <section className="card">
           <div className="score-head">
@@ -876,6 +928,8 @@ export function SettingsScreen() {
       <section className="card">
         <TableFormatSetting first />
       </section>
+      <MenuSettings />
+      <CapabilitySettings />
       <div className="two-col">
         <section className="card">
           <h3>Kullanıcı</h3>
@@ -1053,5 +1107,70 @@ function ExampleLibrary() {
         <button className="btn" disabled={!count} onClick={async () => { await api.examplesClear(); setCount(0); toast('Örnek kütüphanesi temizlendi'); }}>Kütüphaneyi temizle</button>
       </div>
     </>
+  );
+}
+
+// ───────────────────────── 4.8.0: menü görünümü, firma imkânları, kontrol kataloğu ─────────────────────────
+
+function MenuSettings() {
+  const { project: p, edit } = useStore();
+  const s = p.settings;
+  const hidden = new Set(s.hiddenScreens ?? []);
+  const toggle = (key: string) => {
+    const next = new Set(hidden);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    edit({ kind: 'settings', field: 'hiddenScreens', value: [...next] }, 'Menü görünümü');
+  };
+  return (
+    <section className="card">
+      <h3>Menü görünümü</h3>
+      <p className="muted">Kullanmayacağınız ekranları gizleyin. Veri silinmez; ekranı istediğiniz an buradan geri açabilirsiniz.</p>
+      <label className="check">
+        <input type="checkbox" checked={!!s.simpleMenu} onChange={(e) => edit({ kind: 'settings', field: 'simpleMenu', value: e.target.checked }, 'Menü görünümü')} />{' '}
+        <b>Sade menü</b> – APQP, PPAP, MSA, Capability, Dersler, Değişiklik Etkisi, Revizyon / Baseline ve Onay gizli
+      </label>
+      <div className="form mt" style={{ columnGap: 24 }}>
+        {SCREENS.filter((x) => x.key !== 'settings' && x.key !== 'dashboard').map((x) => (
+          <label key={x.key} className="check">
+            <input type="checkbox" checked={!hidden.has(x.key)} onChange={() => toggle(x.key)} /> {x.label}{x.advanced ? ' (gelişmiş)' : ''}
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CapabilitySettings() {
+  const { project: p, edit } = useStore();
+  const caps = new Set(p.settings.companyCapabilities ?? []);
+  const toggle = (id: string) => {
+    const next = new Set(caps);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    edit({ kind: 'settings', field: 'companyCapabilities', value: [...next] }, 'Firma imkânları');
+  };
+  const cat = useMemo(() => controlCatalogue(p).slice(0, 30), [p]);
+  return (
+    <section className="card">
+      <h3>Firma imkânları ve kontrol kataloğu</h3>
+      <p className="muted">Önleyici yöntemler en uygun maliyetliden başlayarak sıralanır. Fiyat girilmez: firmada zaten bulunan imkânla yapılabilen yöntemler “Düşük maliyet” sayılır. Mühendisin onayladığı satırlarda kullanılan yöntemler de bir sınıf ucuz sayılır.</p>
+      <div className="form" style={{ columnGap: 24 }}>
+        {CAPABILITIES.map((c) => (
+          <label key={c.id} className="check"><input type="checkbox" checked={caps.has(c.id)} onChange={() => toggle(c.id)} /> {c.label}</label>
+        ))}
+      </div>
+      <h3 className="mt">Firma kontrol kataloğu (onaylı satırlardan)</h3>
+      {cat.length === 0 ? <p className="muted small">Henüz onaylı veya mühendis incelemeli satır yok. Satırları onayladıkça burada kullandığınız önleme, hata önleme ve tespit yöntemleri birikir.</p> : (
+        <table className="effects">
+          <thead><tr><th>Tür</th><th>Yöntem</th><th>Kullanım</th><th>Maliyet sınıfı (tahmin)</th><th>Güç</th></tr></thead>
+          <tbody>
+            {cat.map((e) => (
+              <tr key={e.kind + e.text}><td>{e.kind}</td><td className="small">{e.text}</td><td>{e.count}×</td><td>{COST_LABEL[e.cost]}</td><td>{STRENGTH_LABEL[e.strength]}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }

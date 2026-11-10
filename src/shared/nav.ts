@@ -19,6 +19,8 @@ export interface Screen {
   stage: string;
   hint: string;
   subs?: SubTab[];
+  /** 4.8.0: Sade menüde gizlenen gelişmiş ekran. */
+  advanced?: boolean;
 }
 
 export const SCREENS: Screen[] = [
@@ -26,7 +28,7 @@ export const SCREENS: Screen[] = [
   { key: 'project', label: 'Proje', group: 'Genel', stage: 'Adım 1 · Planlama', hint: 'Kapsam, ekip, parça, ürün tipi ve revizyon bilgileri.' },
   // v4-apqp
   {
-    key: 'apqp', label: 'APQP', group: 'Genel', stage: 'SCMH 7.2 · APQP', hint: 'Proje tipi, eleman uygulanabilirliği (7.2.12 / 7.2.15), fazlar ve kilometre taşları, teslimat onayları, ekip, ambalaj onayı (7.2.20).',
+    advanced: true, key: 'apqp', label: 'APQP', group: 'Genel', stage: 'SCMH 7.2 · APQP', hint: 'Proje tipi, eleman uygulanabilirliği (7.2.12 / 7.2.15), fazlar ve kilometre taşları, teslimat onayları, ekip, ambalaj onayı (7.2.20).',
     subs: [
       { key: 'elements', label: 'Elemanlar' }, { key: 'phases', label: 'Fazlar & Kilometre Taşları' }, { key: 'approvals', label: 'Teslimat Onayları' },
       { key: 'team', label: 'Ekip & Kriterler' }, { key: 'dra', label: 'P-Diyagramı / DRA' }, { key: 'cp', label: 'KP Fazları & Başlık' },
@@ -53,16 +55,16 @@ export const SCREENS: Screen[] = [
     subs: [{ key: 'kcs', label: 'KC / CI Listesi', table: 'kcs' }, { key: 'kcFlow', label: 'Adaylar & Karar Akışı' }, { key: 'kcTrace', label: 'İzlenebilirlik & 7.2.16' }],
   },
   { key: 'controlPlan', label: 'Kontrol Planı', group: 'Kontrol', stage: 'Control Plan Engine', hint: 'Ürün karakteristiği, proses karakteristiği ve proses parametresi ayrı tutulur.' },
-  { key: 'msa', label: 'MSA', group: 'Kontrol', stage: 'Ölçüm Sistemi Analizi', hint: 'Ölçüm tipine göre çalışma önerilir; her ölçüm için GR&R zorunlu değildir.' },
-  { key: 'capability', label: 'Capability', group: 'Kontrol', stage: 'Capability Validation', hint: 'Cp/Cpk/Pp/Ppk yalnızca normallik, kararlılık ve yeterli örnekle geçerlidir.' },
+  { advanced: true, key: 'msa', label: 'MSA', group: 'Kontrol', stage: 'Ölçüm Sistemi Analizi', hint: 'Ölçüm tipine göre çalışma önerilir; her ölçüm için GR&R zorunlu değildir.' },
+  { advanced: true, key: 'capability', label: 'Capability', group: 'Kontrol', stage: 'Capability Validation', hint: 'Cp/Cpk/Pp/Ppk yalnızca normallik, kararlılık ve yeterli örnekle geçerlidir.' },
   { key: 'actions', label: 'Aksiyonlar', group: 'Kontrol', stage: 'Adım 6 · Optimizasyon', hint: 'FMEA’da önerilen aksiyonlar iki yönlü senkronize izlenir.' },
   {
-    key: 'lessons', label: 'Dersler', group: 'Bilgi', stage: 'Lessons Learned', hint: 'NCR, 8D, CAPA, şikayet, hurda, yeniden işleme, denetim, garanti ve test hataları.',
+    advanced: true, key: 'lessons', label: 'Dersler', group: 'Bilgi', stage: 'Lessons Learned', hint: 'NCR, 8D, CAPA, şikayet, hurda, yeniden işleme, denetim, garanti ve test hataları.',
     subs: [{ key: 'lessons', label: 'Dersler', table: 'lessons' }, { key: 'kb', label: 'Bilgi Tabanı' }],
   },
   { key: 'traceability', label: 'İzlenebilirlik', group: 'Doğrulama', stage: 'Traceability', hint: 'Matrisler ve bağlantı grafiği: gereksinimden kontrol planına.' },
   {
-    key: 'impact', label: 'Değişiklik Etkisi', group: 'Doğrulama', stage: 'Change Impact', hint: 'Bir kaydın değişmesi hangi mühendislik kayıtlarını etkiler?',
+    advanced: true, key: 'impact', label: 'Değişiklik Etkisi', group: 'Doğrulama', stage: 'Change Impact', hint: 'Bir kaydın değişmesi hangi mühendislik kayıtlarını etkiler?',
     subs: [{ key: 'impact', label: 'Etki Analizi' }, { key: 'changeRequests', label: 'Değişiklik Talepleri', table: 'changeRequests' }],
   },
   { key: 'quality', label: 'Kalite Kontrol', group: 'Doğrulama', stage: 'Quality Engine', hint: 'Level 1 yapısal + Level 2 mühendislik kontrolleri, FMEA Quality Score ve “Neyi kaçırdım?”.' },
@@ -72,15 +74,15 @@ export const SCREENS: Screen[] = [
   },
   // v4-apqp
   {
-    key: 'ppap', label: 'PPAP', group: 'Onay', stage: 'PPAP · Faz 4', hint: '11 PPAP elemanı, hazırlık kuralları, PRR kapısı ve müşteri kararı (Full / Interim / Rejected). Yazılı onay olmadan sevkiyat yapılmaz.',
+    advanced: true, key: 'ppap', label: 'PPAP', group: 'Onay', stage: 'PPAP · Faz 4', hint: '11 PPAP elemanı, hazırlık kuralları, PRR kapısı ve müşteri kararı (Full / Interim / Rejected). Yazılı onay olmadan sevkiyat yapılmaz.',
     subs: [{ key: 'elements', label: 'PPAP Elemanları' }, { key: 'prr', label: 'PRR Kapısı' }, { key: 'submissions', label: 'Sunum & Karar' }],
   },
   {
-    key: 'approval', label: 'Onay', group: 'Onay', stage: 'Engineering Approval', hint: 'AI Draft → Mühendis → Tasarım → Üretim → Kalite → Final onay → Baseline.',
+    advanced: true, key: 'approval', label: 'Onay', group: 'Onay', stage: 'Engineering Approval', hint: 'AI Draft → Mühendis → Tasarım → Üretim → Kalite → Final onay → Baseline.',
     subs: [{ key: 'workflow', label: 'Onay Akışı' }, { key: 'audit', label: 'Denetim İzi' }],
   },
   {
-    key: 'baseline', label: 'Revizyon / Baseline', group: 'Onay', stage: 'Revision Control', hint: 'Revizyonlar ve değiştirilemez baseline kayıtları.',
+    advanced: true, key: 'baseline', label: 'Revizyon / Baseline', group: 'Onay', stage: 'Revision Control', hint: 'Revizyonlar ve değiştirilemez baseline kayıtları.',
     subs: [{ key: 'history', label: 'Revizyon Geçmişi', table: 'history' }, { key: 'baselines', label: 'Baselines' }],
   },
   { key: 'settings', label: 'Ayarlar', group: 'Sistem', stage: 'Ayarlar', hint: 'Kullanıcı, AI, şirket şablonu, KC kuralları, onay akışı ve opsiyonel IFS bağlantısı.' },
@@ -104,4 +106,11 @@ export function screenLabel(t: string): string {
   const s = SCREEN_BY_KEY[loc.screen];
   const sub = s.subs?.find((x) => x.key === loc.sub);
   return sub && sub.label !== s.label ? `${s.label} › ${sub.label}` : s.label;
+}
+
+/** 4.8.0: menüde görünen ekranlar. Açık olan ekran her zaman görünür; ayar kapalıyken (varsayılan) hepsi görünür. */
+export function visibleScreens(settings: { simpleMenu?: boolean; hiddenScreens?: string[] } | undefined, current?: ScreenKey): Screen[] {
+  const hidden = new Set(Array.isArray(settings?.hiddenScreens) ? settings!.hiddenScreens : []);
+  const keep = (k: ScreenKey) => k === current || k === 'settings' || k === 'dashboard';
+  return SCREENS.filter((s) => keep(s.key) || (!hidden.has(s.key) && !(settings?.simpleMenu && s.advanced)));
 }
