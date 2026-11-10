@@ -123,6 +123,12 @@ export interface Settings {
   reasonFields: string[];
   /** Puanlama/önceliklendirme standardı. SCMH: RPN eşiği yok, S 9–10 her zaman incelenir. */
   scoringStandard: 'SCMH' | 'AIAG-VDA';
+  /** 4.8.0: firmada bulunan imkânlar (controlCost.CAPABILITIES kimlikleri); bu imkânlarla uygulanan önleme yöntemleri "Düşük maliyet" sayılır. */
+  companyCapabilities?: string[];
+  /** 4.8.0: sol menüde yalnız temel ekranlar (gelişmiş ekranlar gizli). */
+  simpleMenu?: boolean;
+  /** 4.8.0: menüden gizlenen ekranlar (ScreenKey). Veri silinmez. */
+  hiddenScreens?: string[];
   /** DFMEA / PFMEA ekran ve Excel kolon düzeni: SCMH 7.2.10 / 7.2.11 (varsayılan) veya şirket formu F33.03 / F05.04. */
   tableFormat?: 'SCMH' | 'F33';
   // v4-kc: KC/CI numaralandırma ({PN}, {nnn}); SCMH 7.2.17 §1.2.1.

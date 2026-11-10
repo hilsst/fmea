@@ -302,3 +302,131 @@ export function paramTemplates(param: string, productChar: string, prevention: s
     P(`${param} üst limitin üzerinde`, eff, `${param} kontrol / ayar hatası`, 'Machine', 'Ekipman kontrol döngüsü veya reçete doğrulanmamış', prevention || 'Reçete kilidi, ekipman kalibrasyonu', monitoring || 'Sürekli parametre kaydı + alarm', 8, 3, 4, 'Software parameter lock'),
   ];
 }
+
+// ───────────────────────── 4.8.0: hata modu başına ek nedenler (4M) ─────────────────────────
+
+/** Bir hata modunun kütüphanedeki ana nedenine ek olası nedeni; her biri ayrı PFMEA satırı olur. */
+export interface AltCause {
+  cause: string;
+  cause4M: string;
+  rootCause: string;
+  prevention: string;
+  errorProofing?: string;
+  /** Verilmezse ana şablonun O değeri kullanılır. */
+  o?: number;
+}
+const A = (cause: string, cause4M: string, rootCause: string, prevention: string, errorProofing = '', o?: number): AltCause => ({ cause, cause4M, rootCause, prevention, errorProofing, o });
+
+/** Anahtar: şablonun hata modu metni. Etki, tespit, S ve D ana şablondan alınır. */
+export const PFMEA_ALT_CAUSES: Record<string, AltCause[]> = {
+  // Talaşlı imalat
+  'Ölçü / tolerans dışı (çap, boy, konum)': [
+    A('Parça bağlama / sıfırlama hatası', 'Method', 'Bağlama yöntemi ve referans yüzeyi iş talimatında tanımlı değil', 'Bağlama fikstürü, sıfırlama talimatı', 'Fixture'),
+    A('Tezgâh ısıl genleşmesi / eksen boşluğu', 'Machine', 'Isınma çevrimi ve periyodik geometri kontrolü yok', 'Isınma çevrimi, periyodik tezgâh geometri kontrolü', '', 3),
+    A('Ölçüm aleti kalibrasyonsuz veya uygun değil', 'Measurement', 'Ölçüm aleti seçimi ve kalibrasyon takibi tanımlı değil', 'Kalibrasyon programı, ölçüm aleti seçim tablosu', '', 3),
+    A('Ham malzeme ölçüsü / sertliği beklenenden farklı', 'Material', 'Giriş kontrolünde ham malzeme ölçüsü doğrulanmıyor', 'Giriş kontrolü, malzeme sertifikası eşleştirmesi', '', 3),
+  ],
+  'Yüzey pürüzlülüğü limit dışında': [
+    A('Takım aşınmış / uç kırık', 'Machine', 'Takım ömrü takibi yok', 'Takım ömrü sayacı'),
+    A('Soğutma sıvısı yetersiz / kirli', 'Material', 'Soğutma sıvısı bakımı planlı değil', 'Soğutma sıvısı konsantrasyon ve bakım planı', '', 3),
+    A('Titreşim (bağlama rijitliği yetersiz)', 'Method', 'Bağlama yöntemi doğrulanmamış', 'Rijit bağlama fikstürü', 'Fixture', 3),
+  ],
+  'Çapak / keskin kenar kalıyor': [
+    A('Takım aşınması nedeniyle aşırı çapak oluşuyor', 'Machine', 'Takım değişim kriteri tanımlı değil', 'Takım ömrü sayacı'),
+    A('Çapak alma takımı / aparatı uygun değil', 'Machine', 'Çapak alma aleti standardı yok', 'Tanımlı çapak alma takımı', 'Ayarlı pah takımı', 3),
+    A('Aydınlatma / erişim yetersiz, çapak görülmüyor', 'Environment', 'Kontrol istasyonu koşulları tanımlı değil', 'Kontrol istasyonu aydınlatma standardı, büyüteç', '', 3),
+  ],
+  // Kaynak
+  'Eksik nüfuziyet / ergime': [
+    A('Kaynak ağzı hazırlığı / aralığı uygun değil', 'Method', 'Ağız hazırlığı ölçüleri kontrol edilmiyor', 'Ağız hazırlığı mastarı, puntalama fikstürü', 'Fixture'),
+    A('Kaynakçı yeterliliği güncel değil', 'Man', 'Kaynakçı sertifika takibi sistemde yok', 'Kaynakçı sertifika matrisi, iş emrinde yetki kontrolü', '', 2),
+    A('Dolgu teli / elektrot yanlış', 'Material', 'Sarf malzeme iş emriyle eşleştirilmiyor', 'Sarf malzeme etiketleme ve eşleştirme', 'Barcode', 2),
+  ],
+  'Gözenek / kalıntı': [
+    A('Dolgu malzemesi nemli', 'Material', 'Elektrot / tel saklama koşulu izlenmiyor', 'Kurutma fırını, saklama talimatı', '', 3),
+    A('Hava akımı koruyucu gazı dağıtıyor', 'Environment', 'Kaynak alanı hava akımına karşı korunmuyor', 'Kaynak perdesi / kabin', '', 3),
+    A('Torç açısı / mesafesi hatalı', 'Man', 'Kaynak tekniği WPS eğitimiyle doğrulanmıyor', 'WPS görsel talimatı, deneme kaynağı', '', 3),
+  ],
+  'Çarpılma / ölçü dışı': [
+    A('Isı girdisi fazla', 'Machine', 'Parametre üst sınırı kilitli değil', 'WPS parametre sınırları, parametre izleme', 'Software parameter lock', 3),
+    A('Punta sayısı / yeri yetersiz', 'Man', 'Puntalama planı yok', 'Puntalama planı / şablonu', 'Template', 3),
+  ],
+  // Sac şekillendirme / kesim
+  'Büküm açısı / ölçü dışı': [
+    A('Dayama (backgauge) ayarı hatalı', 'Machine', 'Dayama ayarı ilk parçada doğrulanmıyor', 'İlk parça onayı, dayama kalibrasyonu'),
+    A('Malzeme kalınlığı / hadde yönü parti içinde değişken', 'Material', 'Hadde yönü ve kalınlık nesting / girişte kontrol edilmiyor', 'Nesting’de hadde yönü kuralı, kalınlık ölçümü', '', 3),
+    A('Kalıp / bıçak aşınmış veya yanlış seçilmiş', 'Machine', 'Kalıp seçimi iş talimatında yok', 'Kalıp seçim tablosu, kalıp bakım planı', '', 3),
+  ],
+  'Bükümde çatlak / incelme': [
+    A('Büküm hattı hadde yönüne paralel', 'Method', 'Nesting’de hadde yönü kuralı yok', 'Nesting’de hadde yönü kısıtı', 'Revizyon kontrollü program', 2),
+    A('Kesim kenarında çentik / çapak büküm bölgesinde', 'Method', 'Büküm öncesi kenar kontrolü yok', 'Büküm öncesi çapak alma adımı', '', 3),
+  ],
+  'Kesim kenarında çapak / cüruf': [
+    A('Nozul / lens aşınmış veya kirli', 'Machine', 'Sarf parça değişim periyodu tanımlı değil', 'Nozul / lens bakım ve değişim planı'),
+    A('Yardımcı gaz saflığı / basıncı yetersiz', 'Material', 'Gaz basıncı ve saflığı vardiya başında doğrulanmıyor', 'Gaz basıncı alarmı, vardiya başı kontrol', 'Zamanlayıcı / akım alarmı', 3),
+  ],
+  'Kesim ölçüsü / kontur tolerans dışı': [
+    A('Kerf (kesim genişliği) telafisi yanlış', 'Machine', 'Telafi değeri malzeme / kalınlığa göre doğrulanmıyor', 'Malzeme bazlı telafi tablosu, test kesimi'),
+    A('Levha tabla üzerinde kayıyor / ısıl genleşme', 'Method', 'Levha sabitleme yöntemi tanımlı değil', 'Levha sabitleme, kesim sırası optimizasyonu', '', 2),
+    A('Ölçüm şablonu / kumpas doğrulanmamış', 'Measurement', 'Ölçüm aleti kalibrasyon takibi eksik', 'Kalibrasyon programı', '', 2),
+  ],
+  // Isıl işlem / yüzey işlem
+  'Sertlik / mekanik özellik spesifikasyon dışında': [
+    A('Fırın yükü fazla / parçalar üst üste', 'Method', 'Yükleme konfigürasyonu tanımlı değil', 'Yükleme fikstürü ve maksimum yük talimatı', 'Fixture'),
+    A('Su verme gecikmesi / ortam sıcaklığı uygun değil', 'Method', 'Transfer süresi ve su verme ortamı izlenmiyor', 'Transfer süresi zamanlayıcısı, ortam sıcaklığı kaydı', 'Zamanlayıcı / akım alarmı'),
+    A('Yanlış alaşım / parti karışıklığı', 'Material', 'Parti ayrımı ve etiketleme yetersiz', 'Parti etiketleme, sertifika eşleştirmesi', 'Barcode', 2),
+    A('Sertlik ölçüm cihazı doğrulanmamış', 'Measurement', 'Günlük referans blok kontrolü yok', 'Referans blok ile günlük doğrulama', '', 2),
+  ],
+  'Kaplama kalınlığı limit altında': [
+    A('Askılama yoğunluğu fazla (akım gölgelenmesi)', 'Method', 'Askı başına parça sayısı tanımlı değil', 'Askılama talimatı ve askı kapasitesi'),
+    A('Banyo kimyası tükenmiş / kirlenmiş', 'Material', 'Banyo analiz periyodu yetersiz', 'Banyo analiz planı ve takviye kaydı'),
+    A('Kalınlık ölçüm cihazı kalibrasyonsuz', 'Measurement', 'Referans folyo ile doğrulama yapılmıyor', 'Referans folyo ile vardiya başı doğrulama', '', 2),
+  ],
+  'Kaplama yapışmıyor / pul pul kalkıyor': [
+    A('Parça yüzeyinde yağ / kesme sıvısı kalıntısı', 'Material', 'Kaplama öncesi temizlik doğrulaması yok', 'Yağ alma adımı + su kırılma testi', '', 3),
+    A('Ön işlem ile kaplama arasında bekleme süresi aşılıyor', 'Method', 'Bekleme süresi izlenmiyor', 'Süre takip etiketi / zamanlayıcı', 'Zamanlayıcı / akım alarmı', 3),
+  ],
+  // Muayene / montaj
+  'Ölçüm hatası (uygunsuz parça kabul ediliyor)': [
+    A('Ölçüm yöntemi / datum operatöre göre değişiyor', 'Method', 'Ölçüm talimatı ve datum tanımı yok', 'Görsel ölçüm talimatı, ölçüm fikstürü', 'Fixture'),
+    A('Ortam sıcaklığı ölçümü etkiliyor', 'Environment', 'Ölçüm ortamı koşulları izlenmiyor', 'Ölçüm odası sıcaklık kaydı, parça şartlandırma süresi', '', 2),
+    A('Kayıt elle yapılıyor, yanlış değer yazılıyor', 'Man', 'Ölçüm verisi elle aktarılıyor', 'Ölçüm cihazından doğrudan veri aktarımı', 'Software parameter lock', 2),
+  ],
+  'Yanlış / eksik bağlantı elemanı': [
+    A('İş talimatında bağlantı elemanı tanımı belirsiz', 'Method', 'Parça listesi iş talimatıyla eşleşmiyor', 'Görsel iş talimatı, parça listesi kontrolü'),
+    A('Eksik eleman montaj sonunda fark edilmiyor', 'Measurement', 'Sayım / varlık kontrolü yok', 'Gölge pano (shadow board), sayım kontrolü', 'Poka-yoke'),
+  ],
+  'Tork değeri limit dışında': [
+    A('Sıkma sırası / kademesi uygulanmıyor', 'Method', 'Sıkma sırası talimatta tanımlı değil', 'Sıkma sırası görseli', '', 3),
+    A('Diş yağlama durumu tanımsız (sürtünme değişken)', 'Material', 'Yağlama gereksinimi iş talimatında yok', 'Yağlama talimatı', '', 3),
+  ],
+  // Kompozit
+  'Kür sıcaklığı / süresi spesifikasyon dışında': [
+    A('Fırın / otoklav sıcaklık dağılımı düzgün değil', 'Machine', 'Periyodik TUS yapılmıyor', 'Periyodik TUS, yük haritası'),
+    A('Parça termokuplu yanlış yerde (gecikmeli bölge izlenmiyor)', 'Measurement', 'Termokupl yerleşim planı yok', 'Termokupl yerleşim planı', 'Template'),
+    A('Kür sırasında enerji / vakum kesintisi', 'Environment', 'Kesinti senaryosu ve alarmı tanımlı değil', 'Kesinti alarmı, kür kesinti prosedürü', '', 2),
+  ],
+  'Yüzey kontaminasyonu (yağ, silikon, eldiven izi)': [
+    A('Yüzey hazırlığı ile yapıştırma arası süre aşılıyor', 'Method', 'Süre takibi yapılmıyor', 'Süre takip etiketi', 'Zamanlayıcı / akım alarmı'),
+    A('Temizlik solventi / bezi uygun değil', 'Material', 'Onaylı sarf malzeme listesi yok', 'Onaylı solvent ve bez listesi', '', 3),
+  ],
+  'Eksik / fazla ply': [
+    A('Ply kiti eksik / yanlış kesilmiş', 'Material', 'Kit içeriği sayılarak teslim edilmiyor', 'Kit kontrol listesi, barkodlu ply', 'Barcode', 3),
+    A('Kat planı (ply book) revizyonu güncel değil', 'Method', 'Doküman revizyonu iş emriyle eşleştirilmiyor', 'Revizyon kontrollü dijital iş talimatı', 'Revizyon kontrollü program', 2),
+  ],
+  // Genel
+  'Operasyon gereksinimi karşılanmıyor': [
+    A('Ekipman ayarı / durumu uygun değil', 'Machine', 'Ayar doğrulaması ve bakım planı yok', 'Ayar kartı, önleyici bakım planı'),
+    A('Operatör yetkinliği doğrulanmamış', 'Man', 'Yetkinlik matrisi iş emriyle eşleşmiyor', 'Yetkinlik matrisi, iş başı eğitimi kaydı', '', 3),
+    A('Girdi malzemesi / yarı mamul uygunsuz geliyor', 'Material', 'Önceki operasyon çıktısı doğrulanmıyor', 'Operasyon başı girdi kontrolü', '', 3),
+    A('Kontrol yöntemi hatayı yakalayamıyor', 'Measurement', 'Ölçüm yöntemi doğrulanmamış', 'Ölçüm yöntemi doğrulaması (MSA)', '', 3),
+  ],
+  'Operasyon atlanıyor (adım yapılmadan sonraki operasyona geçiliyor)': [
+    A('İşlenmiş ve işlenmemiş parçalar aynı alanda karışıyor', 'Environment', 'Bekleme alanları ayrılmamış', 'Ayrı ve etiketli giriş / çıkış alanları', 'Poka-yoke'),
+    A('Vardiya değişiminde işin durumu aktarılmıyor', 'Man', 'Vardiya devir kaydı yok', 'Vardiya devir formu', '', 2),
+  ],
+  'Elleçleme / taşıma sırasında parça hasarı': [
+    A('Parçalar üst üste / korumasız istifleniyor', 'Man', 'İstifleme kuralı tanımlı değil', 'Ara koruyucu, istifleme talimatı'),
+    A('Taşıma arabası / kasa parçaya uygun değil', 'Machine', 'Parçaya özel taşıma aparatı yok', 'Parçaya özel taşıma kasası', 'Fixture'),
+  ],
+};

@@ -2,7 +2,7 @@
 // Üretilen her satır "AI Proposed" eklenir; ekleme öncesi onay penceresi tüm satırları listeler.
 // Kaynakta olmayan değer uydurulmaz (VERİ YOK); kütüphane içeriği ENGINEERING KNOWLEDGE olarak işaretlenir.
 import { findRequirementCandidates, locText } from './docmodel';
-import { DFMEA_FUNCTION_TYPES, DFMEA_LIB, PFMEA_LIB, PFMEA_STEP_COMMON, paramTemplates, stepArea, type FailureTemplate } from './failureLib';
+import { DFMEA_FUNCTION_TYPES, DFMEA_LIB, PFMEA_ALT_CAUSES, PFMEA_LIB, PFMEA_STEP_COMMON, paramTemplates, stepArea, type FailureTemplate } from './failureLib';
 import { dfmeaFillValues, fillBlanksEdits, pfmeaFillValues } from './fmeaFill';
 import { blankRow, nextId } from './model';
 import { NO_DATA, characteristicOf, reqAutoValues } from './reqAutofill';
@@ -255,8 +255,16 @@ export function genPfmea(g: Gen, stepIds?: string[]) {
       ...(out ? { outputId: out.id } : {}),
       causeInputIds: io.filter((x) => x.kind === 'Input' && x.cat4M && x.cat4M === t.cause4M).map((x) => x.id),
     });
-    for (const t of (PFMEA_LIB[area] ?? PFMEA_LIB.Generic).filter(fresh)) g.add('pfmea', { ...pfRow(step, t, `${step.id} · PFMEA hata kütüphanesi (${area})`), ...links(t) } as Partial<AnyRow>);
-    for (const t of PFMEA_STEP_COMMON.filter(fresh)) g.add('pfmea', { ...pfRow(step, t, `${step.id} · PFMEA hata kütüphanesi (genel adım hata modları)`), ...links(t) } as Partial<AnyRow>);
+    // 4.8.0: bir hata modunun ana nedenine ek olası nedenleri (4M) ayrı satır olarak eklenir.
+    const addWithCauses = (t: FailureTemplate, src: string) => {
+      g.add('pfmea', { ...pfRow(step, t, src), ...links(t) } as Partial<AnyRow>);
+      for (const a of PFMEA_ALT_CAUSES[t.failureMode] ?? []) {
+        const alt: FailureTemplate = { ...t, cause: a.cause, cause4M: a.cause4M, rootCause: a.rootCause, prevention: a.prevention, errorProofing: a.errorProofing ?? '', o: a.o ?? t.o };
+        g.add('pfmea', { ...pfRow(step, alt, `${src} · ek neden`), ...links(alt) } as Partial<AnyRow>);
+      }
+    };
+    for (const t of (PFMEA_LIB[area] ?? PFMEA_LIB.Generic).filter(fresh)) addWithCauses(t, `${step.id} · PFMEA hata kütüphanesi (${area})`);
+    for (const t of PFMEA_STEP_COMMON.filter(fresh)) addWithCauses(t, `${step.id} · PFMEA hata kütüphanesi (genel adım hata modları)`);
     // Özel proses parametreleri: her parametre için alt/üst limit dışı hata modları; parametre satırına bağlanır.
     for (const prm of g.p.processParams.filter((x) => x.stepId === step.id) as ProcessParamRow[]) {
       if (prm.pfIds.length) continue; // parametrenin hata modları zaten bağlı

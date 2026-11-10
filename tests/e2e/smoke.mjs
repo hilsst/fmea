@@ -23,7 +23,12 @@ await win.waitForSelector('.tiles');
 await shot('02-dashboard');
 
 // 2.0: sol menü + alt sekmeler
-const screen = (label) => win.click(`.sidebar .sb-item:has(.lbl:text-is("${label}"))`);
+// 4.8.0: varsayılan Sade menü gelişmiş ekranları gizler; testler tüm ekranlara gider.
+const screen = async (label) => {
+  const full = win.locator('.sidebar .sb-item:has(.lbl:text-is("Tam menüye geç"))');
+  if (await full.count()) await full.click();
+  await win.click(`.sidebar .sb-item:has(.lbl:text-is("${label}"))`);
+};
 const sub = (label) => win.click(`.subtabs .chip-btn:has-text("${label}")`);
 const tab = async (label) => {
   const map = { 'Yapı & Fonksiyon': ['DFMEA', 'Yapı & Fonksiyon'], DFMEA: ['DFMEA', 'DFMEA'], 'Proses Akışı': ['PFMEA', 'Proses Akışı'], PFMEA: ['PFMEA', 'PFMEA'], 'Kritik Karakteristikler': ['Özel Karakteristikler'], Puanlama: ['Risk'], Revizyon: ['Revizyon / Baseline', 'Revizyon Geçmişi'] };

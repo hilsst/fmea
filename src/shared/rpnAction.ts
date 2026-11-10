@@ -3,8 +3,9 @@
 // proses alanındaki hata kütüphanesinden kontrol adları eklenir. Sayısal hedef, sorumlu veya tarih uydurulmaz.
 // Öneri "AI RECOMMENDATION" etiketlidir; mühendis kabul eder, düzenler veya siler. Dolu aksiyon alanı değişmez.
 // RPN tek başına karar ölçütü değildir: needsAction (SCMH S≥9 / Top-N / KC veya AP=H) ayrıca çalışır.
-import { COST_NOTE, PREVENTION_4M, PREVENTION_DESIGN, measureList, measureOf, rankMeasures, type Measure } from './controlCost';
-import { PFMEA_LIB, PFMEA_STEP_COMMON, stepArea } from './failureLib';
+import { COST_NOTE, PREVENTION_4M, PREVENTION_DESIGN, costContext, measureList, measureOf, rankMeasures, type CostContext, type Measure } from './controlCost';
+import { DFMEA_FUNCTION_TYPES, DFMEA_LIB, PFMEA_LIB, PFMEA_STEP_COMMON, stepArea } from './failureLib';
+import { similarity } from './similarity';
 import type { DfmeaRow, PfmeaRow, Project } from './types';
 
 export const AI_REC = 'AI RECOMMENDATION – mühendis onayı gerekli';
@@ -37,7 +38,7 @@ export function wantsRpnAction(p: Pick<Project, 'settings'>, r: Fmea, reasons: s
 }
 
 /** Satırın adımıyla aynı alandaki kütüphane kontrolleri (satırda zaten olanlar hariç). */
-function libControls(p: Pick<Project, 'processSteps'> & Partial<Pick<Project, 'settings' | 'requirements' | 'meta'>>, r: PfmeaRow): { prevention: string[]; detection: string[]; ep: string[]; ranked: Measure[] } {
+function libControls(p: Pick<Project, 'processSteps'> & Partial<Pick<Project, 'settings' | 'requirements' | 'meta'>>, r: PfmeaRow, ctx?: CostContext): { prevention: string[]; detection: string[]; ep: string[]; ranked: Measure[] } {
   const step = p.processSteps.find((s) => s.id === r.stepId);
   const area = stepArea(p, step, r.stepName ?? '');
   const lib = [...(PFMEA_LIB[area] ?? []), ...PFMEA_STEP_COMMON];
@@ -57,8 +58,24 @@ function libControls(p: Pick<Project, 'processSteps'> & Partial<Pick<Project, 's
     prevention: pick(src.map((t) => t.prevention)),
     detection: all(src.map((t) => t.detection)).map(measureOf).sort((a, b) => a.cost - b.cost).slice(0, 3).map((m) => m.text),
     ep: pick(src.map((t) => t.errorProofing ?? '')),
-    ranked: rankMeasures(cands, { severity: r.s, current: cur }),
+    ranked: rankMeasures(cands, { severity: r.s, current: cur, ctx }),
   };
+}
+
+/**
+ * 4.8.0: DFMEA satırı için hata moduna özel önleme adayları: kütüphanede benzer hata modunun önleme kontrolleri
+ * (gereksinim tipinden bağımsız taranır) + genel tasarım yöntemleri.
+ */
+function dfmeaCandidates(r: DfmeaRow): Measure[] {
+  const fm = (r.failureMode ?? '').replace(/\{x\}/g, '');
+  const pool = [...Object.values(DFMEA_LIB).flat(), ...DFMEA_FUNCTION_TYPES];
+  const scored = pool
+    .map((t) => ({ t, sc: Math.max(similarity(t.failureMode.replace(/\{x\}/g, ''), fm), t.cause && r.cause ? similarity(t.cause, r.cause) * 0.8 : 0) }))
+    .filter((x) => x.sc >= 0.3)
+    .sort((a, b) => b.sc - a.sc)
+    .slice(0, 4);
+  const specific = scored.flatMap(({ t }) => t.prevention.split(/,\s*/)).map((x) => measureOf(x));
+  return [...specific, ...PREVENTION_DESIGN];
 }
 
 /** Satırın neden / kontrol bilgisinden önerilen aksiyon metni. */
@@ -66,7 +83,8 @@ export function rpnActionText(p: Pick<Project, 'settings' | 'processSteps'>, r: 
   const s = r.s as number, o = r.o as number, d = r.d as number;
   const parts: string[] = [];
   const cause = has(r.cause) ? `“${r.cause.trim()}”` : 'neden tanımlı değil (önce 5 Neden ile kök neden belirlenmeli)';
-  const lib = pf ? libControls(p, r as PfmeaRow) : { prevention: [], detection: [], ep: [], ranked: rankMeasures(PREVENTION_DESIGN, { severity: r.s, current: `${r.prevention}`.toLocaleLowerCase('tr') }) };
+  const ctx = costContext(p as Partial<Project>);
+  const lib = pf ? libControls(p, r as PfmeaRow, ctx) : { prevention: [], detection: [], ep: [], ranked: rankMeasures(dfmeaCandidates(r as DfmeaRow), { severity: r.s, current: `${r.prevention}`.toLocaleLowerCase('tr'), ctx }) };
   // 4.7.0: önleyici seçenekler göreli maliyete göre ucuzdan pahalıya; fiyat verisi yoktur.
   const options = lib.ranked.length ? `önleyici seçenekler (ucuzdan pahalıya – ${COST_NOTE}): ${measureList(lib.ranked)}` : '';
   if (s >= 9)
@@ -93,6 +111,13 @@ export function rpnActionText(p: Pick<Project, 'settings' | 'processSteps'>, r: 
     parts.push(pf
       ? `Tespiti iyileştir: ${det}; ölçümlü / otomatik tespit veya hatayı kaynağında yakalayan kontrol eklenmeli, ölçüm sistemi için MSA yapılmalı${lib.detection.length ? `; kütüphane: ${lib.detection.join(', ')}` : ''}`
       : `Tespiti iyileştir: ${det}; tasarım doğrulamasını öne alan test / analiz planlanmalı (DVP&R)`);
+  }
+  // 4.8.0: önerinin beklenen etkisi (tahmin). Puan alanlarına yazılmaz; mühendis aksiyon sonrası kendi puanını girer.
+  const top = lib.ranked[0];
+  if (top) {
+    const dropO = top.strength === 3 ? 2 : top.strength === 2 ? 1 : 0;
+    const o2 = Math.max(1, o - dropO);
+    if (focusO && o2 < o) parts.push(`Beklenen etki (tahmin, AI VARSAYIMI): ilk seçenek uygulanırsa O ${o}→${o2}, RPN ${s * o * d}→${s * o2 * d}; aksiyon sonrası puanı mühendis girer`);
   }
   const other = reasons.filter((x) => !x.startsWith('RPN'));
   const head = rpnOver(p, r) ? `[RPN ${s * o * d} ≥ ${p.settings.rpnThreshold}] ` : other.length ? `[${other.join(' / ')} · RPN ${s * o * d}] ` : '';

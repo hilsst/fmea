@@ -16,6 +16,50 @@ export interface Measure {
   text: string;
   cost: CostTier;
   strength: Strength;
+  /** 4.8.0: maliyetin neden düşürüldüğü (firma imkânı / firmada kullanılan yöntem). */
+  note?: string;
+}
+
+// ───────────────────────── 4.8.0: firma imkânları ve geçmişten öğrenme ─────────────────────────
+// Fiyat girilmez. Firmada zaten bulunan imkânla uygulanabilen yöntem "Düşük" sayılır; mühendisin onayladığı
+// satırlarda kullanılan yöntemler ise bir sınıf ucuz sayılır (firmada denenmiş). İkisi de önerinin sırasını değiştirir.
+
+export interface Capability {
+  id: string;
+  label: string;
+  /** Bu imkânla uygulanabilen yöntemleri yakalayan desen (küçük harf, Türkçe). */
+  re: RegExp;
+}
+export const CAPABILITIES: Capability[] = [
+  { id: 'barcode', label: 'Barkod / etiket okuma altyapısı', re: /barkod|barcode|etiket (okuma|doğrulama)/ },
+  { id: 'fixture', label: 'Fikstür / şablon üretimi (kendi atölyemiz)', re: /fikstür|fixture|şablon|template|aparat|aralayıcı|pah takımı|poka-yoke/ },
+  { id: 'gauge', label: 'Mastar / CMM / ölçüm laboratuvarı', re: /mastar|cmm|go\/no-go|gage|\bmsa\b|kalibrasyon|ölçüm/ },
+  { id: 'recipe', label: 'Tezgâh / fırın reçete ve parametre kilidi', re: /reçete|kilid|kilit|lock|recipe|parametre izleme|program/ },
+  { id: 'sensor', label: 'Sensör / alarm / interlock altyapısı', re: /sensör|interlock|alarm|ortam izleme|zamanlayıcı/ },
+  { id: 'ndt', label: 'NDT (UT / penetrant / RT) imkânı', re: /ndt|ultrason|penetrant|\brt\b/ },
+  { id: 'analysis', label: 'Mühendislik analiz yazılımı (FEA, tolerans yığılması)', re: /\bfea\b|yapısal analiz|modal analiz|tolerans (yığılması|analizi)|stack-up|termal.*analiz/ },
+  { id: 'testlab', label: 'Test laboratuvarı (mekanik, çevresel, titreşim)', re: /kalifikasyon|titreşim testi|çevresel test|statik test|yorulma testi|ömür testi|kupon/ },
+  { id: 'automation', label: 'Otomasyon / robot / görüntü işleme', re: /otomasyon|robot|kamera|görüntü işleme|vision|otomatik (karışım|dozaj|ölçüm|muayene|tespit)/ },
+];
+export const CAPABILITY_BY_ID = Object.fromEntries(CAPABILITIES.map((c) => [c.id, c])) as Record<string, Capability>;
+
+export interface CostContext {
+  /** Settings.companyCapabilities: işaretli imkân kimlikleri. */
+  capabilities?: string[];
+  /** Onaylı satırlarda kullanılan yöntemler (küçük harf). */
+  learned?: Set<string>;
+}
+
+const stripNote = (t: string) => lc(t).replace(/\s+/g, ' ').trim();
+
+/** Maliyet sınıfı bağlama göre ayarlanmış yöntem. */
+export function adjustMeasure(m: Measure, ctx?: CostContext): Measure {
+  if (!ctx) return m;
+  const t = lc(m.text);
+  const cap = (ctx.capabilities ?? []).map((id) => CAPABILITY_BY_ID[id]).find((c) => c && c.re.test(t));
+  if (cap && m.cost > 1) return { ...m, cost: 1, note: `firma imkânı: ${cap.label}` };
+  if (ctx.learned && m.cost > 1 && [...ctx.learned].some((l) => l && (t.includes(l) || l.includes(t)))) return { ...m, cost: (m.cost - 1) as CostTier, note: 'firmada onaylı satırlarda kullanılıyor' };
+  return m;
 }
 
 // Sıra önemlidir: ilk eşleşen kural geçerlidir (pahalıdan ucuza doğru denenir).
@@ -100,7 +144,8 @@ export const PREVENTION_DESIGN: Measure[] = [
  * - Mevcut kontrol metninde (current) zaten geçenler çıkarılır.
  * - severity ≥ 9 ise idari kontroller aday olmaz; severity ≥ 8 ise listede hata önleme yoksa en ucuzu eklenir.
  */
-export function rankMeasures(cands: Measure[], opts: { severity?: number | null; current?: string; max?: number } = {}): Measure[] {
+export function rankMeasures(cands: Measure[], opts: { severity?: number | null; current?: string; max?: number; ctx?: CostContext } = {}): Measure[] {
+  cands = cands.map((m) => adjustMeasure(m, opts.ctx));
   const cur = lc(opts.current ?? '');
   const s = opts.severity ?? 0;
   const seen = new Set<string>();
@@ -122,7 +167,45 @@ export function rankMeasures(cands: Measure[], opts: { severity?: number | null;
 }
 
 export function measureText(m: Measure): string {
-  return `${m.text} [maliyet: ${COST_LABEL[m.cost]} · ${STRENGTH_LABEL[m.strength]}]`;
+  return `${m.text} [maliyet: ${COST_LABEL[m.cost]} · ${STRENGTH_LABEL[m.strength]}${m.note ? ` · ${m.note}` : ''}]`;
+}
+
+// ───────────────────────── firma kontrol kataloğu (onaylı satırlardan) ─────────────────────────
+
+type ControlRow = { approval?: string; prevention?: string; detection?: string; errorProofing?: string };
+export interface CatalogueEntry {
+  text: string;
+  kind: 'Önleme' | 'Hata önleme' | 'Tespit';
+  count: number;
+  cost: CostTier;
+  strength: Strength;
+}
+const APPROVED = new Set(['Approved', 'Engineer Reviewed']);
+const splitControls = (s?: string) =>
+  (s ?? '').split(/[;,\n]|\s\+\s/).map((x) => x.trim()).filter((x) => x.length > 3 && !/^(none|veri yok|yok$)/i.test(x) && !/\[maliyet:/.test(x));
+
+/** Mühendisin onayladığı / incelediği DFMEA ve PFMEA satırlarındaki kontrol yöntemleri, kullanım sayısıyla. */
+export function controlCatalogue(p: { dfmea?: ControlRow[]; pfmea?: ControlRow[] }): CatalogueEntry[] {
+  const map = new Map<string, CatalogueEntry>();
+  const add = (text: string, kind: CatalogueEntry['kind']) => {
+    const k = `${kind}|${stripNote(text)}`;
+    const hit = map.get(k);
+    if (hit) hit.count++;
+    else map.set(k, { text, kind, count: 1, cost: costTierOf(text), strength: strengthOf(text) });
+  };
+  for (const r of [...(p.dfmea ?? []), ...(p.pfmea ?? [])]) {
+    if (!APPROVED.has(r.approval ?? '')) continue;
+    for (const x of splitControls(r.prevention)) add(x, 'Önleme');
+    for (const x of splitControls(r.errorProofing)) add(x, 'Hata önleme');
+    for (const x of splitControls(r.detection)) add(x, 'Tespit');
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count || a.cost - b.cost);
+}
+
+/** Maliyet bağlamı: ayardaki imkânlar + katalogdaki (önleme / hata önleme) yöntemler. */
+export function costContext(p: { settings?: { companyCapabilities?: string[] }; dfmea?: ControlRow[]; pfmea?: ControlRow[] }): CostContext {
+  const learned = new Set(controlCatalogue(p).filter((e) => e.kind !== 'Tespit').map((e) => stripNote(e.text)));
+  return { capabilities: p.settings?.companyCapabilities ?? [], learned };
 }
 
 /** "1) … 2) …" biçiminde, ucuzdan pahalıya. */

@@ -1,6 +1,7 @@
 // Human-in-the-loop (§70): AI çıktısı → kontrol edilebilir öneriler. Kabul edilenler "AI Proposed" eklenir,
 // kanıtlar EV kayıtlarına dönüşür ve kaynakta doğrulanmayan sayısal değerler silinir (§14, §64).
 import type { AiRunMeta } from './aischema';
+import { secondCheck } from './aiSecondCheck';
 import { approvedReqIds } from './dfmeaInput';
 import { locText, verifySource, type DocLoc, type ExtractedDoc, type SourceCheck } from './docmodel';
 import { blankRow, nextId } from './model';
@@ -149,6 +150,7 @@ export function buildProposals(p: Project, kind: ProposalSet['kind'], data: Reco
     }
     row.dataStatus = dataStatusFor(basis, checks, meta.mode);
     if (confidence === 'Low') warnings.push('Engineer verification required');
+    if (kind === 'dfmea' || kind === 'pfmea') warnings.push(...secondCheck(row as never, kind)); // 4.8.0: otomatik ikinci kontrol
     const critical =
       kind === 'requirements'
         ? ['Safety', 'Regulatory'].includes(s(r.reqType))
