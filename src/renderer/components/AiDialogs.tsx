@@ -14,8 +14,15 @@ import { api, isDesktop } from '../api';
 import { useStore } from '../store';
 
 /** 4.5.0: örnek seçimi için sorgu; bu projenin onaylı satırları da aday olur. */
-function exampleQuery(p: Project, kind: ExampleKind, target: string) {
+export function exampleQuery(p: Project, kind: ExampleKind, target: string) {
   return { kind, family: materialFamily(p), text: target, local: approvedExamples(p) };
+}
+
+/** 4.5.0: kompozit bilgi tabanı yalnız kompozit parçada (eskiden özel proses adımı olan her parçaya gidiyordu). */
+export function compositeKbText(p: Project): string {
+  return materialFamily(p) === 'composite' || (isComposite(p.settings.productType) && materialFamily(p) !== 'metal')
+    ? COMPOSITE_KB.map((k) => `${k.area}: hata modları ${k.failureModes.join(', ')}; tipik nedenler ${k.causes.join(', ')}; parametreler ${k.parameters.join(', ')}`).join('\n')
+    : '';
 }
 
 /** approvedReqsOnly: yalnızca Approved gereksinimler ve fonksiyonların onaylı REQ bağlantıları yazılır (DFMEA önerisi). */
@@ -322,10 +329,7 @@ export function useAi() {
     const steps = base.processSteps.filter((s) => stepIds.length === 0 || stepIds.includes(s.id));
     if (!steps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
     if (!(await guard())) return;
-    // 4.5.0: kompozit bilgi tabanı yalnız kompozit parçada (eskiden özel proses adımı olan her parçaya gidiyordu)
-    const composite = materialFamily(base) === 'composite' || (isComposite(base.settings.productType) && materialFamily(base) !== 'metal')
-      ? COMPOSITE_KB.map((k) => `${k.area}: hata modları ${k.failureModes.join(', ')}; tipik nedenler ${k.causes.join(', ')}; parametreler ${k.parameters.join(', ')}`).join('\n')
-      : '';
+    const composite = compositeKbText(base);
     const groups: (typeof steps)[] = [];
     for (let i = 0; i < steps.length; i += PFMEA_AI_STEPS) groups.push(steps.slice(i, i + PFMEA_AI_STEPS));
     const context = projectContext(base);

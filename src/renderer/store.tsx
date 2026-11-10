@@ -37,6 +37,8 @@ interface Store {
   dirty: boolean;
   /** Düzenlemeleri uygular; başka ekranları etkiliyorsa önce onay penceresi gösterir. */
   edit: (edits: Edit | Edit[], title?: string) => Promise<boolean>;
+  /** 4.9.0: onay penceresi göstermeden tüm yayılımlarla uygular (AI ile tümünü kur zinciri; sonunda tek inceleme). */
+  apply: (edits: Edit[], reason: string) => Project;
   pending: PendingChange | null;
   decide: (choice: 'apply' | 'only' | 'cancel', reason?: string, comment?: string) => void;
   replace: (p: Project, path?: string, markClean?: boolean) => void;
@@ -107,6 +109,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return Promise.resolve(true);
       }
       return new Promise<boolean>((resolve) => setPending({ title, edits, plan, effects, needReason, resolve }));
+    },
+    [commit],
+  );
+
+  const apply = useCallback(
+    (edits: Edit[], reason: string) => {
+      if (!edits.length) return projectRef.current;
+      const plan = planEdits(projectRef.current, edits, true);
+      commit(plan.project, plan.effects, { reason });
+      return plan.project;
     },
     [commit],
   );
@@ -193,6 +205,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       project,
       current: () => projectRef.current,
+      apply,
       filePath,
       dirty,
       edit,
@@ -213,7 +226,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       answer,
       toasts,
     }),
-    [project, filePath, dirty, edit, pending, decide, replace, mutate, undo, redo, toast, ask, confirm, asking, answer, toasts],
+    [project, filePath, dirty, edit, apply, pending, decide, replace, mutate, undo, redo, toast, ask, confirm, asking, answer, toasts],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
