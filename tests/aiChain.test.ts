@@ -30,3 +30,10 @@ describe('4.9.0 AI ile tümünü kur', () => {
     expect(set.items[0].row.approval).toBe('AI Proposed');
   });
 });
+
+describe('4.9.1 yapı çağrısı taranmış PDF parçaları', () => {
+  it('sayfa aralıkları 4 sayfalık gruplara bölünür', async () => {
+    const { pageRanges } = await import('../src/main/ai/index');
+    expect(pageRanges(10)).toEqual([[0, 3], [4, 7], [8, 9]]);
+  });
+});

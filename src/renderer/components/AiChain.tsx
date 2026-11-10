@@ -80,9 +80,19 @@ export function useAiChain() {
     return (await confirm('AI kullanılamıyor', `${why}\n\nAI olmadan, yalnız hata kütüphanesiyle devam edilsin mi? (Yapı gereksinim metninden, DFMEA ve PFMEA kütüphaneden önerilir.)`)) ? false : null;
   };
 
-  const ai = async (call: () => Promise<AiResult & { note?: string }>, label: string): Promise<(AiResult & { ok: true }) | null> => {
-    const r = await call();
+  /** Son AI hatası (tür + ileti); aşama satırında "AI yanıt vermedi" yerine gerçek neden gösterilir. */
+  const lastErr = { current: '' };
+  const transient = (e: { kind: string; message: string }) => e.kind === 'TIMEOUT' || (e.kind === 'API_ERROR' && /\((429|5\d\d)\)|rate.?limit|overload|capacity|busy/i.test(e.message));
+  const ai = async (call: () => Promise<AiResult & { note?: string }>, label: string, stage?: string): Promise<(AiResult & { ok: true }) | null> => {
+    let r = await call();
+    // 4.9.1: hız sınırı / aşırı yük / zaman aşımı gibi geçici hatalarda beklenip en çok 2 kez yeniden denenir
+    for (let n = 1; !r.ok && transient(r.error) && n <= 2; n++) {
+      if (stage) set(stage, 'run', `${label}: ${r.error.kind} – ${r.error.message.slice(0, 120)} · ${20 * n} sn sonra yeniden denenecek (${n}/2)`);
+      await new Promise((res) => setTimeout(res, 20000 * n));
+      r = await call();
+    }
     if (r.ok) return r as AiResult & { ok: true };
+    lastErr.current = `${r.error.kind}: ${r.error.message}`;
     mutate((d) => {
       d.aiRuns.push(failedRunEdit(d, r.meta?.role ?? label, label, r.error.kind, r.error.message, r.meta).row as never);
     });
@@ -99,15 +109,17 @@ export function useAiChain() {
   };
 
   /** Birden çok AI çağrısının sonuçlarını birleştirir. */
-  const merge = async (calls: { label: string; call: () => Promise<AiResult> }[], onStep: (i: number) => void) => {
+  const merge = async (calls: { label: string; call: () => Promise<AiResult> }[], onStep: (i: number) => void, stage?: string) => {
     const acc: Rows = { rows: [], issues: [], params: [] };
     let meta: AiRunMeta | undefined;
     const failed: string[] = [];
+    const reasons: string[] = [];
     for (const [i, c] of calls.entries()) {
       onStep(i);
-      const r = await ai(c.call, c.label);
+      const r = await ai(c.call, c.label, stage);
       if (!r) {
         failed.push(c.label);
+        if (!reasons.includes(lastErr.current)) reasons.push(lastErr.current);
         continue;
       }
       acc.rows.push(...((r.data.rows as unknown[]) ?? []));
@@ -115,7 +127,7 @@ export function useAiChain() {
       acc.params.push(...((r.data.params as unknown[]) ?? []));
       meta = meta ? { ...meta, tokensIn: meta.tokensIn + r.meta.tokensIn, tokensOut: meta.tokensOut + r.meta.tokensOut } : r.meta;
     }
-    return { acc, meta, failed };
+    return { acc, meta, failed, reasons };
   };
 
   const run = async (sel: string[], includeExisting: boolean) => {
@@ -150,9 +162,9 @@ export function useAiChain() {
           let note = '';
           if (useAi && docs.length) {
             const labels = docs.map(({ row }) => `${row.docNumber || row.name}${row.revision ? ` Rev ${row.revision}` : ''}`.trim());
-            const r = await ai(() => api.aiStructure({ context: projectContext(p, { approvedReqsOnly: true }), docs: docs.map(({ row, doc }, i) => ({ doc, filePath: row.filePath || undefined, label: labels[i] })), mode }), 'Yapı & Fonksiyon');
+            const r = await ai(() => api.aiStructure({ context: projectContext(p, { approvedReqsOnly: true }), docs: docs.map(({ row, doc }, i) => ({ doc, filePath: row.filePath || undefined, label: labels[i] })), mode }), 'Yapı & Fonksiyon', 'structure');
             if (r) n = addProposals('structure', { rows: (r.data.rows as unknown[]) ?? [], issues: (r.data.issues as unknown[]) ?? [], params: [] }, r.meta, labels.join(', '));
-            else note = 'AI yanıt vermedi; ';
+            else note = `AI hatası – ${lastErr.current}; `;
           }
           // AI'nin bağlamadığı onaylı gereksinimler kural tabanlı fonksiyonla kapsanır (hiçbir onaylı gereksinim DFMEA dışında kalmasın)
           const linked2 = new Set(current().structure.flatMap((s) => s.reqIds));
@@ -176,14 +188,15 @@ export function useAiChain() {
           if (useAi) {
             const groups = chunk(ready, DFMEA_AI_FUNCTIONS);
             const ctx = projectContext(p, { approvedReqsOnly: true });
-            const { acc, meta, failed } = await merge(
+            const { acc, meta, failed, reasons } = await merge(
               groups.map((g, i) => ({ label: `DFMEA ${i + 1}/${groups.length}`, call: () => { const target = dfmeaTargetText(g); return api.aiDfmea({ context: ctx, target, mode, expert: expertBrief(p, 'dfmea'), exampleQuery: exampleQuery(p, 'dfmea', target) }); } })),
               (i) => set('dfmea', 'run', `AI fonksiyon grubu ${i + 1}/${groups.length}`),
+              'dfmea',
             );
             if (meta) n = addProposals('dfmea', acc, meta, ready.map((t) => t.fn.id).join(', '));
             const covered = new Set(current().dfmea.map((d) => d.functionId));
             fallback = fallback.filter((id) => !covered.has(id));
-            if (failed.length) note = `${failed.length} AI grubu yanıt vermedi; `;
+            if (failed.length) note = `${failed.length}/${groups.length} AI grubu hata verdi – ${reasons.join(' | ')}; `;
           }
           const m = fallback.length ? gen(['dfmea'], { fnIds: fallback }) : 0;
           if (m) note += `${fallback.length} fonksiyon hata kütüphanesinden`;
@@ -219,7 +232,7 @@ export function useAiChain() {
             const groups = chunk(steps, PFMEA_AI_STEPS);
             const ctx = projectContext(p);
             const composite = compositeKbText(p);
-            const { acc, meta, failed } = await merge(
+            const { acc, meta, failed, reasons } = await merge(
               groups.map((g, i) => ({
                 label: `PFMEA ${i + 1}/${groups.length}`,
                 call: () => {
@@ -228,9 +241,10 @@ export function useAiChain() {
                 },
               })),
               (i) => set('pfmea', 'run', `${lib} kütüphane satırı · AI adım grubu ${i + 1}/${groups.length}`),
+              'pfmea',
             );
             if (meta) n = addProposals('pfmea', acc, meta, stepIds.join(', '));
-            if (failed.length) note = `${failed.length}/${groups.length} AI grubu yanıt vermedi`;
+            if (failed.length) note = `${failed.length}/${groups.length} AI grubu hata verdi – ${reasons.join(' | ')}`;
           }
           set('pfmea', note ? 'warn' : 'ok', `${lib} kütüphane + ${n} AI satırı${note ? ' · ' + note : ''}`);
         }

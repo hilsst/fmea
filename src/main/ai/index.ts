@@ -310,28 +310,60 @@ export function suggestPfmea(env: AiEnv, a: { context: string; target: string; c
 /** 4.9.0: Yapı & Fonksiyon dokümanın kendisinden (gereksinim cümlelerinden değil) önerilir. */
 const STRUCTURE_FOCUS = 'yapı montaj alt montaj parça bileşen komponent eleman parça listesi malzeme listesi BOM assembly part component feature fonksiyon görev amaç arayüz bağlantı yük taşır sağlar korur iletir sızdırmazlık interface function purpose';
 
+/** 4.9.1: yapı çağrısındaki iş birimi: metin dokümanı (tek parça) veya taranmış PDF'in sayfa grubu. */
+interface StructureTask {
+  label: string;
+  blocks: ContentBlock[];
+  /** Taranmış PDF parçası: kesilirse ikiye bölünebilir. */
+  pdf?: { src: PDFDocument; from: number; to: number; count: number; name: string };
+}
+
+async function pdfTask(src: PDFDocument, from: number, to: number, count: number, name: string): Promise<StructureTask> {
+  const part = await PDFDocument.create();
+  for (const pg of await part.copyPages(src, Array.from({ length: to - from + 1 }, (_, i) => from + i))) part.addPage(pg);
+  const pages = from === to ? `s.${from + 1}` : `s.${from + 1}–${to + 1}`;
+  const data = Buffer.from(await part.save()).toString('base64');
+  return {
+    label: `${name} (${pages})`,
+    pdf: { src, from, to, count, name },
+    blocks: [
+      { type: 'pdf', data, title: `${name} (${pages})` },
+      { type: 'text', text: `Bu PDF, ${count} sayfalık "${name}" dokümanının ${pages} sayfalarıdır (taranmış, metin katmanı yok). evidence.page alanına orijinal sayfa numarasını yaz (bu parçanın 1. sayfası = s.${from + 1}). docName: ${name}.` },
+    ],
+  };
+}
+
+const sNorm = (x: unknown) => String(x ?? '').toLocaleLowerCase('tr').replace(/\s+/g, ' ').trim();
+
 export async function suggestStructure(env: AiEnv, a: { context: string; docs: { doc: ExtractedDoc | null; filePath?: string; label: string }[]; mode: AiMode }) {
-  const blocks: ContentBlock[] = [];
+  const queue: StructureTask[] = [];
   const notes: string[] = [];
   const budget = Math.floor(DOC_TOKEN_BUDGET / Math.max(1, a.docs.length));
   for (const d of a.docs) {
     try {
+      // 4.9.1: metin katmanı olmayan PDF tek istekte gitmez (sayfa / boyut sınırı); gereksinim çıkarımındaki gibi sayfa gruplarına bölünür.
+      if (!(d.doc && d.doc.blocks.length) && d.filePath && path.extname(d.filePath).toLowerCase() === '.pdf') {
+        const src = await PDFDocument.load(await fs.readFile(d.filePath), { ignoreEncryption: true }).catch(() => null);
+        if (src && src.getPageCount() > PDF_PAGES_PER_PART) {
+          const count = src.getPageCount();
+          const name = path.basename(d.filePath);
+          for (const [from, to] of pageRanges(count)) queue.push(await pdfTask(src, from, to, count, name));
+          notes.push(`${d.label}: taranmış PDF (${count} sayfa) ${pageRanges(count).length} parça hâlinde işlendi; yerel OCR yok, sonuçlar MANUAL VERIFICATION REQUIRED.`);
+          continue;
+        }
+      }
       const c = await docContent(d.doc, d.filePath, STRUCTURE_FOCUS, budget);
-      blocks.push({ type: 'text', text: `── DOKÜMAN: ${d.label} ──` }, ...c.blocks);
+      queue.push({ label: d.label, blocks: [{ type: 'text', text: `── DOKÜMAN: ${d.label} ──` }, ...c.blocks] });
       if (c.note) notes.push(`${d.label}: ${c.note}`);
     } catch (e) {
       notes.push(`${d.label}: ${e instanceof Error ? e.message : String(e)} (bu doküman atlandı)`);
     }
   }
-  if (!blocks.length) {
-    return { ok: false as const, error: { kind: 'SOURCE_NOT_FOUND' as const, message: `Analiz edilebilecek doküman yok. ${notes.join(' | ')}`.trim() } };
-  }
-  const r = await run(env, 'Structure Analyst', a.mode, [
-    ...blocks,
-    { type: 'text', text: a.context },
-    { type: 'text', text: `GÖREV: Yukarıdaki dokümanlara göre DFMEA yapı ağacını ve fonksiyonlarını oluştur.
+  if (!queue.length) return { ok: false as const, error: { kind: 'SOURCE_NOT_FOUND' as const, message: `Analiz edilebilecek doküman yok. ${notes.join(' | ')}`.trim() } };
+
+  const task = (found: { ref: string; element: string; level: string }[]) => `GÖREV: Yukarıdaki doküman(lar)a göre DFMEA yapı ağacını ve fonksiyonlarını oluştur.
 - Her satır bir (eleman, fonksiyon) çiftidir. Aynı elemanın birden çok fonksiyonu varsa her fonksiyon ayrı satırdır ve aynı ref'i kullanır.
-- ref: kısa benzersiz eleman kodu (E1, E2…). parentRef: üst elemanın ref'i; üst eleman projede zaten varsa onun FN-xxx ID'si; kök eleman için boş.
+- ref: kısa benzersiz eleman kodu. parentRef: üst elemanın ref'i; üst eleman projede zaten varsa onun FN-xxx ID'si; kök eleman için boş.
 - Üst elemanlar alt elemanlardan önce gelir. Kök genellikle ürünün kendisidir (Product veya System).
 - Elemanlar yalnızca dokümanda adı geçen ürün, montaj, parça ve özelliklerdir (ör. parça listesi, resim görünüşleri, şartname bölümleri). Dokümanda olmayan parça uydurma; emin olmadığın yapıyı issues listesine soru olarak yaz.
 - function: elemanın ne yaptığı, fiil + nesne. Gereksinim cümlesini aynen fonksiyon yapma. Fonksiyonu olmayan ara montaj satırında function boş kalabilir.
@@ -339,9 +371,58 @@ export async function suggestStructure(env: AiEnv, a: { context: string; docs: {
 - performanceReq / constraint / interface: yalnızca kaynakta yazan değerler; yoksa boş bırak (sayı uydurma).
 - reqIds: yukarıdaki GEREKSİNİMLER listesinden bu fonksiyonu karşılayan ID'ler; uygun olan yoksa boş dizi.
 - Projede zaten olan yapı ve fonksiyonları tekrar önerme; eksikleri ekle.
-- evidence: elemanın / fonksiyonun dayandığı kaynak cümleyi birebir alıntıla, docName olarak doküman adını yaz.` },
-  ], STRUCTURE_SCHEMA);
-  return notes.length ? { ...r, note: notes.join(' | ') } : r;
+- evidence: elemanın / fonksiyonun dayandığı kaynak cümleyi birebir alıntıla, docName olarak doküman adını yaz.${found.length ? `\n- Bu dokümanın önceki bölümlerinde zaten bulunan elemanlar (tekrar yazma; üst eleman olarak ref'iyle kullanabilirsin, yeni ref'leri bunlarla çakışmayacak şekilde ver):\n${found.map((x) => `  ${x.ref}: ${x.element} (${x.level})`).join('\n')}` : ''}`;
+
+  const rows: Json[] = [];
+  const issues: Json[] = [];
+  const seen = new Set<string>();
+  const refOwner = new Map<string, string>();
+  const found: { ref: string; element: string; level: string }[] = [];
+  let meta: AiRunMeta | undefined;
+  let done = 0;
+  let part = 0;
+  while (queue.length) {
+    const t = queue.shift()!;
+    const r = await run(env, 'Structure Analyst', a.mode, [...t.blocks, { type: 'text', text: a.context }, { type: 'text', text: task(found) }], STRUCTURE_SCHEMA);
+    if (!r.ok) {
+      if (r.error.kind === 'TRUNCATED' && t.pdf && t.pdf.to > t.pdf.from) {
+        const { src, from, to, count, name } = t.pdf;
+        const mid = from + Math.floor((to - from) / 2);
+        queue.unshift(await pdfTask(src, from, mid, count, name), await pdfTask(src, mid + 1, to, count, name));
+        continue;
+      }
+      // 4.9.1: gerçek neden kullanıcıya iletilir (tür + ileti + hangi parça); tamamlanan parçalar kaybolmaz.
+      const why = `${t.label}: ${r.error.kind} – ${r.error.message}`;
+      if (!rows.length) return { ok: false as const, error: { kind: r.error.kind, message: why }, meta: r.meta };
+      notes.push(`${why} (bu parça atlandı; ${done} parça tamamlandı)`);
+      continue;
+    }
+    done++;
+    part++;
+    // Aynı ref başka bir elemana verilmişse (parçalar arası çakışma) bu parçada yeniden adlandırılır.
+    const remap = new Map<string, string>();
+    for (const row of (r.data.rows as Json[]) ?? []) {
+      const ref = String(row.ref ?? '');
+      const el = sNorm(row.element);
+      if (ref && refOwner.has(ref) && refOwner.get(ref) !== el && !remap.has(ref)) remap.set(ref, `${ref}_${part}`);
+    }
+    for (const row of (r.data.rows as Json[]) ?? []) {
+      const ref0 = String(row.ref ?? '');
+      const ref = remap.get(ref0) ?? ref0;
+      const parent0 = String(row.parentRef ?? '');
+      const key = `${sNorm(row.element)}|${sNorm(row.function)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (ref && !refOwner.has(ref)) {
+        refOwner.set(ref, sNorm(row.element));
+        found.push({ ref, element: String(row.element ?? ''), level: String(row.level ?? '') });
+      }
+      rows.push({ ...row, ref, parentRef: remap.get(parent0) ?? parent0 });
+    }
+    issues.push(...(((r.data.issues as Json[] | undefined) ?? [])));
+    meta = meta ? { ...meta, tokensIn: meta.tokensIn + r.meta.tokensIn, tokensOut: meta.tokensOut + r.meta.tokensOut, cached: meta.cached && r.meta.cached, retries: meta.retries + r.meta.retries } : r.meta;
+  }
+  return { ok: true as const, data: { rows, issues } as Json, meta: meta!, note: notes.length ? notes.join(' | ') : undefined };
 }
 
 export function review(env: AiEnv, a: { context: string; local: string; mode: AiMode }) {
