@@ -35,6 +35,7 @@ function browserFallback(): Api {
     aiSetKey: async () => true,
     aiRequirements: fail,
     aiDfmea: fail,
+    aiStructure: fail,
     aiPfmea: fail,
     aiReview: fail,
     examplesList: async () => [],

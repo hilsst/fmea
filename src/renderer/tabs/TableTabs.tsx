@@ -193,6 +193,7 @@ export function StructureTab() {
   const { project, edit } = useStore();
   const [sel, setSel] = useState<string[]>([]);
   const gen = useAutogen();
+  const ai = useAi();
   const addChild = async () => {
     const parent = project.structure.find((s) => s.id === sel[0]);
     const b = batch(project);
@@ -210,14 +211,18 @@ export function StructureTab() {
             <button className="btn" onClick={addChild} disabled={sel.length > 1}>
               ↳ Alt eleman ekle
             </button>
-            <button className="btn" onClick={() => gen(['structure'], 'Gereksinimlerden yapı & fonksiyon')} title="Yapıya bağlı olmayan gereksinimlerden Product → Part → Feature ağacı ve fonksiyonlar önerir (AI Proposed)">
+            <button className="btn" onClick={() => gen(['structure'], 'Gereksinimlerden yapı & fonksiyon')} title="AI kullanmadan, kural tabanlı: yapıya bağlı olmayan her gereksinim cümlesinden bir fonksiyon satırı türetir (AI Proposed). Dokümanın gerçek parça yapısını okumaz; bunun için “✦ AI: Dokümandan oluştur”u kullanın.">
               ⟳ Gereksinimlerden öner
+            </button>
+            <button className="btn ai" onClick={ai.suggestStructure} title="Analiz edilmiş dokümanları (şartname, resim, parça listesi) AI'ye okutur: dokümandaki ürün → montaj → parça → özellik ağacını ve her elemanın fonksiyonunu kanıt alıntısıyla önerir; fonksiyonları ilgili gereksinimlere bağlar. Her öneriyi kabul / düzenle / reddet ile siz onaylarsınız.">
+              ✦ AI: Dokümandan oluştur
             </button>
           </>
         }
-        emptyHint="“⟳ Gereksinimlerden öner” ile ağacı otomatik oluşturun veya Product → Assembly → Part → Feature hiyerarşisini elle kurun."
+        emptyHint="“✦ AI: Dokümandan oluştur” ile yapı ağacını analiz edilmiş dokümandan önerin, “⟳ Gereksinimlerden öner” ile AI'sız taslak alın veya Product → Assembly → Part → Feature hiyerarşisini elle kurun."
       />
       <StructureTree project={project} onSelect={setSel} />
+      {ai.dialogs}
     </div>
   );
 }

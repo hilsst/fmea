@@ -46,6 +46,7 @@ export function projectContext(p: Project, opts: { approvedReqsOnly?: boolean } 
 
 const PREVIEW: Record<string, [string, string][]> = {
   requirements: [['text', 'Gereksinim'], ['reqType', 'Tip'], ['characteristic', 'Karakteristik'], ['nominal', 'Nom.'], ['lsl', 'Alt'], ['usl', 'Üst'], ['unit', 'Birim'], ['acceptance', 'Kabul kriteri']],
+  structure: [['_ref', 'Ref'], ['_parentRef', 'Üst'], ['level', 'Seviye'], ['element', 'Eleman'], ['function', 'Fonksiyon'], ['functionType', 'Tip'], ['performanceReq', 'Performans'], ['reqIds', 'REQ']],
   dfmea: [['functionId', 'Fonk.'], ['failureMode', 'Hata modu'], ['effect', 'Etki'], ['cause', 'Neden'], ['prevention', 'Önleme'], ['detection', 'Tespit'], ['s', 'S'], ['o', 'O'], ['d', 'D']],
   pfmea: [['stepId', 'Adım'], ['failureMode', 'Hata modu'], ['cause4M', '4M'], ['cause', 'Neden'], ['rootCause', 'Kök neden'], ['prevention', 'Önleme'], ['detection', 'Tespit'], ['s', 'S'], ['o', 'O'], ['d', 'D']],
 };
@@ -301,6 +302,18 @@ export function useAi() {
     );
   };
 
+  /** 4.9.0: Yapı & Fonksiyon, analiz edilmiş dokümanların kendisinden önerilir (gereksinim cümleleri yalnızca bağlantı içindir). */
+  const suggestStructure = async () => {
+    const docs = project.documents
+      .map((d) => ({ row: d, doc: project.docIndex[d.id] ?? null }))
+      .filter(({ row, doc }) => doc?.status !== 'unsupported' && ((doc?.blocks.length ?? 0) > 0 || !!row.filePath));
+    if (!docs.length) return toast('Önce Dokümanlar ekranında şartname / resim dosyasını bağlayıp “⚙ Analiz et” ile analiz edin.', 'warn');
+    const labels = docs.map(({ row }) => `${row.docNumber || row.name}${row.revision ? ` Rev ${row.revision}` : ''}`.trim());
+    await run(`Dokümanlardan yapı & fonksiyon hazırlanıyor (${docs.length} doküman)…`, 'structure', labels.join(', '), () =>
+      api.aiStructure({ context: projectContext(project), docs: docs.map(({ row, doc }, i) => ({ doc, filePath: row.filePath || undefined, label: labels[i] })), mode }),
+    );
+  };
+
   const suggestPfmea = async (stepIds: string[]) => {
     const steps = project.processSteps.filter((s) => stepIds.length === 0 || stepIds.includes(s.id));
     if (!steps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
@@ -352,7 +365,7 @@ export function useAi() {
     </>
   );
 
-  return { extractRequirements, suggestDfmea, suggestPfmea, suggestFromExamples, dialogs, busy: !!busy };
+  return { extractRequirements, suggestStructure, suggestDfmea, suggestPfmea, suggestFromExamples, dialogs, busy: !!busy };
 }
 
 export function PasteTextDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (t: string) => void }) {
