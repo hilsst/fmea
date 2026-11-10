@@ -142,7 +142,7 @@ export const PFMEA_SCHEMA = obj({
   rows: {
     type: 'array',
     items: obj({
-      stepId: str, processFunction: str, requirement: str, dfIds: strs, processElement: str,
+      stepId: str, processFunction: str, requirement: str, dfIds: strs, reqIds: strs, processElement: str,
       cause4M: { type: 'string', enum: ['Man', 'Machine', 'Material', 'Method', 'Measurement', 'Environment'] },
       why: strs, rootCause: str, errorProofing: str, measurement: str, reactionPlan: str, ...FMEA_COMMON,
     }),

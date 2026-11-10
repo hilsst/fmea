@@ -10,7 +10,7 @@ import { useStore } from '../store';
 
 const split = (s: string | undefined) => (s ?? '').split(';').map((x) => x.trim()).filter(Boolean);
 
-function stepEdits(p: Project, keys: string[]): Edit[] {
+export function stepEdits(p: Project, keys: string[]): Edit[] {
   let cur = p;
   return planFlow(keys, p.processSteps).map((st) => {
     const id = nextId(cur, 'processSteps');

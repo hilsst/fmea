@@ -164,6 +164,7 @@ export function buildProposals(p: Project, kind: ProposalSet['kind'], data: Reco
         Object.assign(row, {
           stepId: st ? st.id : '', processFunction: s(r.processFunction), requirement: s(r.requirement), processElement: s(r.processElement),
           dfIds: ((r.dfIds as string[]) ?? []).filter((x) => p.dfmea.some((q) => q.id === x)),
+          reqIds: ((r.reqIds as string[]) ?? []).filter((x) => p.requirements.some((q) => q.id === x && q.approval !== 'Rejected')), // 4.9.0
           cause4M: s(r.cause4M), why1: why[0] ?? '', why2: why[1] ?? '', why3: why[2] ?? '', why4: why[3] ?? '', why5: why[4] ?? '',
           rootCause: s(r.rootCause), errorProofing: s(r.errorProofing), measurement: s(r.measurement), reactionPlan: s(r.reactionPlan),
         });

@@ -31,6 +31,8 @@ export interface AskRequest extends AskOptions {
 
 interface Store {
   project: Project;
+  /** 4.9.0: en güncel proje (await edit(...) sonrasında render beklemeden okumak için). */
+  current: () => Project;
   filePath?: string;
   dirty: boolean;
   /** Düzenlemeleri uygular; başka ekranları etkiliyorsa önce onay penceresi gösterir. */
@@ -190,6 +192,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Store>(
     () => ({
       project,
+      current: () => projectRef.current,
       filePath,
       dirty,
       edit,
