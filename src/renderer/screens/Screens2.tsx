@@ -12,6 +12,7 @@ import { CAPABILITIES, COST_LABEL, STRENGTH_LABEL, controlCatalogue } from '../.
 import { coverageGaps } from '../../shared/coverage';
 import { SCREENS } from '../../shared/nav';
 import { useAutogen } from '../components/Autogen';
+import { generate } from '../../shared/autogen';
 import { evaluateKc } from '../../shared/kc';
 import { DEFAULT_SCORING, DEFAULT_SETTINGS, TABLE_LABEL, nextId, tableOfId } from '../../shared/model';
 import { failedRunEdit } from '../../shared/proposals';
@@ -74,7 +75,6 @@ export function DashboardScreen({ go }: { go: Go }) {
 
   return (
     <div className="page">
-      <CoverageCard />
       <div className="two-col">
         <section className="card">
           <div className="score-head">
@@ -427,8 +427,19 @@ function CoverageCard() {
   const { project: p } = useStore();
   const gen = useAutogen();
   const gaps = useMemo(() => coverageGaps(p), [p]);
-  const pf = gaps.filter((g) => g.table === 'pfmea');
-  const df = gaps.filter((g) => g.table === 'dfmea');
+  // Kütüphanenin kapatabildiği eksikler düğmeye girer; kapatamadıkları "elle değerlendirilmeli" olarak ayrılır.
+  const fillable = useMemo(() => {
+    const ids = new Set<string>();
+    for (const e of [...generate(p, ['pfmea']).edits, ...generate(p, ['dfmea']).edits]) {
+      if (e.kind !== 'add') continue;
+      const r = e.row as { stepId?: string; functionId?: string };
+      if (r.stepId) ids.add(r.stepId);
+      if (r.functionId) ids.add(r.functionId);
+    }
+    return ids;
+  }, [p]);
+  const pf = gaps.filter((g) => g.table === 'pfmea' && fillable.has(g.id));
+  const df = gaps.filter((g) => g.table === 'dfmea' && fillable.has(g.id));
   return (
     <section className="card">
       <h3>Kapsam denetimi · tüm hata riskleri değerlendirildi mi?</h3>
@@ -445,7 +456,7 @@ function CoverageCard() {
                 <tr key={g.table + g.id}>
                   <td><span className="badge b-amber">{g.table === 'pfmea' ? 'PFMEA' : 'DFMEA'}</span></td>
                   <td className="rid">{g.id}</td>
-                  <td className="small"><b>{g.name}</b><div className="muted">{g.missing.join(' · ')}</div></td>
+                  <td className="small"><b>{g.name}</b>{!fillable.has(g.id) && <span className="badge b-gray" title="Kütüphanede bu eksiği kapatan öneri yok">elle değerlendirilmeli</span>}<div className="muted">{g.missing.join(' · ')}</div></td>
                 </tr>
               ))}
             </tbody>
@@ -474,6 +485,7 @@ export function QualityScreen({ go }: { go: Go }) {
         <button className="btn" onClick={() => exportReport('html')}>İnceleme raporu (HTML)</button>
         <button className="btn" onClick={() => go('aiReview', 'review')}>AI incelemesine git</button>
       </div>
+      <CoverageCard />
       <div className="two-col">
         <section className="card">
           <div className="score-head">

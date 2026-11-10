@@ -33,8 +33,8 @@ export interface Capability {
 export const CAPABILITIES: Capability[] = [
   { id: 'barcode', label: 'Barkod / etiket okuma altyapısı', re: /barkod|barcode|etiket (okuma|doğrulama)/ },
   { id: 'fixture', label: 'Fikstür / şablon üretimi (kendi atölyemiz)', re: /fikstür|fixture|şablon|template|aparat|aralayıcı|pah takımı|poka-yoke/ },
-  { id: 'gauge', label: 'Mastar / CMM / ölçüm laboratuvarı', re: /mastar|cmm|go\/no-go|gage|\bmsa\b|kalibrasyon|ölçüm/ },
-  { id: 'recipe', label: 'Tezgâh / fırın reçete ve parametre kilidi', re: /reçete|kilid|kilit|lock|recipe|parametre izleme|program/ },
+  { id: 'gauge', label: 'Mastar / CMM / ölçüm laboratuvarı', re: /mastar|\bcmm\b|go\/no-go|\bgage\b|\bmsa\b|kalibrasyon programı|ölçüm (laboratuvar|cihaz|odası)/ },
+  { id: 'recipe', label: 'Tezgâh / fırın reçete ve parametre kilidi', re: /(reçete|parametre|ayar|program)[^,;(]{0,16}kilid|\block\b|\brecipe\b|parametre izleme/ },
   { id: 'sensor', label: 'Sensör / alarm / interlock altyapısı', re: /sensör|interlock|alarm|ortam izleme|zamanlayıcı/ },
   { id: 'ndt', label: 'NDT (UT / penetrant / RT) imkânı', re: /ndt|ultrason|penetrant|\brt\b/ },
   { id: 'analysis', label: 'Mühendislik analiz yazılımı (FEA, tolerans yığılması)', re: /\bfea\b|yapısal analiz|modal analiz|tolerans (yığılması|analizi)|stack-up|termal.*analiz/ },
@@ -52,13 +52,19 @@ export interface CostContext {
 
 const stripNote = (t: string) => lc(t).replace(/\s+/g, ' ').trim();
 
+function hasLearned(set: Set<string>, t: string): boolean {
+  if (set.has(t)) return true;
+  for (const l of set) if (l && (t.includes(l) || l.includes(t))) return true;
+  return false;
+}
+
 /** Maliyet sınıfı bağlama göre ayarlanmış yöntem. */
 export function adjustMeasure(m: Measure, ctx?: CostContext): Measure {
   if (!ctx) return m;
   const t = lc(m.text);
-  const cap = (ctx.capabilities ?? []).map((id) => CAPABILITY_BY_ID[id]).find((c) => c && c.re.test(t));
+  const cap = (Array.isArray(ctx.capabilities) ? ctx.capabilities : []).map((id) => CAPABILITY_BY_ID[id]).find((c) => c && c.re.test(t));
   if (cap && m.cost > 1) return { ...m, cost: 1, note: `firma imkânı: ${cap.label}` };
-  if (ctx.learned && m.cost > 1 && [...ctx.learned].some((l) => l && (t.includes(l) || l.includes(t)))) return { ...m, cost: (m.cost - 1) as CostTier, note: 'firmada onaylı satırlarda kullanılıyor' };
+  if (ctx.learned && m.cost > 1 && hasLearned(ctx.learned, t)) return { ...m, cost: (m.cost - 1) as CostTier, note: 'firmada onaylı satırlarda kullanılıyor' };
   return m;
 }
 
@@ -203,7 +209,17 @@ export function controlCatalogue(p: { dfmea?: ControlRow[]; pfmea?: ControlRow[]
 }
 
 /** Maliyet bağlamı: ayardaki imkânlar + katalogdaki (önleme / hata önleme) yöntemler. */
+let ctxCache: { p: object; sig: string; ctx: CostContext } | null = null;
 export function costContext(p: { settings?: { companyCapabilities?: string[] }; dfmea?: ControlRow[]; pfmea?: ControlRow[] }): CostContext {
+  // Aynı proje için satır başına yeniden kurulmasın: imza yalnız onaylı satırların kontrol alanlarından üretilir.
+  let sig = (p.settings?.companyCapabilities ?? []).join(',') + '#';
+  for (const r of [...(p.dfmea ?? []), ...(p.pfmea ?? [])]) if (APPROVED.has(r.approval ?? '')) sig += `${r.prevention ?? ''}|${r.errorProofing ?? ''}|${r.detection ?? ''};`;
+  if (ctxCache && ctxCache.p === p && ctxCache.sig === sig) return ctxCache.ctx;
+  const ctx = buildCostContext(p);
+  ctxCache = { p, sig, ctx };
+  return ctx;
+}
+function buildCostContext(p: { settings?: { companyCapabilities?: string[] }; dfmea?: ControlRow[]; pfmea?: ControlRow[] }): CostContext {
   const learned = new Set(controlCatalogue(p).filter((e) => e.kind !== 'Tespit').map((e) => stripNote(e.text)));
   return { capabilities: p.settings?.companyCapabilities ?? [], learned };
 }

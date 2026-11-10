@@ -263,8 +263,21 @@ export function genPfmea(g: Gen, stepIds?: string[]) {
         g.add('pfmea', { ...pfRow(step, alt, `${src} · ek neden`), ...links(alt) } as Partial<AnyRow>);
       }
     };
-    for (const t of (PFMEA_LIB[area] ?? PFMEA_LIB.Generic).filter(fresh)) addWithCauses(t, `${step.id} · PFMEA hata kütüphanesi (${area})`);
-    for (const t of PFMEA_STEP_COMMON.filter(fresh)) addWithCauses(t, `${step.id} · PFMEA hata kütüphanesi (genel adım hata modları)`);
+    // Aynı hata modu adımda zaten varsa (4.7.0 veya elle) yalnız henüz karşılanmayan ek nedenler eklenir.
+    const addMissingCauses = (t: FailureTemplate, src: string) => {
+      const same = g.p.pfmea.filter((r) => r.stepId === step.id && norm(r.failureMode) === norm(t.failureMode));
+      if (!same.length) return;
+      for (const a of PFMEA_ALT_CAUSES[t.failureMode] ?? []) {
+        if (same.some((r) => norm(r.cause) === norm(a.cause) || similarity(r.cause, a.cause) >= SAME_MODE)) continue;
+        const alt: FailureTemplate = { ...t, cause: a.cause, cause4M: a.cause4M, rootCause: a.rootCause, prevention: a.prevention, errorProofing: a.errorProofing ?? '', o: a.o ?? t.o };
+        g.add('pfmea', { ...pfRow(step, alt, `${src} · ek neden`), ...links(alt) } as Partial<AnyRow>);
+        same.push(g.p.pfmea[g.p.pfmea.length - 1]);
+      }
+    };
+    const lib = PFMEA_LIB[area] ?? PFMEA_LIB.Generic;
+    const handled = (t: FailureTemplate, src: string) => (fresh(t) ? addWithCauses(t, src) : addMissingCauses(t, src));
+    for (const t of lib) handled(t, `${step.id} · PFMEA hata kütüphanesi (${area})`);
+    for (const t of PFMEA_STEP_COMMON) handled(t, `${step.id} · PFMEA hata kütüphanesi (genel adım hata modları)`);
     // Özel proses parametreleri: her parametre için alt/üst limit dışı hata modları; parametre satırına bağlanır.
     for (const prm of g.p.processParams.filter((x) => x.stepId === step.id) as ProcessParamRow[]) {
       if (prm.pfIds.length) continue; // parametrenin hata modları zaten bağlı

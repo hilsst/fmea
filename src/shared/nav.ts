@@ -110,6 +110,7 @@ export function screenLabel(t: string): string {
 
 /** 4.8.0: menüde görünen ekranlar. Açık olan ekran her zaman görünür; ayar kapalıyken (varsayılan) hepsi görünür. */
 export function visibleScreens(settings: { simpleMenu?: boolean; hiddenScreens?: string[] } | undefined, current?: ScreenKey): Screen[] {
-  const hidden = new Set(settings?.hiddenScreens ?? []);
-  return SCREENS.filter((s) => s.key === current || (!hidden.has(s.key) && !(settings?.simpleMenu && s.advanced)));
+  const hidden = new Set(Array.isArray(settings?.hiddenScreens) ? settings!.hiddenScreens : []);
+  const keep = (k: ScreenKey) => k === current || k === 'settings' || k === 'dashboard';
+  return SCREENS.filter((s) => keep(s.key) || (!hidden.has(s.key) && !(settings?.simpleMenu && s.advanced)));
 }

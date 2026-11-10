@@ -131,3 +131,49 @@ describe('4.8.0 menü görünümü', () => {
     expect(newProject().settings.simpleMenu).toBe(true);
   });
 });
+
+describe('4.8.0 denetim düzeltmeleri', () => {
+  it('4.7.0 projesinde (yalnız ana satırlar) ek nedenler sonradan tamamlanır, tekrar çalıştırma çoğaltmaz', () => {
+    let p = newProject();
+    p.settings.productType = 'Metal';
+    p = apply(p, [step('OP-001', 'Lazer kesim')]);
+    p = apply(p, generate(p, ['pfmea']).edits);
+    // 4.7.0 durumu: yalnız ana nedenli satırları bırak
+    const main = new Set(Object.values(PFMEA_ALT_CAUSES).flat().map((a) => a.cause));
+    p.pfmea = p.pfmea.filter((r) => !main.has(r.cause));
+    const before = p.pfmea.length;
+    const g = generate(p, ['pfmea']);
+    expect(g.edits.length).toBeGreaterThan(0);
+    p = apply(p, g.edits);
+    expect(p.pfmea.length).toBeGreaterThan(before);
+    expect(generate(p, ['pfmea']).edits).toHaveLength(0);
+  });
+
+  it('imkân desenleri dar: interlock, otomatik ölçüm ve kalibrasyon programı yanlış sayılmaz', () => {
+    const caps = (cap: string, text: string) => rankMeasures([measureOf(text)], { ctx: { capabilities: [cap] } })[0];
+    expect(caps('recipe', 'Sensörlü varlık / sayım kontrolü (interlock)').cost).toBe(3);
+    expect(caps('gauge', 'Otomatik ölçüm').cost).toBe(4);
+    expect(caps('recipe', 'Kalibrasyon programı ve ölçüm talimatı').cost).toBe(2); // recipe imkânı kalibrasyonu ucuzlatmaz
+    expect(caps('recipe', 'Reçete / parametre kilidi (yazılım)').cost).toBe(1);
+    expect(caps('recipe', 'Reçete kilidi (software parameter lock)').cost).toBe(1);
+    expect(caps('gauge', 'Go/No-go mastar').cost).toBe(1);
+  });
+
+  it('settings ve dashboard gizlenemez; dizi olmayan imkân listesi hata vermez', () => {
+    const keys = visibleScreens({ hiddenScreens: ['settings', 'dashboard'] }, 'pfmea').map((s) => s.key);
+    expect(keys).toContain('settings');
+    expect(keys).toContain('dashboard');
+    expect(() => rankMeasures([measureOf('Fikstür')], { ctx: { capabilities: 'fixture' as never } })).not.toThrow();
+  });
+
+  it('büyük projede aksiyon metni üretimi hızlı (katalog satır başına yeniden kurulmaz)', () => {
+    const p = newProject();
+    p.processSteps.push({ ...(blankRow('processSteps', 'OP-001') as Project['processSteps'][number]), opNo: '10', name: 'Montaj' });
+    for (let i = 0; i < 700; i++)
+      p.pfmea.push({ ...(blankRow('pfmea', `PF-${i}`) as PfmeaRow), stepId: 'OP-001', failureMode: `Mod ${i}`, cause: `Neden ${i}`, cause4M: 'Method', approval: 'Approved', prevention: `Önleme ${i}; Fikstür ${i % 20}`, detection: 'Görsel', s: 7, o: 6, d: 5 });
+    const t0 = Date.now();
+    const q = planEdits(p, [{ kind: 'settings', field: 'rpnThreshold', value: 50 }]).project;
+    expect(q.pfmea.filter((r) => r.recommendedAction).length).toBe(700);
+    expect(Date.now() - t0).toBeLessThan(2500);
+  });
+});

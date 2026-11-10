@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generate } from '../src/shared/autogen';
 import { costTierOf, rankMeasures, measureOf, PREVENTION_4M, strengthOf } from '../src/shared/controlCost';
 import { planEdits, type Edit } from '../src/shared/engine';
-import { DFMEA_LIB, PFMEA_LIB } from '../src/shared/failureLib';
+import { DFMEA_LIB, PFMEA_ALT_CAUSES, PFMEA_LIB } from '../src/shared/failureLib';
 import { blankRow, newProject } from '../src/shared/model';
 import { needsAction } from '../src/shared/risk';
 import { AI_REC } from '../src/shared/rpnAction';
@@ -23,7 +23,9 @@ describe('4.7.0 adım / fonksiyon başına tüm hata modları', () => {
       { kind: 'add', table: 'pfmea', row: { ...blankRow('pfmea', 'PF-001'), id: 'PF-001', stepId: 'OP-001', failureMode: 'Kesim ölçüsü / kontur tolerans dışı', cause: 'Elle girildi' } }]);
     p = apply(p, generate(p, ['pfmea']).edits);
     const cut = p.pfmea.filter((r) => r.stepId === 'OP-001').map((r) => r.failureMode);
-    expect(cut.filter((m) => m === 'Kesim ölçüsü / kontur tolerans dışı')).toHaveLength(1); // mevcut satır tekrarlanmadı
+    // 4.8.0: mevcut elle satır korunur, kütüphanenin ana nedeniyle çoğaltılmaz; yalnız ek nedenler (4M) eklenir
+    const alts = PFMEA_ALT_CAUSES['Kesim ölçüsü / kontur tolerans dışı'].length;
+    expect(cut.filter((m) => m === 'Kesim ölçüsü / kontur tolerans dışı')).toHaveLength(1 + alts);
     expect(p.pfmea.find((r) => r.id === 'PF-001')!.cause).toBe('Elle girildi'); // ve değişmedi
     for (const m of ['Kesim kenarında çapak / cüruf', 'Yanlış malzeme / kalınlıkta levha kesiliyor', 'Isıdan etkilenen bölge / kenar sertleşmesi'])
       expect(cut).toContain(m);
