@@ -12,9 +12,18 @@ export const CAD_NOMINAL_MSG =
   'CAD geometrisi yorumlandı: değerler nominal model geometrisidir ve tolerans içermez (PMI hariç) – teknik resimden doğrulanmalı.';
 
 export const EXT_PARSER: Record<string, ParserId> = {
-  pdf: 'pdf', docx: 'docx', xlsx: 'xlsx', xlsm: 'xlsx', csv: 'csv', pptx: 'pptx', txt: 'txt', md: 'txt',
+  pdf: 'pdf', docx: 'docx', docm: 'docx', dotx: 'docx', dotm: 'docx', xlsx: 'xlsx', xlsm: 'xlsx', xltx: 'xlsx', xltm: 'xlsx', csv: 'csv', pptx: 'pptx', txt: 'txt', md: 'txt',
   eml: 'eml', msg: 'msg', png: 'image', jpg: 'image', jpeg: 'image', tif: 'image', tiff: 'image',
   dxf: 'dxf', step: 'step', stp: 'step', iges: 'iges', igs: 'iges',
+};
+
+/** 4.9.4: eski ikili Office biçimleri için açıklayıcı ileti (genel "desteklenmiyor" yerine). */
+export const LEGACY_OFFICE_MSG: Record<string, string> = {
+  doc: 'Eski Word biçimi (.doc) okunamıyor. Dosyayı Word’de açıp “Farklı Kaydet › Word Belgesi (.docx)” ile kaydedin ve tekrar ekleyin.',
+  rtf: 'RTF biçimi okunamıyor. Dosyayı Word’de açıp “Farklı Kaydet › Word Belgesi (.docx)” ile kaydedin ve tekrar ekleyin.',
+  xls: 'Eski Excel biçimi (.xls) okunamıyor. Dosyayı Excel’de açıp “Farklı Kaydet › Excel Çalışma Kitabı (.xlsx)” ile kaydedin ve tekrar ekleyin.',
+  xlsb: 'İkili Excel biçimi (.xlsb) okunamıyor. Dosyayı Excel’de açıp “Farklı Kaydet › Excel Çalışma Kitabı (.xlsx)” ile kaydedin ve tekrar ekleyin.',
+  ppt: 'Eski PowerPoint biçimi (.ppt) okunamıyor. Dosyayı “Farklı Kaydet › PowerPoint Sunusu (.pptx)” ile kaydedin ve tekrar ekleyin.',
 };
 
 export function parserFor(fileName: string): ParserId {

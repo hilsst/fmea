@@ -6,7 +6,7 @@ import {
   DFMEA_SCHEMA, PFMEA_SCHEMA, REQUIREMENTS_SCHEMA, REVIEW_SCHEMA, STRUCTURE_SCHEMA, parseJson, validate,
   type AiResult, type AiRunMeta, type Json,
 } from '../../shared/aischema';
-import { chunkDoc, estimateTokens, locText, retrieve, type Chunk, type ExtractedDoc, type RequirementCandidate } from '../../shared/docmodel';
+import { chunkDoc, estimateTokens, findRequirementCandidates, locText, retrieve, type Chunk, type ExtractedDoc, type RequirementCandidate } from '../../shared/docmodel';
 import { sha256 } from '../../shared/sha256';
 import { AiError, ENV_KEY, makeProvider, type AiProvider, type ContentBlock } from './provider';
 import { systemPrompt, type AiMode, type AiRole } from './roles';
@@ -81,7 +81,7 @@ const isDrawing = (doc: ExtractedDoc) =>
 
 /** Dokümanı AI'ye gidecek içeriğe çevirir: metin varsa konum etiketli parçalar, yoksa (taranmış/görsel) dosyanın kendisi. */
 async function docContent(doc: ExtractedDoc | null, filePath: string | undefined, focus: string, budget = DOC_TOKEN_BUDGET): Promise<{ blocks: ContentBlock[]; note: string; role: AiRole }> {
-  if (doc?.status === 'unsupported') throw new AiError('UNSUPPORTED_DOCUMENT', 'Bu dosya formatı analiz için desteklenmiyor.');
+  if (doc?.status === 'unsupported') throw new AiError('UNSUPPORTED_DOCUMENT', doc.messages.find((m) => m.level === 'error')?.text ?? 'Bu dosya formatı analiz için desteklenmiyor.');
   if (doc && doc.blocks.length) {
     const chunks = chunkDoc(doc);
     const total = chunks.reduce((a, c) => a + c.tokens, 0);
@@ -112,7 +112,10 @@ async function docContent(doc: ExtractedDoc | null, filePath: string | undefined
   const media = ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' } as const)[ext as '.png'];
   if (media) return { blocks: [{ type: 'image', data, mediaType: media }, { type: 'text', text: `Görsel dosya: ${name}` }], note: 'Görselden AI analizi; yerel OCR yok. Tüm sonuçlar MANUAL VERIFICATION REQUIRED.', role: 'Drawing Analyst' };
   if (ext === '.tif' || ext === '.tiff') throw new AiError('UNSUPPORTED_DOCUMENT', 'TIFF görseli AI görsel analizine gönderilemiyor (NOT SUPPORTED). PNG veya PDF olarak kaydedip tekrar deneyin.');
-  throw new AiError('PARSER_ERROR', 'Dokümandan metin çıkarılamadı; analiz yapılamaz.');
+  // 4.9.4: neden belirtilir (önceden yalnızca genel ileti vardı).
+  if (!doc) throw new AiError('PARSER_ERROR', `Doküman yerel olarak ayrıştırılmamış (${name}). Dokümanlar sekmesinde “⚙ Analiz et” ile analiz edip tekrar deneyin.`);
+  const why = doc.messages.map((m) => m.text).join(' | ');
+  throw new AiError('PARSER_ERROR', `Dokümandan metin çıkarılamadı; analiz yapılamaz (${name}, ayrıştırıcı: ${doc.parser}, durum: ${doc.status}${why ? `, ${why}` : ''}).`);
 }
 
 /** 4.6.1: gereksinim çıkarımında bir AI çağrısına giden doküman metni (token). Çıktı sınırına (32k) takılmamak için küçük tutulur. */
@@ -221,6 +224,8 @@ async function extractScannedPdf(env: AiEnv, filePath: string, mode: AiMode, tas
 export async function extractRequirements(
   env: AiEnv,
   a: { doc: ExtractedDoc | null; filePath?: string; docId: string; docLabel: string; existing: string[]; candidates: RequirementCandidate[]; mode: AiMode },
+  /** 4.9.4: yerel ayrıştırıcı (main'de docworker); doküman ayrıştırılmamışsa kullanılır. */
+  parse?: (filePath: string) => Promise<ExtractedDoc>,
 ): Promise<AiResult & { note?: string }> {
   const task = (cands: RequirementCandidate[], existing: string[]) => `GÖREV: ${a.docId} (${a.docLabel}) dokümanındaki gereksinimleri çıkar.
 - Yerel ayrıştırıcının bulduğu aday cümleler aşağıda (eksik veya fazla olabilir; doğrula, birleştirme, kaçanları ekle):
@@ -228,6 +233,13 @@ ${cands.slice(0, 300).map((c, i) => `${i + 1}. [${locText(c.loc)}] ${c.text}`).j
 - reqType: Functional, Performance, Dimensional, Material, Process, Environmental, Reliability, Safety, Regulatory, Interface, Manufacturing, Inspection, Customer-specific.
 - Teknik resimse drawing alanını doldur (yalnızca resimde yazanlar), değilse boş metin.
 - Projede zaten olan gereksinimleri tekrar etme:\n${existing.slice(0, 200).join('\n') || '(yok)'}`;
+
+  // 4.9.4: yerel olarak ayrıştırılmamış dosya (ör. “Analiz et” yapılmamış Word/Excel) burada ayrıştırılır. Önceden bu durumda
+  // yalnızca PDF/görsel AI'ye gidebiliyor, Word/Excel PARSER_ERROR veriyordu.
+  if (parse && a.filePath && (!a.doc || (!a.doc.blocks.length && a.doc.status !== 'unsupported'))) {
+    const d = await parse(a.filePath).catch(() => null);
+    if (d && (d.blocks.length || !a.doc)) a = { ...a, doc: d, candidates: a.candidates.length ? a.candidates : findRequirementCandidates(d) };
+  }
 
   // 4.6.1: metin katmanı olan dokümanlar parça parça işlenir; tek çağrının yanıtı çıktı sınırını aşmaz (TRUNCATED) ve
   // büyük dokümanlarda hiçbir bölüm atlanmaz. Kesilen parça ikiye bölünüp yeniden denenir.

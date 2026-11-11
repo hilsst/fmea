@@ -288,8 +288,26 @@ export function useAi() {
       toast('Önce dokümana dosya bağlayın veya “Analiz et” ile yerel analizi çalıştırın.', 'warn');
       return;
     }
+    // 4.9.4: dosya bağlı ama “Analiz et” çalıştırılmamışsa yerel ayrıştırma burada yapılır. Önceden Word/Excel gibi
+    // metin dokümanları ayrıştırılmadan AI'ye gönderiliyor ve PARSER_ERROR alınıyordu (yalnızca PDF/görsel doğrudan gidebilir).
+    if (doc && doc.filePath && (!extracted || (!extracted.blocks.length && extracted.status !== 'unsupported'))) {
+      const r = await api.extractDoc(doc.filePath);
+      if (!r.ok) {
+        toast(`Doküman ayrıştırılamadı: ${r.error}`, 'err');
+        return;
+      }
+      const x = r.doc;
+      const status = x.status === 'unsupported' ? x.messages.map((m) => m.text).join(' | ') || AI_ERROR_TEXT.UNSUPPORTED_DOCUMENT : `${x.status} · ${x.parser} · ${x.blocks.length} blok${x.messages.length ? ' · ' + x.messages.map((m) => m.text).join(' | ') : ''}`;
+      mutate((d) => {
+        d.docIndex[doc.id] = x;
+        const row = d.documents.find((q) => q.id === doc.id);
+        if (row) row.parseStatus = status;
+      });
+      extracted = x;
+      p = { ...p, docIndex: { ...p.docIndex, [doc.id]: x } };
+    }
     if (extracted?.status === 'unsupported') {
-      toast(AI_ERROR_TEXT.UNSUPPORTED_DOCUMENT, 'err');
+      toast(extracted.messages.find((m) => m.level === 'error')?.text ?? AI_ERROR_TEXT.UNSUPPORTED_DOCUMENT, 'err');
       return;
     }
     const candidates = extracted ? findRequirementCandidates(extracted) : [];

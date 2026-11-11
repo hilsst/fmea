@@ -206,7 +206,8 @@ class DocxWalker {
       if (t === 'w:p') this.para(n, kindOverride, part);
       else if (t === 'w:tbl') this.table(n, kindOverride, part);
       else if (t === 'w:sdt') this.body(kids(child(n, 'w:sdtContent') ?? {}), kindOverride, part);
-      else if (t === 'w:customXml' || t === 'w:ins' || t === 'w:smartTag') this.body(kids(n), kindOverride, part);
+      else if (t === 'w:customXml' || t === 'w:ins' || t === 'w:smartTag' || t === 'w:moveTo') this.body(kids(n), kindOverride, part);
+      else if (t === 'mc:AlternateContent') this.body(kids(child(n, 'mc:Choice') ?? child(n, 'mc:Fallback') ?? {}), kindOverride, part);
     }
   }
 }
@@ -235,7 +236,13 @@ function numSort(a: string, b: string) {
 
 export const parseDocx: Parser = async (_name, data) => {
   const zip = await JSZip.loadAsync(data);
-  const docXml = await zip.file('word/document.xml')?.async('string');
+  // 4.9.4: ana bölüm _rels/.rels üzerinden bulunur (bazı üreticiler word/document2.xml vb. kullanır).
+  let mainPart = 'word/document.xml';
+  const rels = await zip.file('_rels/.rels')?.async('string');
+  const m = rels && /<Relationship\b[^>]*Type="[^"]*\/officeDocument"[^>]*>/.exec(rels);
+  const target = m && /Target="([^"]+)"/.exec(m[0])?.[1];
+  if (target && zip.file(target.replace(/^\//, ''))) mainPart = target.replace(/^\//, '');
+  const docXml = await zip.file(mainPart)?.async('string');
   if (!docXml) throw new Error('word/document.xml bulunamadı (geçerli bir DOCX değil).');
   const styles = readStyles(await zip.file('word/styles.xml')?.async('string'));
   const mode: PageMode = docXml.includes('w:lastRenderedPageBreak') ? 'rendered' : 'explicit';

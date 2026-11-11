@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { UNSUPPORTED_MSG, parserFor, type ExtractedDoc, type ParserId } from '../../shared/docmodel';
+import { LEGACY_OFFICE_MSG, UNSUPPORTED_MSG, parserFor, type ExtractedDoc, type ParserId } from '../../shared/docmodel';
 import { errMsg, type ParseContext, type Parser, type ParseResult } from './util';
 import { parsePdf } from './pdf';
 import { parseDocx } from './docx';
@@ -57,7 +57,7 @@ export async function extractDocumentFile(path: string): Promise<ExtractedDoc> {
 async function extractAt(fileName: string, data: Buffer, depth: number): Promise<ExtractedDoc> {
   const parser = parserFor(fileName);
   if (parser === 'unsupported')
-    return envelope(fileName, data, parser, { status: 'unsupported', messages: [{ level: 'error', text: UNSUPPORTED_MSG }], meta: {}, blocks: [] });
+    return envelope(fileName, data, parser, { status: 'unsupported', messages: [{ level: 'error', text: LEGACY_OFFICE_MSG[fileName.toLowerCase().split('.').pop() ?? ''] ?? UNSUPPORTED_MSG }], meta: {}, blocks: [] });
   const ctx: ParseContext = {
     depth,
     extract: (n, d, dep) =>
@@ -84,7 +84,7 @@ async function extractAt(fileName: string, data: Buffer, depth: number): Promise
 function errorHint(parser: ParserId, data: Buffer): string | undefined {
   const ole = data.length > 8 && data.readUInt32BE(0) === 0xd0cf11e0;
   if ((parser === 'docx' || parser === 'xlsx' || parser === 'pptx') && ole)
-    return 'Dosya parola korumalı veya eski Office (OLE) biçiminde; açılamadı.';
+    return 'Dosya parola korumalı (şifreli) veya uzantısı değiştirilmiş eski Office (.doc/.xls) dosyası; açılamadı. Parolayı kaldırıp veya .docx/.xlsx olarak yeniden kaydedip tekrar ekleyin.';
   if (!data.length) return 'Dosya boş.';
   return undefined;
 }
