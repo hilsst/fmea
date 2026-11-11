@@ -7,6 +7,7 @@ import type { GenStage } from '../../shared/autogen';
 import { PfmeaWizard } from '../components/PfmeaWizard';
 import { StructureLibrary } from '../components/StructureLibrary';
 import { useAiChain } from '../components/AiChain';
+import { ReqChecklistDialog } from '../components/ReqChecklist';
 import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
 import { KC_LOCK_MSG, isCi, kcLocked, scmhKcDecision } from '../../shared/kcScmh'; // v4-kc
 import { isScmh } from '../../shared/scmhScoring'; // v4-kc
@@ -122,6 +123,7 @@ export function RequirementsTab() {
   const [sel, setSel] = useState<string[]>([]);
   const ai = useAi();
   const chain = useAiChain();
+  const [check, setCheck] = useState(false);
   // Boş kabul kriteri / doğrulama yöntemi / ölçü alanlarını gereksinim metninden doldurur (seçim yoksa tüm satırlar).
   const autofill = async () => {
     const rows = project.requirements.filter((r) => (sel.length ? sel.includes(r.id) : true) && r.text.trim());
@@ -155,11 +157,18 @@ export function RequirementsTab() {
             <button className="btn primary" disabled={chain.running} onClick={chain.open} title="Onayladığınız gereksinimlerden sırayla Yapı & Fonksiyon, DFMEA, proses akışı, PFMEA, aksiyonlar ve kontrol planını AI ile kurar. Başta yalnız proseslerin hangileri olduğu sorulur; satırlar AI Proposed gelir, sonunda siz incelersiniz.">
               ✦ AI ile tümünü kur
             </button>
+            <button className="btn" disabled={chain.running} onClick={chain.openLib} title="AI çağırmadan, onaylı gereksinimlerden Yapı & Fonksiyon, DFMEA, proses akışı, PFMEA, aksiyonlar ve kontrol planını yerleşik + firma kütüphanesinden kurar. İsterseniz benzer bir projenin onaylı satırlarından başlar.">
+              📚 Kütüphaneden tümünü kur
+            </button>
+            <button className="btn" onClick={() => setCheck(true)} title="Ürün tipine göre tipik gereksinim konularını mevcut gereksinimlerle karşılaştırır; eksik görünenleri listeler.">
+              ☑ Eksik gereksinim kontrolü
+            </button>
           </>
         }
         emptyHint="Gereksinimleri elle girin, Dokümanlar ekranından AI ile çıkarın veya metin yapıştırın. Onayladıktan sonra “✦ AI ile tümünü kur” ile FMEA’nın geri kalanını AI kursun."
       />
       {chain.dialogs}
+      {check && <ReqChecklistDialog onClose={() => setCheck(false)} />}
       {paste && (
         <PasteTextDialog
           onClose={() => setPaste(false)}

@@ -406,3 +406,14 @@ tr.crit td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .content > .grid-wrap > .grid-scroll { min-height: 300px; }
 details.card.coverage { margin: 6px 0; padding: 6px 14px; flex: none; }
 details.card.coverage summary { cursor: pointer; display: flex; gap: 8px; align-items: center; }
+
+/* 4.13.0: hücre içi kütüphane önerisi */
+.sugg-wrap { position: relative; }
+.sugg-btn { position: absolute; right: 2px; top: 2px; border: 0; background: transparent; cursor: pointer; font-size: 11px; line-height: 1; padding: 2px 3px; opacity: 0; border-radius: 4px; }
+td:hover .sugg-btn, .sugg-wrap:focus-within .sugg-btn, .sugg-btn:focus { opacity: 0.7; }
+.sugg-btn:hover { opacity: 1 !important; background: var(--line-2, #e5e7eb); }
+.sugg-pop { position: fixed; z-index: 60; width: 360px; max-height: 270px; overflow: auto; background: #fff; border: 1px solid var(--line-2, #cbd5e1); border-radius: 8px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18); padding: 4px; }
+.sugg-item { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; border: 0; background: transparent; padding: 6px 8px; border-radius: 6px; cursor: pointer; font: inherit; color: inherit; }
+.sugg-item:hover { background: #eff6ff; }
+.sugg-item small { font-size: 11px; }
+.sugg-pop .pad { padding: 8px; }

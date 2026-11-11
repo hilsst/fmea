@@ -291,7 +291,7 @@ export interface MergedLib {
 }
 
 const compile = (src: string): RegExp => new RegExp(src, 'i');
-const tplOf = (c: Tpl, extra: Partial<FailureTemplate> = {}): FailureTemplate => ({ failureMode: c.failureMode, effect: c.effect, cause: c.cause, prevention: c.prevention, detection: c.detection, s: c.s, o: c.o, d: c.d, company: true, ...extra });
+const tplOf = (c: Tpl & { sourceProject?: string }, extra: Partial<FailureTemplate> = {}): FailureTemplate => ({ failureMode: c.failureMode, effect: c.effect, cause: c.cause, prevention: c.prevention, detection: c.detection, s: c.s, o: c.o, d: c.d, company: true, ...(c.sourceProject ? { from: c.sourceProject } : {}), ...extra });
 
 // Yerleşik kayıtların kararlı kimlikleri: kapsam + hata modu (+ nadiren tekrar eden için sıra eki).
 const uniq = () => {
@@ -338,11 +338,11 @@ export function builtinIndex(): BuiltinIndex {
   if (builtinCache) return builtinCache;
   const u = uniq();
   const idx: BuiltinIndex = { dfmea: [], functionTypes: [], element: [], pfmea: [], pfmeaCommon: [], alt: [], params: [], gauges: [], structures: [] };
-  for (const [scope, list] of canonicalGroups(DFMEA_LIB)) for (const t of list) idx.dfmea.push({ id: u(`b:df:${scope}:${t.failureMode}`), scope, t });
-  for (const t of DFMEA_FUNCTION_TYPES) idx.functionTypes.push({ id: u(`b:dfn:${t.failureMode}`), scope: 'Functional', t });
-  for (const k of ELEMENT_KINDS) for (const t of k.templates) idx.element.push({ id: u(`b:el:${k.key}:${t.failureMode}`), scope: k.key, t });
-  for (const [scope, list] of canonicalGroups(PFMEA_LIB)) for (const t of list) idx.pfmea.push({ id: u(`b:pf:${scope}:${t.failureMode}`), scope, t });
-  for (const t of PFMEA_STEP_COMMON) idx.pfmeaCommon.push({ id: u(`b:pfc:${t.failureMode}`), scope: 'Common', t });
+  for (const [scope, list] of canonicalGroups(DFMEA_LIB)) for (const t of list) idx.dfmea.push({ id: t.id ?? u(`b:df:${scope}:${t.failureMode}`), scope, t });
+  for (const t of DFMEA_FUNCTION_TYPES) idx.functionTypes.push({ id: t.id ?? u(`b:dfn:${t.failureMode}`), scope: 'Functional', t });
+  for (const k of ELEMENT_KINDS) for (const t of k.templates) idx.element.push({ id: (t as { id?: string }).id ?? u(`b:el:${k.key}:${t.failureMode}`), scope: k.key, t });
+  for (const [scope, list] of canonicalGroups(PFMEA_LIB)) for (const t of list) idx.pfmea.push({ id: t.id ?? u(`b:pf:${scope}:${t.failureMode}`), scope, t });
+  for (const t of PFMEA_STEP_COMMON) idx.pfmeaCommon.push({ id: t.id ?? u(`b:pfc:${t.failureMode}`), scope: 'Common', t });
   for (const [fm, list] of Object.entries(PFMEA_ALT_CAUSES)) for (const a of list) idx.alt.push({ id: u(`b:alt:${fm}:${a.cause}`), failureMode: fm, a });
   for (const t of PARAM_LIB) idx.params.push({ id: `b:pr:${t.key}`, t });
   for (const t of GAUGE_LIB) idx.gauges.push({ id: `b:gg:${t.key}`, t });
