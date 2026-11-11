@@ -83,7 +83,7 @@ export function useAiChain() {
   /** Son AI hatası (tür + ileti); aşama satırında "AI yanıt vermedi" yerine gerçek neden gösterilir. */
   const lastErr = { current: '' };
   const transient = (e: { kind: string; message: string }) => e.kind === 'TIMEOUT' || (e.kind === 'API_ERROR' && /\((429|5\d\d)\)|rate.?limit|overload|capacity|busy/i.test(e.message));
-  const ai = async (call: () => Promise<AiResult & { note?: string }>, label: string, stage?: string): Promise<(AiResult & { ok: true }) | null> => {
+  const ai = async (call: () => Promise<AiResult & { note?: string }>, label: string, stage?: string, onErr?: (e: string) => void): Promise<(AiResult & { ok: true }) | null> => {
     let r = await call();
     // 4.9.1: hız sınırı / aşırı yük / zaman aşımı gibi geçici hatalarda beklenip en çok 2 kez yeniden denenir
     for (let n = 1; !r.ok && transient(r.error) && n <= 2; n++) {
@@ -93,6 +93,7 @@ export function useAiChain() {
     }
     if (r.ok) return r as AiResult & { ok: true };
     lastErr.current = `${r.error.kind}: ${r.error.message}`;
+    onErr?.(lastErr.current);
     mutate((d) => {
       d.aiRuns.push(failedRunEdit(d, r.meta?.role ?? label, label, r.error.kind, r.error.message, r.meta).row as never);
     });
@@ -110,36 +111,46 @@ export function useAiChain() {
 
   /** Birden çok AI çağrısının sonuçlarını birleştirir. Yanıt çıktı sınırında kesilirse (TRUNCATED) çağrı `split` ile ikiye bölünüp yeniden denenir. */
   type Call = { label: string; call: () => Promise<AiResult>; split?: () => Call[] };
-  const merge = async (calls: Call[], onStep: (i: number, total: number) => void, stage?: string) => {
+  const AI_PARALLEL = 3;
+  const merge = async (calls: Call[], onStep: (done: number, total: number) => void, stage?: string) => {
     const acc: Rows = { rows: [], issues: [], params: [] };
     let meta: AiRunMeta | undefined;
     const failed: string[] = [];
     const reasons: string[] = [];
     const queue = [...calls];
     let total = calls.length;
-    let i = 0;
-    while (queue.length) {
-      const c = queue.shift()!;
-      onStep(i, total);
-      const r = await ai(c.call, c.label, stage);
-      if (!r) {
-        const parts = lastErr.current.startsWith('TRUNCATED') && c.split ? c.split() : [];
-        if (parts.length > 1) {
-          queue.unshift(...parts);
-          total += parts.length - 1;
+    let done = 0;
+    onStep(0, total);
+    // 4.9.6: en çok AI_PARALLEL çağrı aynı anda; kesilen çağrı ikiye bölünüp kuyruğun başına eklenir.
+    const worker = async () => {
+      for (;;) {
+        const c = queue.shift();
+        if (!c) return;
+        let err = '';
+        const r = await ai(c.call, c.label, stage, (e) => (err = e));
+        if (!r) {
+          const parts = err.startsWith('TRUNCATED') && c.split ? c.split() : [];
+          if (parts.length > 1) {
+            queue.unshift(...parts);
+            total += parts.length - 1;
+            onStep(done, total);
+            continue;
+          }
+          done++;
+          failed.push(c.label);
+          if (!reasons.includes(err)) reasons.push(err);
+          onStep(done, total);
           continue;
         }
-        i++;
-        failed.push(c.label);
-        if (!reasons.includes(lastErr.current)) reasons.push(lastErr.current);
-        continue;
+        done++;
+        acc.rows.push(...((r.data.rows as unknown[]) ?? []));
+        acc.issues.push(...((r.data.issues as unknown[]) ?? []));
+        acc.params.push(...((r.data.params as unknown[]) ?? []));
+        meta = meta ? { ...meta, tokensIn: meta.tokensIn + r.meta.tokensIn, tokensOut: meta.tokensOut + r.meta.tokensOut } : r.meta;
+        onStep(done, total);
       }
-      i++;
-      acc.rows.push(...((r.data.rows as unknown[]) ?? []));
-      acc.issues.push(...((r.data.issues as unknown[]) ?? []));
-      acc.params.push(...((r.data.params as unknown[]) ?? []));
-      meta = meta ? { ...meta, tokensIn: meta.tokensIn + r.meta.tokensIn, tokensOut: meta.tokensOut + r.meta.tokensOut } : r.meta;
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(AI_PARALLEL, Math.max(1, calls.length)) }, worker));
     return { acc, meta, failed, reasons, total };
   };
 
@@ -208,7 +219,7 @@ export function useAiChain() {
             const ctx = projectContext(p, { approvedReqsOnly: true });
             const { acc, meta, failed, reasons, total } = await merge(
               groups.map((g, i) => splittable(`DFMEA ${i + 1}/${groups.length}`, g, (gg) => { const target = dfmeaTargetText(gg); return api.aiDfmea({ context: ctx, target, mode, expert: expertBrief(p, 'dfmea'), exampleQuery: exampleQuery(p, 'dfmea', target) }); })),
-              (i, t) => set('dfmea', 'run', `AI fonksiyon grubu ${i + 1}/${t}`),
+              (d, t) => set('dfmea', 'run', `AI fonksiyon grubu ${d}/${t} tamamlandı`),
               'dfmea',
             );
             if (meta) n = addProposals('dfmea', acc, meta, ready.map((t) => t.fn.id).join(', '));
@@ -257,7 +268,7 @@ export function useAiChain() {
                   return api.aiPfmea({ context: ctx, composite, target, mode, expert: expertBrief(p, 'pfmea', gg.map((st) => st.id)), exampleQuery: exampleQuery(p, 'pfmea', target) });
                 }),
               ),
-              (i, t) => set('pfmea', 'run', `${lib} kütüphane satırı · AI adım grubu ${i + 1}/${t}`),
+              (d, t) => set('pfmea', 'run', `${lib} kütüphane satırı · AI adım grubu ${d}/${t} tamamlandı`),
               'pfmea',
             );
             if (meta) n = addProposals('pfmea', acc, meta, stepIds.join(', '));
