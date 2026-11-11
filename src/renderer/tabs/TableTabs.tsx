@@ -5,6 +5,7 @@ import { reqAutoValues } from '../../shared/reqAutofill';
 import type { GenStage } from '../../shared/autogen';
 import { FlowTemplatePicker } from '../components/FlowTemplates';
 import { PfmeaWizard } from '../components/PfmeaWizard';
+import { StructureLibrary } from '../components/StructureLibrary';
 import { useAiChain } from '../components/AiChain';
 import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
 import { KC_LOCK_MSG, isCi, kcLocked, scmhKcDecision } from '../../shared/kcScmh'; // v4-kc
@@ -201,6 +202,7 @@ export function StructureTab() {
   const [sel, setSel] = useState<string[]>([]);
   const gen = useAutogen();
   const ai = useAi();
+  const [lib, setLib] = useState(false);
   const addChild = async () => {
     const parent = project.structure.find((s) => s.id === sel[0]);
     const b = batch(project);
@@ -218,6 +220,9 @@ export function StructureTab() {
             <button className="btn" onClick={addChild} disabled={sel.length > 1}>
               ↳ Alt eleman ekle
             </button>
+            <button className="btn" onClick={() => setLib(true)} title="AI kullanmadan: ürün tipini seçin (sandviç panel, radom, talaşlı parça, kaynaklı konstrüksiyon ...); tipik elemanlar ve fonksiyonları kütüphaneden önerilir, gereksinimler ilgili elemana bağlanır, elemana özel DFMEA satırları önerilir. Hepsi AI Proposed gelir.">
+              📚 Kütüphaneden yapı ekle
+            </button>
             <button className="btn" onClick={() => gen(['structure'], 'Gereksinimlerden yapı & fonksiyon')} title="AI kullanmadan, kural tabanlı: yapıya bağlı olmayan her gereksinim cümlesinden bir fonksiyon satırı türetir (AI Proposed). Eleman adlarını ve fonksiyonları akıllıca çıkarmak için “✦ AI: Gereksinimlerden oluştur”u kullanın.">
               ⟳ Gereksinimlerden öner
             </button>
@@ -226,10 +231,11 @@ export function StructureTab() {
             </button>
           </>
         }
-        emptyHint="“✦ AI: Gereksinimlerden oluştur” ile yapı ağacını onaylı gereksinimlerden önerin, “⟳ Gereksinimlerden öner” ile AI'sız taslak alın veya Product → Assembly → Part → Feature hiyerarşisini elle kurun."
+        emptyHint="“📚 Kütüphaneden yapı ekle” ile ürün tipine göre hazır yapı ağacını AI'sız kurun, “✦ AI: Gereksinimlerden oluştur” ile yapı ağacını onaylı gereksinimlerden önerin, “⟳ Gereksinimlerden öner” ile AI'sız taslak alın veya Product → Assembly → Part → Feature hiyerarşisini elle kurun."
       />
       <StructureTree project={project} onSelect={setSel} />
       {ai.dialogs}
+      {lib && <StructureLibrary onClose={() => setLib(false)} />}
     </div>
   );
 }
