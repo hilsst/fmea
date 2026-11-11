@@ -115,6 +115,9 @@ export const PFMEA_LIB: Record<string, FailureTemplate[]> = {
   'Vacuum Bagging': [
     P('Vakum kaçağı', 'Porozite, yetersiz konsolidasyon', 'Sızdırmazlık bandı / torba hatalı uygulanmış', 'Method', 'Torbalama talimatı ve kontrol listesi yok', 'Torbalama talimatı + kontrol listesi', 'Vakum sızdırmazlık (drop) testi', 7, 4, 3),
     P('Breather süreksiz / vakum yolu tıkalı', 'Lokal porozite, reçine birikmesi', 'Breather yerleşimi kontrol edilmiyor', 'Man', 'Port yerleşim çizimi yok', 'Port yerleşim çizimi, pleat kontrol listesi', 'Kür boyunca vakum kaydı', 7, 3, 5),
+    P('Torba delinmesi / köprüleme (bridging)', 'Vakum kaybı, köşede reçine birikmesi veya boşluk, lokal porozite', 'Keskin köşe / yabancı madde torbayı deliyor; torba bol bırakılmamış', 'Method', 'Köşe koruma ve pleat yöntemi talimatta yok', 'Köşe koruma bandı, pleat talimatı, torba malzemesi seçimi', 'Vakum düşüş testi + kür boyunca vakum kaydı', 7, 4, 4),
+    P('Ayırıcı film / peel ply eksik veya yanlış yerleşmiş', 'Parça yüzeyi yapışır, ikincil bağlama yüzeyi bozulur', 'Sarf malzeme yerleşim planı yok', 'Method', 'Torbalama sarf malzeme listesi ve yerleşim çizimi yok', 'Torbalama kontrol listesi, sarf malzeme kitleme', 'Torba kapatma öncesi çift kontrol', 6, 3, 5),
+    P('Yanlış / raf ömrü geçmiş sarf malzeme (torba, bant, breather)', 'Kür sırasında kaçak veya torba erimesi', 'Sarf malzeme sıcaklık sınıfı ve raf ömrü kontrol edilmiyor', 'Material', 'Sarf malzeme kabul ve etiketleme prosedürü yok', 'Sarf malzeme sıcaklık sınıfı etiketi, FIFO', 'Torbalama öncesi malzeme etiket kontrolü', 7, 3, 5),
   ],
   Cure: [
     P('Kür sıcaklığı / süresi spesifikasyon dışında', 'Eksik kür; mekanik özellik ve Tg düşer', 'Yanlış kür programı seçilmiş', 'Machine', 'Reçete seçimi manuel ve kilitli değil', 'Reçete kilidi (software parameter lock), periyodik TUS ve kalibrasyon', 'Kür grafiği inceleme + tanık numune testi', 9, 3, 4, 'Software parameter lock'),
@@ -129,6 +132,9 @@ export const PFMEA_LIB: Record<string, FailureTemplate[]> = {
   Machining: [
     P('Delik / kenar delaminasyonu', 'Yapısal dayanım kaybı, hurda', 'Takım aşınmış; destek (backing) yok', 'Machine', 'Takım ömrü takibi yok', 'Takım ömrü sayacı, backing plate', 'Delik kenarı görsel muayene + NDT', 7, 4, 5),
     P('Delik çapı / konumu tolerans dışında', 'Montaj uyumsuzluğu', 'Fikstür bağlama hatası veya CNC program hatası', 'Method', 'Fikstür ve program doğrulaması yapılmıyor', 'CNC program kilidi, fikstür doğrulama', 'CMM / tapa mastar', 6, 4, 4, 'Fixture'),
+    P('Kenarda lif sökülmesi / tüylenme (fiber pull-out)', 'Kenar bütünlüğü kaybı, nem girişi ve ek işçilik', 'Takım tipi / kesme hızı kompozite uygun değil', 'Machine', 'Kompozit için onaylı takım ve parametre seti yok', 'Elmas / karbür kompozit takımı, onaylı kesme parametreleri', 'Kenar görsel muayene', 5, 4, 4),
+    P('Isıl hasar (reçine yanması, matriks erimesi)', 'Matriks bozulur, delaminasyon başlangıcı', 'Kesme hızı yüksek / soğutma ya da toz emişi yetersiz', 'Machine', 'Kesme parametreleri ve takım ömrü kilitli değil', 'Parametre kilidi, takım ömrü sayacı', 'Görsel muayene (renk değişimi)', 7, 3, 5),
+    P('Kesim ölçüsü / kontur tolerans dışında', 'Montaj uyumsuzluğu, hurda', 'Kesim şablonu veya program revizyonu yanlış', 'Method', 'Şablon / program – çizim revizyon eşleştirmesi yok', 'Kilitli CNC programı, revizyon kontrollü şablon', 'Boyutsal kontrol (mastar / CMM)', 6, 3, 4, 'Fixture'),
   ],
   Painting: [
     P('Kaplama kalınlığı limit dışında', 'Koruma / görünüm / elektriksel performans etkilenir', 'Kat sayısı ve tabanca ayarı kontrol edilmiyor', 'Man', 'Kat kalınlığı süreç içinde ölçülmüyor', 'Reçete / karışım kaydı, operatör yeterliliği', 'Kuru film kalınlığı ölçümü', 6, 4, 4),
@@ -141,10 +147,16 @@ export const PFMEA_LIB: Record<string, FailureTemplate[]> = {
   NDT: [
     P('Hata tespit edilemiyor (yanlış kabul)', 'Uygunsuz parça müşteriye gider', 'Personel yeterliliği / tarama planı eksik', 'Man', 'NDT personeli sertifikasız veya tarama planı yok', 'Seviye 2/3 personel, onaylı NDT tekniği, tarama haritası', 'Seviye 3 gözden geçirme, referans standartla günlük kontrol', 9, 3, 6),
     P('Yanlış kabul kriteri uygulanıyor', 'Uygunsuz parça kabul edilir veya iyi parça reddedilir', 'Kabul kriteri iş talimatına doğru aktarılmamış', 'Method', 'Kabul kriteri kaynağı doğrulanmıyor', 'Kabul kriteri – şartname izlenebilirliği', 'Seviye 3 gözden geçirme', 8, 3, 5),
+    P('NDT cihazı kalibrasyonu / referans standart uygun değil', 'Hatalar yanlış boyutlanır veya hiç görülmez', 'Cihaz ayarı referans standartla her vardiyada doğrulanmıyor', 'Measurement', 'Günlük referans standart kontrolü zorunlu değil', 'Referans standart (kalibrasyon blok / panel) ile vardiya başı doğrulama', 'Kalibrasyon kaydı incelemesi', 8, 3, 5),
+    P('Tarama kapsamı eksik (alan atlanıyor)', 'Muayene edilmemiş bölgedeki hata tespit edilmez', 'Tarama haritası veya parça geometrisi için tarama planı yok', 'Method', 'Tarama planı / ızgara işaretleme yok', 'Tarama haritası, parça üzerinde ızgara işaretleme', 'Seviye 3 tarama kaydı incelemesi', 8, 3, 5),
+    P('Muayene sonucu yanlış parçaya / seri numarasına kaydediliyor', 'İzlenebilirlik kaybı, uygunsuz parça kabul edilebilir', 'Kayıt elle yapılıyor', 'Man', 'Parça – rapor eşleştirmesi sistemde yok', 'Seri numaralı muayene raporu, barkod eşleştirme', 'Rapor – parça eşleştirme kontrolü', 7, 3, 4, 'Barcode'),
   ],
   Inspection: [
     P('Ölçüm hatası (uygunsuz parça kabul ediliyor)', 'Uygunsuz parça müşteriye gider', 'Ölçüm sistemi yeterliliği (MSA) yok', 'Measurement', 'Kalibrasyon / MSA yapılmamış', 'Kalibrasyon programı, MSA (Gage R&R)', 'Bağımsız ikinci kontrol', 8, 3, 6),
     P('Muayene adımı atlanıyor', 'Uygunsuz parça sonraki operasyona geçer', 'İş akışında muayene onayı zorunlu değil', 'Method', 'Rota (router) adımı imza zorunluluğu yok', 'Rota imza / sistem kilidi', 'Son kontrol rota incelemesi', 8, 3, 5, 'Software parameter lock'),
+    P('Yanlış kabul kriteri / çizim revizyonu ile muayene', 'Uygunsuz parça kabul edilir veya iyi parça reddedilir', 'Muayene noktasında güncel olmayan çizim / kontrol planı kullanılıyor', 'Method', 'Doküman revizyon kontrolü muayene istasyonunda yok', 'Revizyon kontrollü muayene talimatı, istasyonda yalnız güncel doküman', 'İlk parça muayene raporu – revizyon kontrolü', 7, 3, 5),
+    P('Muayene sonucu yanlış parçaya kaydediliyor / uygunsuz parça ayrılmıyor', 'İzlenebilirlik kaybı, uygunsuz parça karışır', 'Uygunsuz ürün ayırma ve etiketleme kuralı uygulanmıyor', 'Man', 'Karantina alanı ve kırmızı etiket prosedürü yok', 'Karantina alanı, kırmızı etiket (NCR) prosedürü', 'Sevk öncesi uygunsuz ürün alanı kontrolü', 8, 3, 4),
+    P('Görsel muayene personel / aydınlatma bağımlı (hata görülmüyor)', 'Yüzey ve kenar hataları kaçar', 'Aydınlatma ve referans numune yok', 'Environment', 'Muayene istasyonu koşulları tanımlı değil', 'Aydınlatma standardı, sınır numune (limit sample)', 'Bağımsız ikinci muayene (örnekleme)', 6, 4, 6),
   ],
   Assembly: [
     P('Yanlış / eksik bağlantı elemanı', 'Montaj bütünlüğü bozulur; yapısal risk', 'Benzer parçalar karışıyor', 'Material', 'Kitleme yapılmıyor', 'Kitleme, poka-yoke kutular', 'Montaj sonrası görsel kontrol', 8, 3, 5, 'Poka-yoke'),
@@ -198,6 +210,12 @@ export const PFMEA_LIB: Record<string, FailureTemplate[]> = {
     P('Maskelenmesi gereken yüzey kaplanıyor', 'Elektriksel temas / geçme toleransı bozulur', 'Maskeleme gereksinimi iş emrine aktarılmamış', 'Method', 'Maskeleme alanları çizimden işaretlenmemiş', 'Maskeleme şablonu, iş emrinde maskeleme çizimi', 'Maskeleme sonrası görsel kontrol', 5, 3, 4, 'Maskeleme şablonu'),
   ],
   // 4.9.0: kompozit alt prosesleri (el yatırması, vakum infüzyon, RTM, filament sarma, pres kalıplama)
+  'Mold Prep': [
+    P('Ayırıcı (release agent) eksik veya düzensiz uygulanmış', 'Parça kalıba yapışır, yüzey hasarı ve delaminasyon', 'Ayırıcı uygulama yöntemi ve tazeleme aralığı tanımlı değil', 'Method', 'Kalıp hazırlık kontrol listesi yok', 'Kalıp hazırlık kontrol listesi, ayırıcı uygulama kaydı', 'Serim öncesi kalıp yüzey görsel kontrolü', 7, 4, 5),
+    P('Kalıp yüzeyi kirli / önceki reçine veya ayırıcı birikintisi var', 'Parça yüzey kusuru, yapışma', 'Kalıp temizliği periyodu tanımlı değil', 'Method', 'Temizlik talimatı ve periyodu yok', 'Kalıp temizlik talimatı ve periyodu', 'Kalıp yüzey muayenesi (ışık altında)', 6, 4, 5),
+    P('Kalıp hasarlı / aşınmış (çizik, çukur, geometri sapması)', 'Parça yüzeyinde ve geometrisinde tekrarlayan hata', 'Kalıp periyodik kontrol / bakım planı yok', 'Machine', 'Kalıp envanteri ve bakım kaydı yok', 'Periyodik kalıp geometri ve yüzey kontrolü', 'İlk parça boyutsal kontrol', 7, 3, 4),
+    P('Ayırıcı kür / bekleme süresine uyulmuyor', 'Ayırıcı filmi yetersiz kalır, yapışma veya yüzey lekesi', 'Bekleme süresi takip edilmiyor', 'Man', 'Süre limiti iş talimatında ve kayıtta yok', 'Ayırıcı bekleme süresi etiketi ve zamanlayıcı', 'Kayıt kontrolü', 5, 4, 6),
+  ],
   'Wet Lay-up': [
     P('Reçine / sertleştirici karışım oranı hatalı', 'Eksik kür; mekanik özellik ve Tg düşer', 'Manuel tartım / karışım', 'Man', 'Karışım oranı ve tartım kaydı tutulmuyor', 'Kalibre terazi, karışım kayıt formu, otomatik dozaj', 'Tanık numune sertlik (Barcol) / kür testi', 8, 4, 5, 'Otomatik dozaj'),
     P('Pot life aşılmış reçine kullanılıyor', 'Elyaf ıslanmaz; bağlanma zayıflığı', 'Karışım zamanı takip edilmiyor', 'Method', 'Pot life süresi iş talimatında ve kapta işaretli değil', 'Karışım saati etiketi, pot life zamanlayıcısı', 'Serim sırasında görsel viskozite kontrolü', 7, 3, 6, 'Zamanlayıcı'),
@@ -273,7 +291,7 @@ export function materialFamily(p: FamilySource): MaterialFamily {
 }
 
 /** Kompozit üretimine özgü alanlar; metal parçada önerilmez. */
-export const COMPOSITE_AREAS = new Set(['Wet Lay-up', 'Infusion', 'RTM', 'Filament Winding', 'Compression Molding', 'Lay-up', 'Vacuum Bagging', 'Cure', 'Autoclave', 'Demolding', 'Machining', 'Surface Treatment']);
+export const COMPOSITE_AREAS = new Set(['Wet Lay-up', 'Infusion', 'RTM', 'Filament Winding', 'Compression Molding', 'Lay-up', 'Vacuum Bagging', 'Mold Prep', 'Cure', 'Autoclave', 'Demolding', 'Machining', 'Surface Treatment']);
 
 const METAL_FINISH: [RegExp, string] = [/anodi[zs]|kromat|alodin|chromate|galvaniz|pasivasyon|passivat|nikel kaplama|plating|elektrolitik kaplama/, 'Metal Finishing'];
 
@@ -310,6 +328,7 @@ export function pfmeaAreaOf(name: string, family: MaterialFamily = ''): string {
     [/filament|şerit sarma|sarım|winding|mandrel|reçine banyosu/, 'Filament Winding'],
     [/pres kalıplama|sıkıştırma|compression|\bsmc\b|\bbmc\b|şarj|kalıp ısıtma|flaş/, 'Compression Molding'],
     [/el yatırma|ıslak serim|wet lay|reçine hazırlama|reçine karışım|rulolama/, 'Wet Lay-up'],
+    [/kalıp hazırlığ|ayırıcı uygula|release agent|kalıp temizli/, 'Mold Prep'],
     [/torna|turning|talaşlı|frezeleme|milling|raybal|taşlama|grinding|çapak|deburr|testere/, 'Metal Machining'],
     [/büküm|bükme|şekillendir|forming|bending|sac kesme|punch/, 'Forming'],
     [/incoming|storage|material|malzeme|thaw|çözdür|depo|kabul/, 'Material'],
