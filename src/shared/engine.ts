@@ -14,6 +14,7 @@ import { ensureLineNumbers, splitRequirement } from './riskModel'; // v4-risk
 import { REQ_ISSUE_TRIGGERS, syncReqIssue } from './reqIssues';
 import { rpnActionValues } from './rpnAction';
 import { FLOW_SOURCE, stepIo } from './flowLib';
+import { paramFillValues } from './paramLib';
 import { materialFamily } from './failureLib';
 import type {
   ActionRow,
@@ -748,7 +749,11 @@ function deriveStepIo(c: Ctx, stepId: string) {
   for (const [text, cat4M] of hit.io.inputs)
     c.add('pfdItems', { stepId, kind: 'Input', text, cat4M, sourceOfVariation: true, source: src, origin: 'template' } as Partial<PfdItemRow>, why);
   for (const parameter of hit.io.params)
-    c.add('processParams', { stepId, parameter, source: `${src} – limit VERİ YOK`, notes: 'VERİ YOK – doğrulanmalı (limitleri proses spesifikasyonundan girin)', origin: 'template' } as Partial<ProcessParamRow>, why);
+    c.add('processParams', {
+      stepId, parameter, source: `${src} – limit VERİ YOK`, notes: 'VERİ YOK – doğrulanmalı (limitleri proses spesifikasyonundan girin)', origin: 'template',
+      // 4.11.0: kategori, birim, etkilenen karakteristik, önleme, izleme, reaksiyon, validasyon ve limit kaynağı parametre kütüphanesinden
+      ...paramFillValues({ parameter, category: '', unit: '', productCharacteristic: '', prevention: '', monitoring: '', reaction: '', validation: '', notes: '', nominal: null, lsl: null, usl: null }),
+    } as Partial<ProcessParamRow>, why);
 }
 
 function syncActionFromFmea(c: Ctx, table: 'dfmea' | 'pfmea', row: DfmeaRow | PfmeaRow, field: string) {

@@ -161,6 +161,30 @@ export const PFMEA_LIB: Record<string, FailureTemplate[]> = {
   Assembly: [
     P('Yanlış / eksik bağlantı elemanı', 'Montaj bütünlüğü bozulur; yapısal risk', 'Benzer parçalar karışıyor', 'Material', 'Kitleme yapılmıyor', 'Kitleme, poka-yoke kutular', 'Montaj sonrası görsel kontrol', 8, 3, 5, 'Poka-yoke'),
     P('Tork değeri limit dışında', 'Gevşeme veya parça hasarı', 'Tork aleti kalibrasyonsuz / ayarı yanlış', 'Machine', 'Tork aleti kalibrasyonu izlenmiyor', 'Kalibre tork aleti, ayar kilidi', 'Tork kaydı / işaretleme', 7, 3, 4),
+    // 4.11.0
+    P('Tork sırası / kademesi uygulanmıyor', 'Düzensiz ön yük; arayüzde boşluk, sızıntı veya çarpılma', 'Sıkma sırası talimatta tanımlı değil', 'Method', 'Çok cıvatalı bağlantı için sıkma sırası şeması yok', 'Sıkma sırası şeması, kademeli tork talimatı', 'Tork işareti (boya) ve kayıt kontrolü', 7, 3, 5),
+    P('Bağlantı elemanı sıkılmadan bırakılıyor (tork atlanıyor)', 'Bağlantı gevşer / düşer; yapısal ve emniyet riski', 'Tamamlanma kontrolü yok; iş bölünüyor', 'Man', 'Tork işareti ve ikinci göz kontrolü tanımlı değil', 'Tork işareti (boya), tork sayaçlı alet', 'Görsel muayene (tork işareti), bağımsız kontrol', 9, 3, 4, 'Tork sayaçlı / kayıtlı tork aleti'),
+    P('Kilitleme elemanı (emniyet teli / kopilya / kilit pulu) takılmıyor veya hatalı', 'Titreşimde gevşeme', 'Kilitleme adımı talimatta vurgulanmamış', 'Method', 'Kilitleme kontrol noktası yok', 'Montaj talimatında kilitleme adımı ve görsel standart', 'Görsel muayene, bağımsız kontrol', 8, 3, 4),
+    P('Parça ters / yanlış konumda monte ediliyor', 'Fonksiyon kaybı; söküp takma, hasar', 'Simetrik parça; yön işareti yok', 'Method', 'Hata önleyici fikstür / işaret yok', 'Yön işareti, montaj fikstürü', 'Montaj kontrolü (fit check)', 7, 3, 4, 'Tek yönlü fikstür / pim'),
+    P('Arayüzde boşluk kalıyor (şim eksik / yanlış)', 'Ön gerilme, cıvata eğilmesi, yorulma', 'Boşluk ölçülmeden sıkılıyor', 'Method', 'Boşluk ölçüm ve şim kuralı tanımlı değil', 'Boşluk ölçümü ve şim seçim talimatı', 'Feeler ile boşluk kontrolü', 7, 3, 5),
+    P('Montajda yabancı madde (FOD) kalıyor', 'Fonksiyon bozulur; ikincil hasar', 'Çalışma alanı ve takım kontrolü yetersiz', 'Environment', 'FOD kontrol prosedürü uygulanmıyor', 'FOD kontrolü, takım sayımı (gölge pano)', 'Kapatma öncesi görsel muayene', 8, 3, 5),
+  ],
+  // 4.11.0: perçinleme ve sızdırmazlık (sealant) uygulaması
+  Riveting: [
+    P('Perçin başı formu / yüksekliği uygun değil', 'Bağlantı dayanımı düşer; yüzeyde taşma (flush) uygunsuzluğu', 'Perçin tabancası / çekme kuvveti ayarı yanlış', 'Machine', 'Tabanca ayarı iş başında doğrulanmıyor', 'Onaylı tabanca ayarı, iş başı test kuponu', 'Baş ölçü mastarı ile kontrol, görsel muayene', 7, 4, 4),
+    P('Yanlış perçin tipi / boyu (grip) kullanılıyor', 'Yetersiz sıkma veya baş oluşmaması; bağlantı kaybı', 'Benzer perçinler karışıyor; sıkma boyu tablosu kullanılmıyor', 'Material', 'Kitleme ve grip kontrolü yapılmıyor', 'Kitleme, grip mastarı ile boy seçimi', 'Montaj öncesi parça / lot doğrulama, grip mastarı', 8, 3, 4, 'Renk / kod ayrımlı kitleme'),
+    P('Delik büyük / oval / çapaklı delinmiş', 'Perçin gevşek kalır; yorulma ömrü düşer', 'Aşınmış matkap, fikstürsüz delme, çapak alınmadan perçinleme', 'Method', 'Takım ömrü ve çapak alma adımı tanımlı değil', 'Delme şablonu / burç, takım ömrü sayacı, çapak alma adımı', 'Delik çapı geçer / geçmez mastar, görsel muayene', 7, 4, 4),
+    P('Parçalar arasında boşluk kalıyor (sıkıştırma yetersiz)', 'Perçin eğilir, bağlantı gevşek; fretting', 'Geçici bağlama (cleco) sayısı / sırası yetersiz', 'Method', 'Sıkıştırma ve perçinleme sırası talimatta tanımlı değil', 'Geçici bağlama planı, perçinleme sırası talimatı', 'Boşluk (feeler) kontrolü', 7, 3, 5),
+    P('Perçinleme sırasında yüzey hasarı (çökme / çizik)', 'Görünüm ve korozyon koruması bozulur; yeniden işleme', 'Tutucu (bucking bar) / tabanca ağzı uygun değil, yanlış açı', 'Man', 'Operatör eğitimi ve uygun takım tanımı eksik', 'Uygun takım tanımı, operatör sertifikasyonu', 'Görsel muayene', 5, 4, 4),
+    P('Eksik perçin (atlanmış konum)', 'Yük dağılımı bozulur; yapısal risk', 'Perçin sayımı / konum kontrolü yok', 'Method', 'Tamamlanma kontrolü tanımlı değil', 'Perçin konum şablonu, sayım kontrol listesi', 'Görsel muayene + sayım', 8, 3, 3),
+  ],
+  Sealing: [
+    P('Sealant karışım oranı / karışımı hatalı', 'Sealant kürlenmez; sızdırmazlık ve korozyon koruması kaybı', 'Elle tartım hatası, yetersiz karıştırma', 'Method', 'Ön dozajlı kartuş kullanılmıyor', 'Ön dozajlı kartuş / otomatik karıştırıcı', 'Tanık numune sertlik kontrolü', 7, 3, 5),
+    P('Sealant uygulama ömrü (pot life) aşılmış', 'Yapışma zayıf; sızıntı', 'Karışım saati izlenmiyor', 'Method', 'Zaman etiketi uygulanmıyor', 'Karışım saati etiketi, küçük parti', 'Kayıt kontrolü, tanık numune', 7, 3, 5),
+    P('Yüzey sealant öncesi kirli / hazırlıksız', 'Sealant yapışmaz; ara yüzey korozyonu, sızıntı', 'Temizlik / astar (adhesion promoter) adımı atlanıyor', 'Method', 'Temizlik – uygulama arası süre tanımlı değil', 'Temizlik talimatı, süre penceresi', 'Görsel muayene, yapışma tanık numunesi', 7, 4, 5),
+    P('Sealant eksik / süreksiz (boşluk, hava kabarcığı)', 'Sızıntı yolu; nem girişi', 'Uygulama miktarı ve fileto ölçüsü tanımsız', 'Method', 'Fileto şablonu / görsel standart yok', 'Fileto şablonu, sıkmada taşma (squeeze-out) kontrolü', 'Görsel muayene (taşma sürekliliği), sızdırmazlık testi', 7, 4, 4),
+    P('Sealant kürlenmeden sonraki operasyona / teste geçiliyor', 'Sealant yer değiştirir; sızıntı', 'Kür süresi ve ortam koşulu izlenmiyor', 'Method', 'Kür süresi kaydı yok', 'Kür süresi etiketi, ortam koşulu kaydı', 'Tanık numune sertlik kontrolü', 6, 3, 4),
+    P('Conta / O-ring montajda hasar görüyor veya yanlış takılıyor', 'İlk kullanımda sızıntı', 'Keskin kenar, yağlama eksik, yanlış conta', 'Man', 'Montaj talimatı ve conta doğrulaması eksik', 'Montaj talimatı, conta parça numarası doğrulama', 'Görsel muayene, sızdırmazlık testi', 7, 3, 4),
   ],
   Demolding: [
     P('Kalıptan çıkarmada parça hasarı', 'Delaminasyon, yüzey hasarı, hurda', 'Yanlış çıkarma yöntemi / aracı', 'Method', 'Çıkarma talimatı ve uygun araç yok', 'Çıkarma talimatı, yumuşak takımlar', 'Görsel muayene + NDT', 7, 3, 5),
@@ -311,7 +335,9 @@ export function pfmeaAreaOf(name: string, family: MaterialFamily = ''): string {
       [/torna|turning|talaşlı|frez|milling|raybal|taşlama|grinding|testere|delme|delik|drill|matkap|kılavuz|tapping|cnc|işleme|machin/, 'Metal Machining'],
       [/incoming|storage|material|malzeme|depo|kabul/, 'Material'],
       [/inspect|muayene|kontrol|ölçüm/, 'Inspection'],
-      [/assembl|montaj|perçin|rivet/, 'Assembly'],
+      [/perçinleme|perçin çak|rivet/, 'Riveting'],
+      [/sealant|mastik|sızdırmazlık (macunu|uygula)|conta tak/, 'Sealing'],
+      [/assembl|montaj/, 'Assembly'],
       [/pack|ambalaj|sevk/, 'Packaging'],
     ];
     return metal.find(([re]) => re.test(n))?.[1] ?? 'Generic';
@@ -322,6 +348,9 @@ export function pfmeaAreaOf(name: string, family: MaterialFamily = ''): string {
     [/ndt|ultrason|x-ray|tap test|tahribatsız/, 'NDT'],
     [/kaynak|weld|puntala/, 'Welding'],
     METAL_FINISH, // 4.5.0: anodize vb. her zaman metal yüzey işlemi
+    // 4.11.0: perçinleme ve sealant ("ara yüzey" → yüzey işlemi sanılmasın diye genel eşleşmelerden önce)
+    [/perçinleme|perçin çak|rivet/, 'Riveting'],
+    [/sealant|mastik|sızdırmazlık (macunu|uygula)|conta tak/, 'Sealing'],
     // 4.9.0: kompozit alt prosesleri (genel kompozit eşleşmelerinden önce)
     [/infüzyon|infusion|akış ağı/, 'Infusion'],
     [/\brtm\b|reçine transfer|reçine enjeksiyon|kalıp kapama|preformun kalıba/, 'RTM'],
