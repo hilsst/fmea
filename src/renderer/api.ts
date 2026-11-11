@@ -35,10 +35,17 @@ function browserFallback(): Api {
     aiSetKey: async () => true,
     aiRequirements: fail,
     aiDfmea: fail,
+    aiStructure: fail,
     aiPfmea: fail,
     aiReview: fail,
+    examplesList: async () => [],
+    examplesInfo: async () => ({ count: 0 }),
+    examplesClear: async () => undefined,
     onMenu: noop,
     onOpenFile: noop,
+    checkUpdates: () => undefined,
+    installUpdate: () => undefined,
+    onUpdate: noop,
   } as unknown as Api;
 }
 

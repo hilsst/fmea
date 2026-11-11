@@ -1,6 +1,7 @@
 // Semantic FMEA Validator (§17) ve Level 2 mühendislik kontrolleri (§39).
 // Kurallar sezgiseldir; bulgular mühendis değerlendirmesi içindir, otomatik düzeltme yapılmaz.
 import type { DfmeaRow, PfmeaRow, Project } from './types';
+import { riskFindings } from './risk'; // v4-risk
 
 export interface Finding {
   kind: 'FMEA LOGIC ERROR' | 'ENGINEERING WARNING';
@@ -101,5 +102,6 @@ export function semanticFindings(p: Project): Finding[] {
     if (c.kcId && (!has(c.reactionPlan) || /^(karantina|quarantine|ncr)\b/i.test(c.reactionPlan.trim()) && c.reactionPlan.length < 30))
       f('ENGINEERING WARNING', 'cp-reaction', c.id, 'reactionPlan', 'KC satırında reaksiyon planı eksik veya yetersiz (durdur → ayır → son kabul → lot/seri → bildir → NCR → karar → kök neden → FMEA/CP güncelleme).');
   }
+  out.push(...riskFindings(p)); // v4-risk
   return out;
 }

@@ -3,7 +3,7 @@
 import ExcelJS from 'exceljs';
 import { verifyBaseline } from './baseline';
 import { traceability } from './checks';
-import { COLUMNS, cellText, type Col } from './columns';
+import { cellText, tableColumns, type Col } from './columns';
 import { TABLE_LABEL } from './model';
 import { QUALITY_SCORE_NOTE, qualityReport } from './quality';
 import { RPN_WARNING } from './scoring';
@@ -122,7 +122,7 @@ function grid(ws: ExcelJS.Worksheet, p: Project, row: number, labels: string[], 
 const NUMERIC: Col['type'][] = ['score', 'number'];
 
 function colRows(p: Project, table: TableKey, rows: AnyRow[] = p[table] as AnyRow[]) {
-  const cols = COLUMNS[table];
+  const cols = tableColumns(table, p.settings.tableFormat);
   const labels = ['ID', ...cols.map((c) => c.label)];
   const keys = ['id', ...cols.map((c) => c.key)];
   const widths = [11, ...cols.map((c) => Math.min(60, Math.max(6, Math.round(c.width / 7))))];

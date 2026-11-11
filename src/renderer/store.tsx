@@ -16,12 +16,29 @@ export interface PendingChange {
   resolve: (applied: boolean) => void;
 }
 
+/** Uygulama içi onay / metin sorusu (window.confirm/prompt yerine: Windows'ta Electron sistem penceresi klavye odağını bozuyor). */
+export interface AskOptions {
+  title: string;
+  message?: string;
+  /** Verilirse metin kutusu gösterilir; değer varsayılan metindir. */
+  input?: string;
+  okLabel?: string;
+  danger?: boolean;
+}
+export interface AskRequest extends AskOptions {
+  resolve: (v: string | null) => void;
+}
+
 interface Store {
   project: Project;
+  /** 4.9.0: en güncel proje (await edit(...) sonrasında render beklemeden okumak için). */
+  current: () => Project;
   filePath?: string;
   dirty: boolean;
   /** Düzenlemeleri uygular; başka ekranları etkiliyorsa önce onay penceresi gösterir. */
   edit: (edits: Edit | Edit[], title?: string) => Promise<boolean>;
+  /** 4.9.0: onay penceresi göstermeden tüm yayılımlarla uygular (AI ile tümünü kur zinciri; sonunda tek inceleme). */
+  apply: (edits: Edit[], reason: string) => Project;
   pending: PendingChange | null;
   decide: (choice: 'apply' | 'only' | 'cancel', reason?: string, comment?: string) => void;
   replace: (p: Project, path?: string, markClean?: boolean) => void;
@@ -34,6 +51,12 @@ interface Store {
   canUndo: boolean;
   canRedo: boolean;
   toast: (msg: string, kind?: 'ok' | 'warn' | 'err') => void;
+  /** Tamam → metin (input yoksa ''), Vazgeç → null. */
+  ask: (o: AskOptions) => Promise<string | null>;
+  /** Evet/hayır sorusu. */
+  confirm: (title: string, message?: string, danger?: boolean) => Promise<boolean>;
+  asking: AskRequest | null;
+  answer: (v: string | null) => void;
   toasts: { id: number; msg: string; kind: string }[];
 }
 
@@ -51,6 +74,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [dirty, setDirty] = useState(false);
   const [pending, setPending] = useState<PendingChange | null>(null);
   const [toasts, setToasts] = useState<{ id: number; msg: string; kind: string }[]>([]);
+  const [asking, setAsking] = useState<AskRequest | null>(null);
   const undoStack = useRef<Project[]>([]);
   const redoStack = useRef<Project[]>([]);
   const [, force] = useState(0);
@@ -85,6 +109,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return Promise.resolve(true);
       }
       return new Promise<boolean>((resolve) => setPending({ title, edits, plan, effects, needReason, resolve }));
+    },
+    [commit],
+  );
+
+  const apply = useCallback(
+    (edits: Edit[], reason: string) => {
+      if (!edits.length) return projectRef.current;
+      const plan = planEdits(projectRef.current, edits, true);
+      commit(plan.project, plan.effects, { reason });
+      return plan.project;
     },
     [commit],
   );
@@ -146,6 +180,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     force((x) => x + 1);
   }, []);
 
+  const ask = useCallback((o: AskOptions) => new Promise<string | null>((resolve) => setAsking({ ...o, resolve })), []);
+  const confirm = useCallback(async (title: string, message?: string, danger?: boolean) => (await ask({ title, message, danger })) !== null, [ask]);
+  const answer = useCallback(
+    (v: string | null) => {
+      asking?.resolve(v);
+      setAsking(null);
+    },
+    [asking],
+  );
+
   useEffect(() => {
     api.setDirty(dirty);
   }, [dirty]);
@@ -160,6 +204,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Store>(
     () => ({
       project,
+      current: () => projectRef.current,
+      apply,
       filePath,
       dirty,
       edit,
@@ -174,9 +220,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       canUndo: undoStack.current.length > 0,
       canRedo: redoStack.current.length > 0,
       toast,
+      ask,
+      confirm,
+      asking,
+      answer,
       toasts,
     }),
-    [project, filePath, dirty, edit, pending, decide, replace, mutate, undo, redo, toast, toasts],
+    [project, filePath, dirty, edit, apply, pending, decide, replace, mutate, undo, redo, toast, ask, confirm, asking, answer, toasts],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

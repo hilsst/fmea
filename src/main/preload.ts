@@ -3,6 +3,11 @@ import type { AiResult } from '../shared/aischema';
 import type { ExtractedDoc } from '../shared/docmodel';
 import type { SheetGrid } from '../shared/importmap';
 import type { Project } from '../shared/types';
+import type { ExampleRow } from '../shared/expert';
+import type { CompanyLib, LibOps } from '../shared/companyLib';
+import type { LibImport } from '../shared/companyLibExcel';
+import type { LibReadResult, LibWriteResult } from './companyLibFile';
+import type { UpdateStatus } from './updater';
 
 // Arayüzün erişebildiği tek yüzey (beyaz liste). Node API'leri arayüze açılmaz (§62).
 type Ok<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -32,14 +37,26 @@ const api = {
   openExternal: (url: string) => ipcRenderer.invoke('external:open', url),
   extractDoc: (p: string): Promise<{ ok: true; doc: ExtractedDoc } | { ok: false; error: string }> => ipcRenderer.invoke('doc:extract', p),
   aiStatus: (): Promise<{
-    configured: boolean; fromEnv: boolean; secureStorage: boolean; sessionOnly: boolean; provider: string;
-    providers: readonly { id: string; label: string; supported: boolean }[]; online: boolean;
+    configured: boolean; fromEnv: boolean; envVar: string; secureStorage: boolean; sessionOnly: boolean; provider: string; model: string;
+    providers: readonly { id: string; label: string; supported: boolean }[]; anthropicModels?: readonly { id: string; label: string }[]; online: boolean;
   }> => ipcRenderer.invoke('ai:status'),
   aiSetKey: (key: string): Promise<{ stored: 'secure' | 'session' | 'cleared' }> => ipcRenderer.invoke('ai:setKey', key),
   aiSetProvider: (id: string): Promise<string> => ipcRenderer.invoke('ai:setProvider', id),
+  aiSetModel: (model: string): Promise<string> => ipcRenderer.invoke('ai:setModel', model),
   aiClearCache: () => ipcRenderer.invoke('ai:clearCache'),
+  libDir: (): Promise<string> => ipcRenderer.invoke('lib:dir'),
+  libPickDir: (): Promise<string | null> => ipcRenderer.invoke('lib:pickDir'),
+  libClearDir: (): Promise<void> => ipcRenderer.invoke('lib:clearDir'),
+  libRead: (): Promise<LibReadResult & { dir: string }> => ipcRenderer.invoke('lib:read'),
+  libWrite: (a: { ops: LibOps; baseRev: number; by: string }): Promise<LibWriteResult> => ipcRenderer.invoke('lib:write', a),
+  libExportExcel: (co: CompanyLib): Promise<string | null> => ipcRenderer.invoke('lib:exportExcel', co),
+  libImportExcel: (): Promise<(LibImport & { ok: true; name: string }) | { ok: false; error: string } | null> => ipcRenderer.invoke('lib:importExcel'),
+  examplesList: (): Promise<ExampleRow[]> => ipcRenderer.invoke('examples:list'),
+  examplesInfo: (): Promise<{ count: number }> => ipcRenderer.invoke('examples:info'),
+  examplesClear: () => ipcRenderer.invoke('examples:clear'),
   aiRequirements: (a: unknown): Promise<AiResult & { note?: string }> => ipcRenderer.invoke('ai:requirements', a),
   aiDfmea: (a: unknown): Promise<AiResult> => ipcRenderer.invoke('ai:dfmea', a),
+  aiStructure: (a: unknown): Promise<AiResult & { note?: string }> => ipcRenderer.invoke('ai:structure', a),
   aiPfmea: (a: unknown): Promise<AiResult> => ipcRenderer.invoke('ai:pfmea', a),
   aiReview: (a: unknown): Promise<AiResult> => ipcRenderer.invoke('ai:review', a),
   ifsGet: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('ifs:get'),
@@ -53,6 +70,15 @@ const api = {
     ipcRenderer.on('menu', h);
     return () => {
       ipcRenderer.removeListener('menu', h);
+    };
+  },
+  checkUpdates: () => ipcRenderer.send('update:check'),
+  installUpdate: () => ipcRenderer.send('update:install'),
+  onUpdate: (cb: (s: UpdateStatus) => void) => {
+    const h = (_e: unknown, s: UpdateStatus) => cb(s);
+    ipcRenderer.on('update', h);
+    return () => {
+      ipcRenderer.removeListener('update', h);
     };
   },
   onOpenFile: (cb: (p: string) => void) => {

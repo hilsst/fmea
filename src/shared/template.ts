@@ -1,12 +1,14 @@
 // Şirket şablonu (§45): ayarlar, KC kuralları, iş akışı ve puanlama/AP tablosu tek dosyada taşınır.
 // Şablon satırlara asla dokunmaz; yalnızca ayar ve puanlama değiştirir.
 import { LISTS } from './model';
+import { capTemplateErrors } from './capTemplate'; // v4-cap
 import type { KcRules, Project, Scoring, ScoringEntry, Settings } from './types';
 import { WORKFLOW_STEPS } from './types';
 
 export const TEMPLATE_SETTING_KEYS = [
   'kcSeverityThreshold', 'highSeverityThreshold', 'rpnThreshold', 'targetCpk', 'minSamples', 'kcRules', 'kcClasses',
   'workflow', 'reasonFields', 'aiMode', 'causeView', 'productType',
+  'capAcceptance', 'minSubgroups', 'msaCriteria', // v4-cap
 ] as const satisfies readonly (keyof Settings)[];
 
 export type TemplateSettingKey = (typeof TEMPLATE_SETTING_KEYS)[number];
@@ -101,6 +103,7 @@ function settingsErrors(s: unknown): string[] {
   if ('aiMode' in s && s.aiMode !== 'strict' && s.aiMode !== 'knowledge') e.push('settings.aiMode: strict veya knowledge olmalı');
   if ('causeView' in s && s.causeView !== '4M' && s.causeView !== '5M+E') e.push('settings.causeView: 4M veya 5M+E olmalı');
   if ('productType' in s && typeof s.productType !== 'string') e.push('settings.productType: metin olmalı');
+  e.push(...capTemplateErrors(s)); // v4-cap
   return e;
 }
 

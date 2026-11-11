@@ -1,39 +1,44 @@
 import { useCallback, useEffect, useState } from 'react';
 import { qualityReport } from '../shared/quality';
 import { newProject } from '../shared/model';
-import { SCREENS, SCREEN_BY_KEY, screenOfTable, type ScreenKey } from '../shared/nav';
+import { SCREENS, SCREEN_BY_KEY, screenOfTable, visibleScreens, type ScreenKey } from '../shared/nav';
 import { buildReviewReportHtml } from '../shared/report';
 import { sampleProject } from '../shared/sample';
-import { apOf } from '../shared/scoring';
+import { actionAddressed, needsAction } from '../shared/risk'; // v4-risk
 import { isScmh } from '../shared/scmhScoring';
 import type { TabKey } from '../shared/tabs';
 import { applyTemplate, makeTemplate, validateTemplate, type CompanyTemplate } from '../shared/template';
-import type { Project } from '../shared/types';
+import type { DfmeaRow, PfmeaRow, Project } from '../shared/types';
 import { currentStep } from '../shared/workflow';
 import { api, isDesktop } from './api';
-import { ConfirmDialog } from './components/ConfirmDialog';
-import { ImportDialog, SimilarDialog, WhyDrawer } from './components/Dialogs2';
+import { AskDialog, ConfirmDialog } from './components/ConfirmDialog';
+import { ImportDialog, WhyDrawer } from './components/Dialogs2';
 import { Grid } from './components/Grid';
 import { Modal } from './components/Modal';
 import {
   AiReviewScreen, AuditScreen, BaselinesScreen, DashboardScreen, EvidenceScreen, ImpactScreen, KbScreen, ProductTypeCard, QualityScreen, RiskScreen, SettingsScreen, WorkflowScreen,
 } from './screens/Screens2';
 import { useStore } from './store';
+import { ApqpScreen, PpapScreen, apqpBadge, apqpUnapproved } from './screens/Apqp'; // v4-apqp
 import { TraceabilityTab } from './tabs/AnalysisTabs';
 import { ProjectTab } from './tabs/ProjectTab';
+import { LibraryScreen } from './screens/Library';
+import { reloadLib } from './companyLibStore';
+import { KcFlowScreen, KcTraceScreen } from './screens/Kc'; // v4-kc
 import {
-  ActionsTab, CapabilityTab, ControlPlanTab, DfmeaTab, DocumentsTab, HistoryTab, IssuesTab, KcTab, LessonsTab, MsaTab, PfmeaTab, ProcessTab, RequirementsTab, StructureTab,
+  ActionsTab, CapabilityTab, ControlPlanTab, DfmeaTab, DocumentsTab, HistoryTab, IssuesTab, KcTab, LessonsTab, MsaTab, PfmeaTab, ProcessParamsTab, ProcessTab, RequirementsTab, StructureTab,
 } from './tabs/TableTabs';
 
 type Badge = { n: number | string; tone?: string } | null;
 
 function screenBadge(p: Project, key: ScreenKey): Badge {
-  const hi = (rows: { s: number | null; o: number | null; d: number | null }[]) => rows.filter((r) => (isScmh(p) ? (r.s ?? 0) >= 9 : apOf(p, r.s, r.o, r.d) === 'H')).length;
+  // v4-risk: tek yüklem (SCMH: S≥9 / Top-N / KC-CI; AIAG-VDA: AP=H)
+  const hi = (rows: (DfmeaRow | PfmeaRow)[]) => rows.filter((r) => needsAction(p, r).need && !actionAddressed(r)).length;
   switch (key) {
     case 'documents': return { n: p.documents.length };
     case 'requirements': return { n: p.requirements.length };
-    case 'dfmea': { const h = hi(p.dfmea); return h ? { n: isScmh(p) ? `${h} S≥9` : `${h} H`, tone: 'red' } : { n: p.dfmea.length }; }
-    case 'pfmea': { const h = hi(p.pfmea); return h ? { n: isScmh(p) ? `${h} S≥9` : `${h} H`, tone: 'red' } : { n: p.pfmea.length }; }
+    case 'dfmea': { const h = hi(p.dfmea); return h ? { n: isScmh(p) ? `${h} SCMH` : `${h} H`, tone: 'red' } : { n: p.dfmea.length }; }
+    case 'pfmea': { const h = hi(p.pfmea); return h ? { n: isScmh(p) ? `${h} SCMH` : `${h} H`, tone: 'red' } : { n: p.pfmea.length }; }
     case 'kcs': { const w = p.kcs.filter((k) => k.status === 'AI Proposed').length; return w ? { n: `${w} bekliyor`, tone: 'amber' } : { n: p.kcs.length }; }
     case 'controlPlan': return { n: p.controlPlan.length };
     case 'msa': return { n: p.msa.length };
@@ -43,6 +48,7 @@ function screenBadge(p: Project, key: ScreenKey): Badge {
     case 'impact': { const r = [...p.requirements, ...p.dfmea, ...p.pfmea, ...p.processSteps, ...p.structure, ...p.controlPlan].filter((x) => x.reassess).length; return r ? { n: r, tone: 'amber' } : null; }
     case 'approval': { const s = currentStep(p); return s ? { n: s.replace(' Review', '').replace(' Approval', ''), tone: 'gray' } : { n: '✓', tone: 'green' }; }
     case 'baseline': return p.baselines.length ? { n: p.baselines.length } : null;
+    case 'apqp': case 'ppap': return apqpBadge(p, key); // v4-apqp
     default: return null;
   }
 }
@@ -57,13 +63,13 @@ const fromTab = (t: TabKey): [ScreenKey, string?] => {
 
 export function App() {
   const store = useStore();
-  const { project, filePath, dirty, replace, setPath, markSaved, toast, toasts, undo, redo, canUndo, canRedo, mutate } = store;
+  const { project, filePath, dirty, replace, setPath, markSaved, toast, toasts, undo, redo, canUndo, canRedo, mutate, ask, confirm, edit } = store;
   const [screen, setScreen] = useState<ScreenKey>('dashboard');
   const [subs, setSubs] = useState<Record<string, string>>({});
   const [help, setHelp] = useState(false);
+  const [updateReady, setUpdateReady] = useState<string | null>(null);
   const [welcome, setWelcome] = useState(true);
   const [importing, setImporting] = useState(false);
-  const [similar, setSimilar] = useState(false);
   const [tpl, setTpl] = useState<CompanyTemplate | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
   const [recovery, setRecovery] = useState<{ path?: string; data: Project; at: string } | null>(null);
@@ -74,6 +80,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    void reloadLib();
     api.recent().then(setRecent);
     api.recovery().then((r) => r && setRecovery(r));
     const os = () => go('settings');
@@ -89,7 +96,7 @@ export function App() {
     };
   }, [go]);
 
-  const confirmDiscard = () => !dirty || window.confirm('Kaydedilmemiş değişiklikler kaybolacak. Devam edilsin mi?');
+  const confirmDiscard = async () => !dirty || (await confirm('Kaydedilmemiş değişiklikler kaybolacak', 'Devam edilsin mi?', true));
 
   const save = useCallback(
     async (saveAs = false) => {
@@ -107,7 +114,7 @@ export function App() {
 
   const open = useCallback(
     async (file?: string) => {
-      if (!confirmDiscard()) return;
+      if (!(await confirmDiscard())) return;
       try {
         const r = await api.openProject(file);
         if (!r) return;
@@ -135,6 +142,8 @@ export function App() {
     const r = await api.exportScmh(project);
     if (r.ok) {
       toast(`SCMH paketi oluşturuldu: ${r.files.length} dosya`);
+      const unapproved = apqpUnapproved(project); // v4-apqp: onaysız teslimat uyarısı (SCMH 7.2.3 s.52, s.59, s.65)
+      if (unapproved.length) toast(`Uyarı: teslimat onayı tamamlanmadan dışa aktarıldı – ${unapproved.join(', ')}`, 'warn');
       api.reveal(r.files[0]);
     } else if (r.error) toast(r.error, 'err');
   }, [project, toast]);
@@ -146,9 +155,9 @@ export function App() {
   }, [project, toast]);
 
   const saveTemplate = useCallback(async () => {
-    const name = window.prompt('Şablon adı', 'Şirket FMEA şablonu');
+    const name = await ask({ title: 'Şablon adı', input: 'Şirket FMEA şablonu' });
     if (name && (await api.saveTemplate(makeTemplate(project, name)))) toast('Şirket şablonu kaydedildi');
-  }, [project, toast]);
+  }, [project, toast, ask]);
 
   const openTemplate = useCallback(async () => {
     const t = await api.openTemplate();
@@ -162,7 +171,7 @@ export function App() {
     () =>
       api.onMenu(async (id) => {
         if (id === 'new') {
-          if (confirmDiscard()) {
+          if (await confirmDiscard()) {
             replace(newProject());
             setWelcome(false);
             setScreen('project');
@@ -178,7 +187,7 @@ export function App() {
         else if (id === 'saveTemplate') saveTemplate();
         else if (id === 'applyTemplate') openTemplate();
         else if (id === 'sample') {
-          if (confirmDiscard()) {
+          if (await confirmDiscard()) {
             replace(sampleProject(), undefined, false);
             setWelcome(false);
           }
@@ -192,6 +201,18 @@ export function App() {
     [open, save, exportExcel, exportScmh, report, saveTemplate, openTemplate, undo, redo], // eslint-disable-line react-hooks/exhaustive-deps
   );
   useEffect(() => api.onOpenFile((p) => open(p)), [open]);
+  useEffect(
+    () =>
+      api.onUpdate((s) => {
+        if (s.state === 'checking') toast('Güncellemeler denetleniyor…');
+        else if (s.state === 'available') toast(`Yeni sürüm ${s.version} indiriliyor (yalnızca değişen kısım)…`);
+        else if (s.state === 'downloaded') setUpdateReady(s.version);
+        else if (s.state === 'none' && s.manual) toast('FMEA Studio güncel.');
+        else if (s.state === 'unsupported' && s.manual) toast('Otomatik güncelleme yalnızca kurulu Windows sürümünde çalışır (taşınabilir sürümde çalışmaz).', 'warn');
+        else if (s.state === 'error' && s.manual) toast(`Güncelleme denetlenemedi: ${s.message}`, 'err');
+      }),
+    [toast],
+  );
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -206,9 +227,12 @@ export function App() {
   }, [save]);
 
   const def = SCREEN_BY_KEY[screen];
-  const idx = SCREENS.findIndex((s) => s.key === screen);
+  // 4.8.0: Sade menü / gizlenen ekranlar; açık ekran her zaman listede kalır.
+  const menu = visibleScreens(project.settings, screen);
+  const idx = menu.findIndex((s) => s.key === screen);
   const sub = def.subs ? (subs[screen] ?? def.subs[0].key) : undefined;
-  const groups = [...new Set(SCREENS.map((s) => s.group))];
+  const groups = [...new Set(menu.map((s) => s.group))];
+  const hiddenCount = SCREENS.length - menu.length;
   const score = qualityReport(project).score;
 
   return (
@@ -227,7 +251,7 @@ export function App() {
           </div>
         </div>
         <div className="actions">
-          <button className="btn ghost" onClick={() => { if (confirmDiscard()) { replace(newProject()); setWelcome(false); setScreen('project'); } }}>Yeni</button>
+          <button className="btn ghost" onClick={async () => { if (await confirmDiscard()) { replace(newProject()); setWelcome(false); setScreen('project'); } }}>Yeni</button>
           <button className="btn ghost" onClick={() => open()}>Aç</button>
           <button className="btn ghost" onClick={() => save()}>Kaydet</button>
           <button className="btn ghost" disabled={!canUndo} onClick={undo} title="Geri al (Ctrl+Z)">↶</button>
@@ -245,9 +269,9 @@ export function App() {
           {groups.map((g) => (
             <div key={g} className="sb-group">
               <div className="sb-title">{g}</div>
-              {SCREENS.filter((s) => s.group === g).map((s) => {
+              {menu.filter((s) => s.group === g).map((s) => {
                 const b = screenBadge(project, s.key);
-                const i = SCREENS.indexOf(s);
+                const i = menu.indexOf(s);
                 return (
                   <button key={s.key} className={`sb-item ${s.key === screen ? 'on' : ''}`} onClick={() => setScreen(s.key)} title={`${s.stage}\n${s.hint}`}>
                     <span className="num">{i + 1}</span>
@@ -258,6 +282,17 @@ export function App() {
               })}
             </div>
           ))}
+          <div className="sb-group">
+            <button
+              className="sb-item"
+              title={project.settings.simpleMenu ? 'APQP, PPAP, MSA, Capability ve diğer gelişmiş ekranları da göster' : 'Yalnızca temel ekranları göster (veri silinmez)'}
+              onClick={() => edit({ kind: 'settings', field: 'simpleMenu', value: !project.settings.simpleMenu }, 'Menü görünümü')}
+            >
+              <span className="num">⇄</span>
+              <span className="lbl">{project.settings.simpleMenu ? 'Tam menüye geç' : 'Sade menüye geç'}</span>
+              {hiddenCount > 0 && <span className="cnt gray">{hiddenCount} gizli</span>}
+            </button>
+          </div>
         </nav>
 
         <div className="main">
@@ -268,9 +303,8 @@ export function App() {
               <p>{def.hint}</p>
             </div>
             <div className="stepper">
-              {(screen === 'dfmea' || screen === 'pfmea') && isDesktop && <button className="btn" onClick={() => setSimilar(true)} title="Önceki bir .fmea dosyasında benzer hata modu desenleri arar">≈ Benzer FMEA</button>}
-              <button className="btn" disabled={idx === 0} onClick={() => setScreen(SCREENS[idx - 1].key)}>← {idx > 0 ? SCREENS[idx - 1].label : ''}</button>
-              <button className="btn" disabled={idx === SCREENS.length - 1} onClick={() => setScreen(SCREENS[idx + 1].key)}>{idx < SCREENS.length - 1 ? SCREENS[idx + 1].label : ''} →</button>
+              <button className="btn" disabled={idx <= 0} onClick={() => setScreen(menu[idx - 1].key)}>← {idx > 0 ? menu[idx - 1].label : ''}</button>
+              <button className="btn" disabled={idx === menu.length - 1} onClick={() => setScreen(menu[idx + 1].key)}>{idx < menu.length - 1 ? menu[idx + 1].label : ''} →</button>
             </div>
           </div>
           {def.subs && (
@@ -291,9 +325,9 @@ export function App() {
       </div>
 
       <ConfirmDialog />
+      <AskDialog />
       <WhyDrawer />
       {importing && <ImportDialog onClose={() => setImporting(false)} />}
-      {similar && <SimilarDialog onClose={() => setSimilar(false)} />}
       {tpl && (
         <Modal title={`Şablon uygula: ${tpl.name}`} sub="Ayarlar, KC kuralları, onay akışı ve puanlama/AP tablosu değişir. Satırlar değişmez; kullanıcı adı ve rolü korunur." onClose={() => setTpl(null)}
           foot={<><button className="btn" onClick={() => setTpl(null)}>Vazgeç</button><button className="btn primary" onClick={() => {
@@ -335,6 +369,13 @@ export function App() {
       )}
 
       <div className="toasts">
+        {updateReady && (
+          <div className="toast">
+            Sürüm {updateReady} indirildi; uygulama kapanınca kurulur.{' '}
+            <button className="btn" onClick={() => api.installUpdate()}>Şimdi yeniden başlat</button>{' '}
+            <button className="btn" onClick={() => setUpdateReady(null)}>Sonra</button>
+          </div>
+        )}
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`}>{t.msg}</div>
         ))}
@@ -350,9 +391,9 @@ function ScreenView({ screen, sub, go }: { screen: ScreenKey; sub?: string; go: 
     case 'documents': return sub === 'evidence' ? <EvidenceScreen /> : sub === 'issues' ? <IssuesTab /> : <DocumentsTab />;
     case 'requirements': return <RequirementsTab />;
     case 'dfmea': return sub === 'structure' ? <StructureTab /> : <DfmeaTab />;
-    case 'pfmea': return sub === 'processSteps' ? <ProcessTab /> : sub === 'processParams' ? <Grid table="processParams" emptyHint="Özel proses parametreleri (kür sıcaklığı, basınç, vakum, süre…). Limitler kaynak spesifikasyondan girilir; yoksa VERİ YOK." /> : <PfmeaTab />;
+    case 'pfmea': return sub === 'processSteps' ? <ProcessTab /> : sub === 'pfdItems' ? <Grid table="pfdItems" emptyHint="Her PFD adımının çıktıları (→ PFMEA hata modu) ve girdileri / değişkenlik kaynakları (→ PFMEA nedeni). Proses Akışı’na adım eklendiğinde kütüphaneden otomatik önerilir; elle eklenen çıktı için hata modu taslakları önerilir (PF webinar p20, p22)." /> /* v4-risk */ : sub === 'processParams' ? <ProcessParamsTab /> : <PfmeaTab />;
     case 'risk': return <RiskScreen />;
-    case 'kcs': return <KcTab />;
+    case 'kcs': return sub === 'kcFlow' ? <KcFlowScreen /> : sub === 'kcTrace' ? <KcTraceScreen /> : <KcTab />; // v4-kc
     case 'controlPlan': return <ControlPlanTab />;
     case 'msa': return <MsaTab />;
     case 'capability': return <CapabilityTab />;
@@ -364,7 +405,10 @@ function ScreenView({ screen, sub, go }: { screen: ScreenKey; sub?: string; go: 
     case 'aiReview': return sub === 'aiRuns' ? <Grid table="aiRuns" emptyHint="Her AI çalıştırması (rol, model, zaman, kabul/ret sayıları, hata) burada kayıtlıdır." /> : <AiReviewScreen />;
     case 'approval': return sub === 'audit' ? <AuditScreen /> : <WorkflowScreen />;
     case 'baseline': return sub === 'baselines' ? <BaselinesScreen /> : <HistoryTab />;
+    case 'library': return <LibraryScreen />;
     case 'settings': return <SettingsScreen />;
+    case 'apqp': return <ApqpScreen sub={sub} go={go} />; // v4-apqp
+    case 'ppap': return <PpapScreen sub={sub} go={go} />; // v4-apqp
   }
 }
 
@@ -375,7 +419,7 @@ function Welcome({ recent, onNew, onOpen, onSample }: { recent: string[]; onNew:
         <div className="w-head">
           <span className="logo big">F</span>
           <div>
-            <h1>FMEA Studio 3.0</h1>
+            <h1>FMEA Studio 4.0</h1>
             <p>Doküman → Gereksinim → DFMEA → PFMEA → Risk → KC → Kontrol Planı → MSA → Capability → Kalite → Onay</p>
           </div>
         </div>
@@ -392,11 +436,15 @@ function Welcome({ recent, onNew, onOpen, onSample }: { recent: string[]; onNew:
             ))}
           </div>
         )}
-        <ol className="w-steps">
-          {SCREENS.slice(1, 10).map((t, i) => (
-            <li key={t.key}><b>{i + 2}. {t.label}</b> <span>{t.hint}</span></li>
-          ))}
-        </ol>
+        <div className="w-quick">
+          <h3>Nasıl başlarım? 4 adım</h3>
+          <ol className="w-steps">
+            <li><b>1. Doküman ekle</b> <span>Dokümanlar ekranında şartname veya resmi yükleyip “Analiz et”e basın; gereksinimler, yapı, DFMEA ve PFMEA önerileri otomatik gelir.</span></li>
+            <li><b>2. Satırları kontrol et</b> <span>Gelen her satır “AI Proposed” durumundadır. Hata modu, neden, kontrol ve S/O/D’yi inceleyip düzeltin.</span></li>
+            <li><b>3. Eksikleri tamamla</b> <span>Kalite Kontrol ekranındaki “Kapsam denetimi” hangi adımda hangi hata riskinin eksik olduğunu gösterir ve tek tıkla önerir.</span></li>
+            <li><b>4. Onayla ve çıkar</b> <span>Satırları onaylayın; Excel veya SCMH paketi olarak dışa aktarın. Kullanmadığınız ekranlar için soldaki “Sade menüye geç” düğmesini kullanın.</span></li>
+          </ol>
+        </div>
       </div>
     </div>
   );

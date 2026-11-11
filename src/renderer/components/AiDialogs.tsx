@@ -1,5 +1,8 @@
 import { Fragment, useEffect, useState } from 'react';
-import { AI_ERROR_TEXT, LOW_CONF_TEXT, type AiResult } from '../../shared/aischema';
+import { approvedReqIds, dfmeaTargets, dfmeaTargetText, structureReqs } from '../../shared/dfmeaInput';
+import { approvedExamples, expertBrief, type ExampleKind } from '../../shared/expert';
+import { materialFamily } from '../../shared/failureLib';
+import { AI_ERROR_TEXT, LOW_CONF_TEXT, type AiResult, type AiRunMeta } from '../../shared/aischema';
 import { findRequirementCandidates, locText, type ExtractedDoc } from '../../shared/docmodel';
 import { COMPOSITE_KB, isComposite } from '../../shared/kb';
 import { blankRow, nextId } from '../../shared/model';
@@ -10,16 +13,32 @@ import type { AnyRow, DocumentRow, Project } from '../../shared/types';
 import { api, isDesktop } from '../api';
 import { useStore } from '../store';
 
-export function projectContext(p: Project): string {
+/** 4.5.0: örnek seçimi için sorgu; bu projenin onaylı satırları da aday olur. */
+export function exampleQuery(p: Project, kind: ExampleKind, target: string) {
+  return { kind, family: materialFamily(p), text: target, local: approvedExamples(p) };
+}
+
+/** 4.5.0: kompozit bilgi tabanı yalnız kompozit parçada (eskiden özel proses adımı olan her parçaya gidiyordu). */
+export function compositeKbText(p: Project): string {
+  return materialFamily(p) === 'composite' || (isComposite(p.settings.productType) && materialFamily(p) !== 'metal')
+    ? COMPOSITE_KB.map((k) => `${k.area}: hata modları ${k.failureModes.join(', ')}; tipik nedenler ${k.causes.join(', ')}; parametreler ${k.parameters.join(', ')}`).join('\n')
+    : '';
+}
+
+/** approvedReqsOnly: yalnızca Approved gereksinimler ve fonksiyonların onaylı REQ bağlantıları yazılır (DFMEA önerisi). */
+export function projectContext(p: Project, opts: { approvedReqsOnly?: boolean } = {}): string {
   const lines: string[] = [];
+  const ok = opts.approvedReqsOnly ? approvedReqIds(p) : null;
+  const reqs = ok ? p.requirements.filter((r) => ok.has(r.id)) : p.requirements;
+  const fnReqs = (ids: string[]) => (ok ? ids.filter((id) => ok.has(id)) : ids).join(',');
   const m = p.meta;
   lines.push(`PROJE: ${m.name} | Parça: ${m.partNumber} ${m.partName} | Müşteri: ${m.customer} | Program: ${m.program} | Ürün tipi: ${p.settings.productType || 'belirtilmedi'} | FMEA ${m.fmeaRevision}`);
   if (m.scope) lines.push(`Kapsam: ${m.scope}`);
   lines.push(`KC Severity eşiği: ${p.settings.kcSeverityThreshold} | AP tablosu: ${p.scoring.apName || (p.scoring.apTable ? 'Şirket tablosu' : 'AIAG-VDA 2019')}`);
   lines.push('PUANLAMA KRİTERLERİ (S/O/D, DFMEA | PFMEA):', ...(['severity', 'occurrence', 'detection'] as const).flatMap((k) => p.scoring[k].map((e) => `${k[0].toUpperCase()}${e.rank}: ${e.df} | ${e.pf}`)));
   if (p.documents.length) lines.push('\nDOKÜMANLAR:', ...p.documents.map((d) => `${d.id} | ${d.docNumber} | ${d.name} | Rev ${d.revision} | ${d.docType}`));
-  if (p.requirements.length) lines.push('\nGEREKSİNİMLER:', ...p.requirements.map((r) => `${r.id} [${r.reqType}] ${r.text} | Kabul: ${r.acceptance || 'VERİ YOK'}${r.lsl != null || r.usl != null ? ` | Limit: ${r.lsl ?? '–'}…${r.usl ?? '–'} ${r.unit}` : ''} | Kaynak: ${r.source}`));
-  if (p.structure.length) lines.push('\nYAPI & FONKSİYON:', ...p.structure.map((s) => `${s.id} ${s.level} ${s.element} (üst: ${s.parentId || '-'}) → ${s.function}${s.performanceReq ? ` | Performans: ${s.performanceReq}` : ''} | REQ: ${s.reqIds.join(',')}`));
+  if (reqs.length) lines.push(ok ? '\nGEREKSİNİMLER (yalnızca onaylı / Approved):' : '\nGEREKSİNİMLER:', ...reqs.map((r) => `${r.id} [${r.reqType}] ${r.text} | Kabul: ${r.acceptance || 'VERİ YOK'}${r.lsl != null || r.usl != null ? ` | Limit: ${r.lsl ?? '–'}…${r.usl ?? '–'} ${r.unit}` : ''} | Kaynak: ${r.source}`));
+  if (p.structure.length) lines.push('\nYAPI & FONKSİYON:', ...p.structure.map((s) => `${s.id} ${s.level} ${s.element} (üst: ${s.parentId || '-'}) → ${s.function}${s.performanceReq ? ` | Performans: ${s.performanceReq}` : ''} | REQ: ${fnReqs(s.reqIds)}`));
   if (p.dfmea.length) lines.push('\nDFMEA:', ...p.dfmea.map((d) => `${d.id} fn:${d.functionId} req:${d.reqIds.join(',')} | FM: ${d.failureMode} | Etki: ${d.effect} | Neden: ${d.cause} | Önleme: ${d.prevention} | Tespit: ${d.detection} | S${d.s ?? '-'} O${d.o ?? '-'} D${d.d ?? '-'} AP:${apOf(p, d.s, d.o, d.d)}`));
   if (p.processSteps.length) lines.push('\nPROSES AKIŞI:', ...p.processSteps.map((s) => `${s.id} Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} | ${s.description} | Makine: ${s.machine}`));
   if (p.processParams.length) lines.push('\nPROSES PARAMETRELERİ:', ...p.processParams.map((x) => `${x.id} step:${x.stepId} ${x.parameter} ${x.lsl ?? ''}…${x.usl ?? ''} ${x.unit} | ürün kar.: ${x.productCharacteristic} | izleme: ${x.monitoring}`));
@@ -34,6 +53,7 @@ export function projectContext(p: Project): string {
 
 const PREVIEW: Record<string, [string, string][]> = {
   requirements: [['text', 'Gereksinim'], ['reqType', 'Tip'], ['characteristic', 'Karakteristik'], ['nominal', 'Nom.'], ['lsl', 'Alt'], ['usl', 'Üst'], ['unit', 'Birim'], ['acceptance', 'Kabul kriteri']],
+  structure: [['_ref', 'Ref'], ['_parentRef', 'Üst'], ['level', 'Seviye'], ['element', 'Eleman'], ['function', 'Fonksiyon'], ['functionType', 'Tip'], ['performanceReq', 'Performans'], ['reqIds', 'REQ']],
   dfmea: [['functionId', 'Fonk.'], ['failureMode', 'Hata modu'], ['effect', 'Etki'], ['cause', 'Neden'], ['prevention', 'Önleme'], ['detection', 'Tespit'], ['s', 'S'], ['o', 'O'], ['d', 'D']],
   pfmea: [['stepId', 'Adım'], ['failureMode', 'Hata modu'], ['cause4M', '4M'], ['cause', 'Neden'], ['rootCause', 'Kök neden'], ['prevention', 'Önleme'], ['detection', 'Tespit'], ['s', 'S'], ['o', 'O'], ['d', 'D']],
 };
@@ -75,7 +95,7 @@ export function ProposalDialog({ initial, onClose }: { initial: ProposalSet; onC
         <div className="modal-head">
           <div className="icon ai">✦</div>
           <div>
-            <h2>AI önerileri – her birini kabul edin, düzenleyin veya reddedin</h2>
+            <h2>{set.meta.provider === 'local' ? 'Örnek kütüphanesi önerileri' : 'AI önerileri'} – her birini kabul edin, düzenleyin veya reddedin</h2>
             <p>
               {set.meta.role} · {set.meta.model || set.meta.provider} · {set.meta.mode === 'strict' ? 'Strict Engineering Mode' : 'Engineering Knowledge Mode'}
               {set.meta.cached ? ' · önbellekten' : ''} · {set.meta.tokensIn + set.meta.tokensOut} token. Kabul edilenler “AI Proposed” eklenir; onay mühendisindir.
@@ -186,6 +206,9 @@ export function ProposalDialog({ initial, onClose }: { initial: ProposalSet; onC
 
 type Busy = { label: string } | null;
 
+/** 4.9.0: bir AI PFMEA çağrısındaki proses adımı sayısı (tüm hata modları + 4M nedenler 32k çıktı sınırını aşmasın). */
+export const PFMEA_AI_STEPS = 2;
+
 function textDoc(text: string, name: string): ExtractedDoc {
   const paras = text.split(/\n\s*\n/).map((t) => t.trim()).filter(Boolean);
   let line = 1;
@@ -213,7 +236,7 @@ export function useAi() {
       toast(AI_ERROR_TEXT.OFFLINE, 'warn');
       return false;
     }
-    if (!s.configured && s.provider === 'anthropic') {
+    if (!s.configured && s.provider !== 'local') {
       toast('Önce Ayarlar › AI bölümünden API anahtarını girin.', 'warn');
       window.dispatchEvent(new CustomEvent('open-settings'));
       return false;
@@ -271,29 +294,71 @@ export function useAi() {
     }
     const candidates = extracted ? findRequirementCandidates(extracted) : [];
     const label = doc ? `${doc.docNumber} ${doc.name} Rev ${doc.revision}` : 'Yapıştırılan metin';
-    await run('Doküman analiz ediliyor ve gereksinimler çıkarılıyor…', 'requirements', `${docId}: ${label}`, () =>
+    await run('Doküman analiz ediliyor ve gereksinimler çıkarılıyor… (büyük dokümanlar parça parça işlenir, birkaç dakika sürebilir)', 'requirements', `${docId}: ${label}`, () =>
       api.aiRequirements({ doc: extracted, filePath: doc?.filePath, docId: docId ?? '', docLabel: label, existing: p.requirements.map((r) => `${r.id}: ${r.text}`), candidates, mode }),
       docId, p,
     );
   };
 
   const suggestDfmea = async (fnIds: string[]) => {
-    const fns = project.structure.filter((s) => fnIds.length === 0 || fnIds.includes(s.id)).filter((s) => s.function);
-    if (!fns.length) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
-    await run('DFMEA önerileri hazırlanıyor…', 'dfmea', fns.map((f) => f.id).join(', '), () =>
-      api.aiDfmea({ context: projectContext(project), target: 'Hedef fonksiyonlar:\n' + fns.map((f) => `${f.id}: ${f.element} → ${f.function} (REQ: ${f.reqIds.join(', ')})`).join('\n'), mode }),
+    if (!project.structure.some((s) => s.function && (!fnIds.length || fnIds.includes(s.id)))) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
+    // 4.6.3: yalnızca onaylı gereksinimler; onaylı gereksinimi olmayan fonksiyon atlanır
+    const { ready, skipped } = dfmeaTargets(project, fnIds);
+    if (!ready.length) return toast('DFMEA önerisi yalnızca onaylı (Approved) gereksinimlerden üretilir. Seçili fonksiyonların onaylı gereksinimi yok; Gereksinimler ekranında onaylayın ve fonksiyonlara bağlayın.', 'warn');
+    if (skipped.length) toast(`Onaylı gereksinimi olmayan ${skipped.length} fonksiyon atlandı: ${skipped.map((f) => f.id).join(', ')}`, 'warn');
+    const target = dfmeaTargetText(ready);
+    await run('DFMEA önerileri hazırlanıyor…', 'dfmea', ready.map(({ fn }) => fn.id).join(', '), () =>
+      api.aiDfmea({ context: projectContext(project, { approvedReqsOnly: true }), target, mode, expert: expertBrief(project, 'dfmea'), exampleQuery: exampleQuery(project, 'dfmea', target) }),
     );
   };
 
-  const suggestPfmea = async (stepIds: string[]) => {
-    const steps = project.processSteps.filter((s) => stepIds.length === 0 || stepIds.includes(s.id));
-    if (!steps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
-    const composite = isComposite(project.settings.productType) || steps.some((s) => s.specialProcess)
-      ? COMPOSITE_KB.map((k) => `${k.area}: hata modları ${k.failureModes.join(', ')}; tipik nedenler ${k.causes.join(', ')}; parametreler ${k.parameters.join(', ')}`).join('\n')
-      : '(ürün tipi kompozit değil)';
-    await run('PFMEA önerileri hazırlanıyor…', 'pfmea', steps.map((s) => s.id).join(', '), () =>
-      api.aiPfmea({ context: projectContext(project), composite, target: 'Hedef proses adımları:\n' + steps.map((s) => `${s.id}: Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${s.description}`).join('\n'), mode }),
+  /** 4.9.2: Yapı & Fonksiyon, onaylanmış gereksinim listesinden önerilir (doküman yeniden okunmaz). */
+  const suggestStructure = async () => {
+    const reqs = structureReqs(project);
+    if (!reqs.length) return toast('Önce Gereksinimler ekranında gereksinimleri onaylayın (Onay = Approved). Yapı & Fonksiyon onaylı gereksinim listesinden önerilir.', 'warn');
+    await run(`Onaylı ${reqs.length} gereksinimden yapı & fonksiyon hazırlanıyor…`, 'structure', reqs.map((r) => r.id).join(', '), () =>
+      api.aiStructure({ context: projectContext(project, { approvedReqsOnly: true }), reqs, mode }),
     );
+  };
+
+  const suggestPfmea = async (stepIds: string[], base: Project = project) => {
+    const steps = base.processSteps.filter((s) => stepIds.length === 0 || stepIds.includes(s.id));
+    if (!steps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
+    if (!(await guard())) return;
+    const composite = compositeKbText(base);
+    const groups: (typeof steps)[] = [];
+    for (let i = 0; i < steps.length; i += PFMEA_AI_STEPS) groups.push(steps.slice(i, i + PFMEA_AI_STEPS));
+    const context = projectContext(base);
+    const rows: unknown[] = [];
+    const issues: unknown[] = [];
+    const params: unknown[] = [];
+    const failed: string[] = [];
+    let meta: AiRunMeta | undefined;
+    try {
+      for (const [i, g] of groups.entries()) {
+        setBusy({ label: `PFMEA önerileri hazırlanıyor… (adım grubu ${i + 1}/${groups.length}: ${g.map((s) => s.opNo || s.id).join(', ')})` });
+        const target = 'Hedef proses adımları:\n' + g.map((s) => `${s.id}: Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${s.description}`).join('\n');
+        const r = await api.aiPfmea({ context, composite, target, mode, expert: expertBrief(base, 'pfmea', g.map((s) => s.id)), exampleQuery: exampleQuery(base, 'pfmea', target) });
+        if (!r.ok) {
+          failed.push(`${g.map((s) => s.id).join(', ')}: ${r.error.kind} ${r.error.message}`);
+          mutate((d) => {
+            d.aiRuns.push(failedRunEdit(d, r.meta?.role ?? 'pfmea', g.map((s) => s.id).join(', '), r.error.kind, r.error.message, r.meta).row as never);
+          });
+          continue;
+        }
+        rows.push(...((r.data.rows as unknown[]) ?? []));
+        issues.push(...((r.data.issues as unknown[]) ?? []));
+        params.push(...((r.data.params as unknown[]) ?? []));
+        meta = meta ? { ...meta, tokensIn: meta.tokensIn + r.meta.tokensIn, tokensOut: meta.tokensOut + r.meta.tokensOut, cached: meta.cached && r.meta.cached, retries: meta.retries + r.meta.retries } : r.meta;
+      }
+    } finally {
+      setBusy(null);
+    }
+    if (!meta) return toast(`PFMEA önerisi alınamadı: ${failed.join(' | ')}`, 'err');
+    if (failed.length) toast(`${failed.length} adım grubu için öneri alınamadı (diğerleri listelendi): ${failed.join(' | ')}`, 'warn');
+    const set = buildProposals(base, 'pfmea', { rows, issues, params }, meta, { inputs: steps.map((s) => s.id).join(', '), note: failed.length ? `Alınamayan adım grupları: ${failed.join(' | ')}` : undefined });
+    if (!set.items.length && !set.issues.length) return toast('AI yeni öneri üretmedi.', 'warn');
+    setProposal(set);
   };
 
   const dialogs = (
@@ -313,7 +378,7 @@ export function useAi() {
     </>
   );
 
-  return { extractRequirements, suggestDfmea, suggestPfmea, dialogs, busy: !!busy };
+  return { extractRequirements, suggestStructure, suggestDfmea, suggestPfmea, dialogs, busy: !!busy };
 }
 
 export function PasteTextDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (t: string) => void }) {

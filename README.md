@@ -1,15 +1,16 @@
-# FMEA Studio 3.0
+# FMEA Studio 4.0
 
 Doküman → Gereksinim → DFMEA → PFMEA → Risk → Özel Karakteristik → Kontrol Planı → MSA → Capability → Aksiyon → Kalite Doğrulama → AI İnceleme → Mühendis Onayı zincirini tek dosyada yöneten masaüstü uygulaması (Windows / macOS / Linux).
 
-1.0 `.fmea` dosyaları açılışta veri kaybı olmadan 2.0 şemasına dönüştürülür. 2.0 ayrıntıları: [docs/v2/02-final-rapor.md](docs/v2/02-final-rapor.md). 3.0 (IAQG SCMH yapısı, STEP/IGES geometri analizi): [docs/v3/01-rapor.md](docs/v3/01-rapor.md).
+1.0 `.fmea` dosyaları açılışta veri kaybı olmadan 2.0 şemasına dönüştürülür. 2.0 ayrıntıları: [docs/v2/02-final-rapor.md](docs/v2/02-final-rapor.md). 3.0 (IAQG SCMH yapısı, STEP/IGES geometri analizi): [docs/v3/01-rapor.md](docs/v3/01-rapor.md). 4.0 (SCMH APQP/PPAP süreci, KC/CI, AS9145 capability, MSA): [docs/v4/01-rapor.md](docs/v4/01-rapor.md).
 
 ## Kurulum (Windows)
 
 1. GitHub’da **Actions → Build** sayfasından son başarılı çalışmayı açın ve **FMEA-Studio-Windows** dosyasını indirin.
    `v1.0.0` gibi bir etiket (tag) atıldığında aynı dosyalar **Releases** sayfasına da eklenir.
 2. `FMEA-Studio-Kurulum-….exe` kurulum sihirbazıdır, `FMEA-Studio-Tasinabilir-….exe` kurulum gerektirmeden çalışır.
-3. Uygulama kod imzalı olmadığı için Windows SmartScreen “Bilinmeyen yayımcı” uyarısı gösterebilir: **Ek bilgi → Yine de çalıştır**.
+3. **Otomatik güncelleme:** Kurulum sihirbazıyla kurulan sürüm açılışta GitHub Releases'te yeni sürüm olup olmadığına bakar ve yalnızca değişen blokları indirir (180 MB'ın tamamı değil). İndirme bitince “Şimdi yeniden başlat” denebilir ya da güncelleme uygulama kapanırken kurulur. Elle denetim: **Yardım → Güncellemeleri Denetle**. Taşınabilir sürüm otomatik güncellenmez. Güncelleme yalnızca bir `v*` etiketiyle Releases'e yayın açıldığında gelir; ilk kez artımlı güncelleme alabilmek için bu özelliği içeren sürüm bir kez tam olarak kurulmalıdır.
+4. Uygulama kod imzalı olmadığı için Windows SmartScreen “Bilinmeyen yayımcı” uyarısı gösterebilir: **Ek bilgi → Yine de çalıştır**.
 
 ## Ekranlar (sol menü, çalışma sırasına göre)
 
@@ -84,6 +85,7 @@ Değişiklikler geri alınabilir (Ctrl+Z / Ctrl+Y).
 
 - Proje dosyası: `.fmea` (JSON). Çift tıklamayla açılır.
 - **SCMH paketi** (Ctrl+Shift+E): PFD (7.2.9), DFMEA (7.2.10), PFMEA (7.2.11) ve Kontrol Planı (7.2.13) dosyaları, IAQG SCMH’nin kendi Excel şablonları doldurularak üretilir. Şablonlar IAQG’ye aittir ve uygulamayla dağıtılmaz: https://scmh.iaqg.org/ adresinden indirilen dört dosyanın bulunduğu klasör ilk kullanımda bir kez seçilir (**Ayarlar → SCMH şablon klasörü**).
+- **4.0 ek SCMH formları** (klasörde varsa pakete eklenir): 7.2.16 KC Traceability Form, 7.2.12 APQP Element Applicability, 7.2.14 Maturity Matrix (kanıt sütunu), 7.2.20 Ambalaj/Koruma/Etiketleme Onay Formu (docx). Kontrol planı satırlarına faz atanmışsa her faz (Prototype / Pre-launch / Production) ayrı dosya olur.
 - **Excel’e aktar**: 14 sayfalık 2.0 çalışma kitabı (01_Project Summary … 14_Approval). 1.0 biçimi Dosya menüsünde durur.
 - **Excel FMEA içe aktar**: mevcut bir Excel FMEA kolon eşleme ekranıyla içe alınır; RPN/AP yeniden hesaplanır.
 - **Şirket şablonu** (`.fmeatpl`): ayarlar, KC kuralları, onay akışı ve AP tablosu.

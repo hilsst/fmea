@@ -27,7 +27,10 @@ describe('v1 → v2 migration', () => {
     expect(p.schemaVersion).toBe(SCHEMA_VERSION);
     expect(rep.from).toBe(1);
     expect(rep.notes.length).toBeGreaterThan(0);
-    expectSuperset(raw, p);
+    // 4.4.0: boş RPN eşiği bilinçli olarak 100'e taşınır (notla bildirilir); diğer her şey korunur.
+    expect(p.settings.rpnThreshold).toBe(100);
+    expect(rep.notes.some((n) => n.includes('RPN aksiyon eşiği 100'))).toBe(true);
+    expectSuperset({ ...raw, settings: { ...raw.settings, rpnThreshold: 100 } }, p);
     expect(p.evidence).toEqual([]);
     expect(p.baselines).toEqual([]);
     expect(p.auditLog).toEqual([]);
