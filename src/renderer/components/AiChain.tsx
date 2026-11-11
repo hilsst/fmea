@@ -16,7 +16,7 @@ import { buildProposals, failedRunEdit, proposalEdits, type ProposalSet } from '
 import type { AnyRow, Project } from '../../shared/types';
 import { api, isDesktop } from '../api';
 import { useStore } from '../store';
-import { PFMEA_AI_STEPS, compositeKbText, exampleQuery, projectContext } from './AiDialogs';
+import { exampleQuery, projectContext } from './AiDialogs';
 import { stepEdits } from './FlowTemplates';
 import { Modal } from './Modal';
 import { PROCESS_GROUPS, wizardStepIds } from './PfmeaWizard';
@@ -246,35 +246,14 @@ export function useAiChain() {
         set('flow', edits.length ? 'ok' : 'skip', edits.length ? `${edits.length} adım` : 'Seçilen proseslerin adımları zaten akışta');
       }
 
-      // 4) PFMEA — kütüphane (tüm hata modları + 4M) + AI (gereksinim ve DFMEA'dan)
+      // 4) PFMEA — 4.9.7: yalnız hata kütüphanesi (AI yok): her adım için tüm hata modları + 4M nedenleri. AI ile zenginleştirme PFMEA ekranından isteğe bağlı.
       set('pfmea', 'run');
       {
         const stepIds = wizardStepIds(current(), sel, includeExisting);
         if (!stepIds.length) set('pfmea', 'skip', 'Proses adımı yok');
         else {
           const lib = gen(['pfmea'], { stepIds });
-          let n = 0;
-          let note = '';
-          if (useAi) {
-            const p = current();
-            const steps = p.processSteps.filter((s) => stepIds.includes(s.id));
-            const groups = chunk(steps, PFMEA_AI_STEPS);
-            const ctx = projectContext(p);
-            const composite = compositeKbText(p);
-            const { acc, meta, failed, reasons, total } = await merge(
-              groups.map((g, i) =>
-                splittable(`PFMEA ${i + 1}/${groups.length}`, g, (gg) => {
-                  const target = 'Hedef proses adımları:\n' + gg.map((st) => `${st.id}: Op${st.opNo} ${st.name}${st.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${st.description}`).join('\n');
-                  return api.aiPfmea({ context: ctx, composite, target, mode, expert: expertBrief(p, 'pfmea', gg.map((st) => st.id)), exampleQuery: exampleQuery(p, 'pfmea', target) });
-                }),
-              ),
-              (d, t) => set('pfmea', 'run', `${lib} kütüphane satırı · AI adım grubu ${d}/${t} tamamlandı`),
-              'pfmea',
-            );
-            if (meta) n = addProposals('pfmea', acc, meta, stepIds.join(', '));
-            if (failed.length) note = `${failed.length}/${total} AI grubu hata verdi – ${reasons.join(' | ')}`;
-          }
-          set('pfmea', note ? 'warn' : 'ok', `${lib} kütüphane + ${n} AI satırı${note ? ' · ' + note : ''}`);
+          set('pfmea', 'ok', `${lib} satır (hata kütüphanesi; AI ile zenginleştirme PFMEA ekranında “✦ AI: PFMEA öner”)`);
         }
       }
 
@@ -426,7 +405,7 @@ function ChainSetup({ project: p, onClose, onRun }: { project: Project; onClose:
         </label>
       )}
       <p className="muted small mt">
-        Başlattıktan sonra size başka soru sorulmaz. AI yapı ve fonksiyonu dokümandan, DFMEA’yı onaylı gereksinimlerden, PFMEA’yı proses adımları + gereksinim + DFMEA’dan önerir; hata kütüphanesi eksik hata modlarını tamamlar.
+        Başlattıktan sonra size başka soru sorulmaz. AI yapı ve fonksiyonu ile DFMEA’yı onaylı gereksinimlerden önerir; PFMEA proses adımlarına göre program kütüphanesinden kurulur (AI kullanılmaz).
         Yüksek riskli satırlara aksiyon ve kontrol planı satırı açılır. Var olan satırlara dokunulmaz, yalnız eksikler eklenir. Büyük projelerde birkaç dakika sürebilir.
       </p>
     </Modal>
