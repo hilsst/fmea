@@ -207,7 +207,7 @@ export function ProposalDialog({ initial, onClose }: { initial: ProposalSet; onC
 type Busy = { label: string } | null;
 
 /** 4.9.0: bir AI PFMEA çağrısındaki proses adımı sayısı (tüm hata modları + 4M nedenler 32k çıktı sınırını aşmasın). */
-export const PFMEA_AI_STEPS = 4;
+export const PFMEA_AI_STEPS = 2;
 
 function textDoc(text: string, name: string): ExtractedDoc {
   const paras = text.split(/\n\s*\n/).map((t) => t.trim()).filter(Boolean);

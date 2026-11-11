@@ -22,7 +22,7 @@ import { Modal } from './Modal';
 import { PROCESS_GROUPS, wizardStepIds } from './PfmeaWizard';
 
 /** Bir AI DFMEA çağrısındaki fonksiyon sayısı (çıktı sınırı). */
-export const DFMEA_AI_FUNCTIONS = 5;
+export const DFMEA_AI_FUNCTIONS = 3;
 const PROCESS_REQ = new Set(['Manufacturing', 'Process', 'Inspection']);
 
 type Status = 'wait' | 'run' | 'ok' | 'warn' | 'skip' | 'err';
@@ -108,27 +108,47 @@ export function useAiChain() {
     return proposals.items.length;
   };
 
-  /** Birden çok AI çağrısının sonuçlarını birleştirir. */
-  const merge = async (calls: { label: string; call: () => Promise<AiResult> }[], onStep: (i: number) => void, stage?: string) => {
+  /** Birden çok AI çağrısının sonuçlarını birleştirir. Yanıt çıktı sınırında kesilirse (TRUNCATED) çağrı `split` ile ikiye bölünüp yeniden denenir. */
+  type Call = { label: string; call: () => Promise<AiResult>; split?: () => Call[] };
+  const merge = async (calls: Call[], onStep: (i: number, total: number) => void, stage?: string) => {
     const acc: Rows = { rows: [], issues: [], params: [] };
     let meta: AiRunMeta | undefined;
     const failed: string[] = [];
     const reasons: string[] = [];
-    for (const [i, c] of calls.entries()) {
-      onStep(i);
+    const queue = [...calls];
+    let total = calls.length;
+    let i = 0;
+    while (queue.length) {
+      const c = queue.shift()!;
+      onStep(i, total);
       const r = await ai(c.call, c.label, stage);
       if (!r) {
+        const parts = lastErr.current.startsWith('TRUNCATED') && c.split ? c.split() : [];
+        if (parts.length > 1) {
+          queue.unshift(...parts);
+          total += parts.length - 1;
+          continue;
+        }
+        i++;
         failed.push(c.label);
         if (!reasons.includes(lastErr.current)) reasons.push(lastErr.current);
         continue;
       }
+      i++;
       acc.rows.push(...((r.data.rows as unknown[]) ?? []));
       acc.issues.push(...((r.data.issues as unknown[]) ?? []));
       acc.params.push(...((r.data.params as unknown[]) ?? []));
       meta = meta ? { ...meta, tokensIn: meta.tokensIn + r.meta.tokensIn, tokensOut: meta.tokensOut + r.meta.tokensOut } : r.meta;
     }
-    return { acc, meta, failed, reasons };
+    return { acc, meta, failed, reasons, total };
   };
+
+  /** Bir grubu, kesilirse ikiye bölünebilen çağrıya çevirir. */
+  const splittable = <T,>(label: string, g: T[], make: (g: T[]) => Promise<AiResult>): Call => ({
+    label,
+    call: () => make(g),
+    split: g.length > 1 ? () => { const h = Math.ceil(g.length / 2); return [splittable(`${label}a`, g.slice(0, h), make), splittable(`${label}b`, g.slice(h), make)]; } : undefined,
+  });
 
   const run = async (sel: string[], includeExisting: boolean) => {
     setSetup(false);
@@ -186,15 +206,15 @@ export function useAiChain() {
           if (useAi) {
             const groups = chunk(ready, DFMEA_AI_FUNCTIONS);
             const ctx = projectContext(p, { approvedReqsOnly: true });
-            const { acc, meta, failed, reasons } = await merge(
-              groups.map((g, i) => ({ label: `DFMEA ${i + 1}/${groups.length}`, call: () => { const target = dfmeaTargetText(g); return api.aiDfmea({ context: ctx, target, mode, expert: expertBrief(p, 'dfmea'), exampleQuery: exampleQuery(p, 'dfmea', target) }); } })),
-              (i) => set('dfmea', 'run', `AI fonksiyon grubu ${i + 1}/${groups.length}`),
+            const { acc, meta, failed, reasons, total } = await merge(
+              groups.map((g, i) => splittable(`DFMEA ${i + 1}/${groups.length}`, g, (gg) => { const target = dfmeaTargetText(gg); return api.aiDfmea({ context: ctx, target, mode, expert: expertBrief(p, 'dfmea'), exampleQuery: exampleQuery(p, 'dfmea', target) }); })),
+              (i, t) => set('dfmea', 'run', `AI fonksiyon grubu ${i + 1}/${t}`),
               'dfmea',
             );
             if (meta) n = addProposals('dfmea', acc, meta, ready.map((t) => t.fn.id).join(', '));
             const covered = new Set(current().dfmea.map((d) => d.functionId));
             fallback = fallback.filter((id) => !covered.has(id));
-            if (failed.length) note = `${failed.length}/${groups.length} AI grubu hata verdi – ${reasons.join(' | ')}; `;
+            if (failed.length) note = `${failed.length}/${total} AI grubu hata verdi – ${reasons.join(' | ')}; `;
           }
           const m = fallback.length ? gen(['dfmea'], { fnIds: fallback }) : 0;
           if (m) note += `${fallback.length} fonksiyon hata kütüphanesinden`;
@@ -230,19 +250,18 @@ export function useAiChain() {
             const groups = chunk(steps, PFMEA_AI_STEPS);
             const ctx = projectContext(p);
             const composite = compositeKbText(p);
-            const { acc, meta, failed, reasons } = await merge(
-              groups.map((g, i) => ({
-                label: `PFMEA ${i + 1}/${groups.length}`,
-                call: () => {
-                  const target = 'Hedef proses adımları:\n' + g.map((s) => `${s.id}: Op${s.opNo} ${s.name}${s.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${s.description}`).join('\n');
-                  return api.aiPfmea({ context: ctx, composite, target, mode, expert: expertBrief(p, 'pfmea', g.map((s) => s.id)), exampleQuery: exampleQuery(p, 'pfmea', target) });
-                },
-              })),
-              (i) => set('pfmea', 'run', `${lib} kütüphane satırı · AI adım grubu ${i + 1}/${groups.length}`),
+            const { acc, meta, failed, reasons, total } = await merge(
+              groups.map((g, i) =>
+                splittable(`PFMEA ${i + 1}/${groups.length}`, g, (gg) => {
+                  const target = 'Hedef proses adımları:\n' + gg.map((st) => `${st.id}: Op${st.opNo} ${st.name}${st.specialProcess ? ' [ÖZEL PROSES]' : ''} – ${st.description}`).join('\n');
+                  return api.aiPfmea({ context: ctx, composite, target, mode, expert: expertBrief(p, 'pfmea', gg.map((st) => st.id)), exampleQuery: exampleQuery(p, 'pfmea', target) });
+                }),
+              ),
+              (i, t) => set('pfmea', 'run', `${lib} kütüphane satırı · AI adım grubu ${i + 1}/${t}`),
               'pfmea',
             );
             if (meta) n = addProposals('pfmea', acc, meta, stepIds.join(', '));
-            if (failed.length) note = `${failed.length}/${groups.length} AI grubu hata verdi – ${reasons.join(' | ')}`;
+            if (failed.length) note = `${failed.length}/${total} AI grubu hata verdi – ${reasons.join(' | ')}`;
           }
           set('pfmea', note ? 'warn' : 'ok', `${lib} kütüphane + ${n} AI satırı${note ? ' · ' + note : ''}`);
         }
