@@ -381,7 +381,7 @@ function registerIpc() {
     writeConfig(c);
     return c.aiProvider;
   });
-  ipcMain.handle('ai:requirements', (_e, a: Parameters<typeof ai.extractRequirements>[1]) => ai.extractRequirements(aiEnv(), a));
+  ipcMain.handle('ai:requirements', (_e, a: Parameters<typeof ai.extractRequirements>[1]) => ai.extractRequirements(aiEnv(), a, extract));
   ipcMain.handle('ai:dfmea', async (_e, a: Parameters<typeof ai.suggestDfmea>[1] & { exampleQuery?: ExampleQuery }) => ai.suggestDfmea(aiEnv(), { ...a, examples: await examplesFor(a.exampleQuery) }));
   ipcMain.handle('ai:structure', (_e, a: Parameters<typeof ai.suggestStructure>[1]) => ai.suggestStructure(aiEnv(), a));
   ipcMain.handle('ai:pfmea', async (_e, a: Parameters<typeof ai.suggestPfmea>[1] & { exampleQuery?: ExampleQuery }) => ai.suggestPfmea(aiEnv(), { ...a, examples: await examplesFor(a.exampleQuery) }));
