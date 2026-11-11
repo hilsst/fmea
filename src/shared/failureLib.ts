@@ -21,6 +21,8 @@ export interface FailureTemplate {
   skipIf?: RegExp;
   /** 4.12.0: firma kütüphanesinden gelen kayıt (satır kaynağına "Firma kütüphanesi" yazılır). */
   company?: boolean;
+  /** 4.13.0: yerleşik kayıt için SABİT kimlik (isteğe bağlı). Metni değiştirirken eski kimliği buraya yazın; yoksa kimlik metinden türer ve "devre dışı" işareti düşer. */
+  id?: string;
   /** 4.13.0: firma kaydının geldiği proje (sourceProject). */
   from?: string;
 }
