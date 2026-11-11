@@ -3,6 +3,7 @@
 // (laminat, çekirdek, yapıştırma hattı, delik, kaynak dikişi ...). Eleman türü, yapı satırındaki eleman adından
 // anahtar kelimeyle tanınır; bu yüzden elle veya AI ile girilen elemanlarda da çalışır.
 // Sayısal limit içermez. S/O/D başlangıç önerisidir; satırlar "AI Proposed", güven "Low" ve "AI VARSAYIMI" ile eklenir.
+import { getActiveLib } from './activeLib';
 import type { FailureTemplate } from './failureLib';
 
 /** ft: hata modunun ait olduğu fonksiyon tipi – elemanın o tipteki fonksiyon satırına, yoksa ilk satırına bağlanır. */
@@ -299,7 +300,7 @@ export const ELEMENT_KINDS: ElementKind[] = [
 export const ELEMENT_KIND_BY_KEY = Object.fromEntries(ELEMENT_KINDS.map((k) => [k.key, k])) as Record<string, ElementKind>;
 
 /** Eleman adından türü tanır (ilk eşleşen); tanınmazsa undefined. */
-export function elementKind(name: string): ElementKind | undefined {
+export function elementKind(name: string, kinds: ElementKind[] = getActiveLib()?.elementKinds ?? ELEMENT_KINDS): ElementKind | undefined {
   const n = ` ${(name ?? '').toLocaleLowerCase('tr')} `;
-  return ELEMENT_KINDS.find((k) => k.match.test(n));
+  return kinds.find((k) => k.match.test(n));
 }

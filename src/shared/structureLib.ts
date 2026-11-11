@@ -2,7 +2,9 @@
 // Ürün tipine göre tipik yapı ağacı (ürün → parça → özellik) ve her elemanın fonksiyonları önerilir.
 // Sayısal değer içermez: performans gereksinimi boş gelir, bağlanan gereksinimin kabul kriterinden dolar.
 // Tüm satırlar "AI Proposed" eklenir; mühendis ürününe uymayan elemanı seçmez / siler, adları düzenler.
+import { getActiveLib } from './activeLib';
 import { Gen, type GenEdit } from './autogen';
+import type { MergedLib } from './companyLib';
 import type { MaterialFamily } from './failureLib';
 import { NO_DATA } from './reqAutofill';
 import type { AnyRow, Project, StructureLevel, StructureRow } from './types';
@@ -292,9 +294,9 @@ const PROCESS_TYPES = new Set(['Manufacturing', 'Process', 'Inspection']);
  * aynı adlı mevcut elemanlar tekrar eklenmez. Yapıya bağlı olmayan (proses dışı, reddedilmemiş) gereksinimler
  * anahtar kelimeyle ilgili elemanın, tipine uyan fonksiyon satırına bağlanır.
  */
-export function planStructure(p: Project, templateKey: string, elementKeys?: string[]): StructurePlan {
-  const t = STRUCTURE_TEMPLATE_BY_KEY[templateKey];
-  const g = new Gen(p);
+export function planStructure(p: Project, templateKey: string, elementKeys?: string[], lib?: MergedLib): StructurePlan {
+  const t = (lib ?? getActiveLib())?.structures.find((x) => x.key === templateKey) ?? STRUCTURE_TEMPLATE_BY_KEY[templateKey];
+  const g = new Gen(p, lib);
   if (!t) return { edits: [], rows: 0, linked: 0, unmatched: [] };
   const keys = new Set(elementKeys ?? defaultElements(t));
   const common = { approval: 'AI Proposed', origin: 'template', source: `${STRUCTURE_SOURCE} – ${t.label}`, notes: 'Kütüphane önerisi – ürüne uygunluğunu doğrulayın (AI VARSAYIMI)' };

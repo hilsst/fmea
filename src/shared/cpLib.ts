@@ -3,6 +3,7 @@
 // 2) Proses parametrelerinden kontrol planı satırı üretir (parametreye ppId ile bağlı).
 // 3) Mevcut satırların BOŞ alanlarını doldurur ve PFMEA üzerinden parametre bağlantısını (ppId) kurar.
 // Numune büyüklüğü, sıklık ve limit değeri ASLA önerilmez (VERİ YOK): kaynak dokümandan / örnekleme planından gelir.
+import { getActiveLib } from './activeLib';
 import { paramSpec } from './engine';
 import { blankRow, nextId } from './model';
 import { materialFamily } from './failureLib';
@@ -57,10 +58,10 @@ export const GAUGE_LIB: GaugeTemplate[] = [
 ];
 
 /** Ölçüm yöntemi metninden ölçüm cihazı / kayıt / kontrol tipi önerisi. */
-export function gaugeFor(method: string): GaugeTemplate | undefined {
+export function gaugeFor(method: string, lib: GaugeTemplate[] = getActiveLib()?.gauges ?? GAUGE_LIB): GaugeTemplate | undefined {
   const m = (method ?? '').toLocaleLowerCase('tr');
   if (!m.trim() || /^veri yok/.test(m.trim())) return undefined;
-  return GAUGE_LIB.find((g) => g.match.test(m));
+  return lib.find((g) => g.match.test(m));
 }
 
 const blank = (v: unknown) => !String(v ?? '').trim() || /^VERİ YOK/.test(String(v).trim());
