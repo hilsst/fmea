@@ -21,6 +21,8 @@ export interface FailureTemplate {
   skipIf?: RegExp;
   /** 4.12.0: firma kütüphanesinden gelen kayıt (satır kaynağına "Firma kütüphanesi" yazılır). */
   company?: boolean;
+  /** 4.13.0: firma kaydının geldiği proje (sourceProject). */
+  from?: string;
 }
 
 const T = (failureMode: string, effect: string, cause: string, prevention: string, detection: string, s: number, o: number, d: number, extra: Partial<FailureTemplate> = {}): FailureTemplate => ({ failureMode, effect, cause, prevention, detection, s, o, d, ...extra });

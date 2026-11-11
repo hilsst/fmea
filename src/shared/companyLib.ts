@@ -291,7 +291,7 @@ export interface MergedLib {
 }
 
 const compile = (src: string): RegExp => new RegExp(src, 'i');
-const tplOf = (c: Tpl, extra: Partial<FailureTemplate> = {}): FailureTemplate => ({ failureMode: c.failureMode, effect: c.effect, cause: c.cause, prevention: c.prevention, detection: c.detection, s: c.s, o: c.o, d: c.d, company: true, ...extra });
+const tplOf = (c: Tpl & { sourceProject?: string }, extra: Partial<FailureTemplate> = {}): FailureTemplate => ({ failureMode: c.failureMode, effect: c.effect, cause: c.cause, prevention: c.prevention, detection: c.detection, s: c.s, o: c.o, d: c.d, company: true, ...(c.sourceProject ? { from: c.sourceProject } : {}), ...extra });
 
 // Yerleşik kayıtların kararlı kimlikleri: kapsam + hata modu (+ nadiren tekrar eden için sıra eki).
 const uniq = () => {

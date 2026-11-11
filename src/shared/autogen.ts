@@ -15,6 +15,8 @@ import type { AnyRow, PfmeaRow, ProcessParamRow, ProcessStepRow, Project, Requir
 export type GenEdit = { kind: 'add'; table: TableKey; row: AnyRow } | { kind: 'set'; table: TableKey; id: string; field: string; value: unknown };
 
 export const ASSUMPTION = 'AI VARSAYIMI – mühendislik doğrulaması gerekli';
+/** 4.13.0: firma kaydı kaynağı; kayıt başka projeden geldiyse proje adı da yazılır. */
+export const companySrc = (t: { company?: boolean; from?: string }) => (t.company ? ` · Firma kütüphanesi${t.from ? ` (kaynak proje: ${t.from})` : ''}` : '');
 const LIB_REASON = 'Hata kütüphanesi başlangıç değeri – kriter tablosuna göre doğrulayın (AI VARSAYIMI)';
 
 /** Satır ekleyen ve eklenenleri kendi proje kopyasında tutan yardımcı (sonraki adımlar yeni satırları görür). */
@@ -155,7 +157,7 @@ export function genStructure(g: Gen, reqIds?: string[]) {
 
 // ───────────────────────── 3) Fonksiyondan DFMEA ─────────────────────────
 
-const fill = (s: string, x: string) => s.replace(/\{x\}/g, x);
+export const fill = (s: string, x: string) => s.replace(/\{x\}/g, x);
 
 function scoreFields(t: FailureTemplate) {
   return { s: t.s, o: t.o, d: t.d, sReason: LIB_REASON, oReason: LIB_REASON, dReason: LIB_REASON, sConf: 'Low', oConf: 'Low', dConf: 'Low' };
@@ -167,7 +169,7 @@ const norm = (s: string) => s.toLocaleLowerCase('tr').replace(/\s+/g, ' ').trim(
 /** Zıt yönlü modlar (alt / üst limit, eksik / fazla) benzer metne rağmen ayrı hata modlarıdır. */
 const OPPOSITES: [RegExp, RegExp][] = [[/alt limit|altında/, /üst limit|üzerinde/], [/eksik|yetersiz/, /fazla|aşırı/]];
 const opposite = (a: string, b: string) => OPPOSITES.some(([x, y]) => (x.test(a) && !y.test(a) && y.test(b) && !x.test(b)) || (y.test(a) && !x.test(a) && x.test(b) && !y.test(b)));
-function covered(existing: string[], fm: string, skipIf?: RegExp): boolean {
+export function covered(existing: string[], fm: string, skipIf?: RegExp): boolean {
   const n = norm(fm);
   return existing.some((e) => norm(e) === n || (skipIf?.test(norm(e)) ?? false) || (similarity(e, fm) >= SAME_MODE && !opposite(norm(e), n)));
 }
@@ -215,7 +217,7 @@ export function genDfmea(g: Gen, fnIds?: string[]) {
         prevention: t.prevention,
         detection: verification ? `${t.detection}; ${verification}` : t.detection,
         ...scoreFields(t),
-        source: `${fn.id}${fn.reqIds.length ? ', ' + fn.reqIds.join(', ') : ''} · DFMEA hata kütüphanesi (${type})${t.company ? ' · Firma kütüphanesi' : ''}`,
+        source: `${fn.id}${fn.reqIds.length ? ', ' + fn.reqIds.join(', ') : ''} · DFMEA hata kütüphanesi (${type})${companySrc(t)}`,
         confidence: 'Low',
         basis: 'ENGINEERING KNOWLEDGE',
         dataStatus: ASSUMPTION,
@@ -231,7 +233,7 @@ export function genDfmea(g: Gen, fnIds?: string[]) {
 // ───────────────────────── 4) Proses adımından PFMEA ─────────────────────────
 
 function pfRow(step: ProcessStepRow, t: FailureTemplate, source: string, dfIds: string[] = []): Partial<PfmeaRow> {
-  if (t.company && !source.includes('Firma kütüphanesi')) source += ' · Firma kütüphanesi';
+  if (t.company && !source.includes('Firma kütüphanesi')) source += companySrc(t);
   return {
     stepId: step.id,
     dfIds,

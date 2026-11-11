@@ -19,6 +19,9 @@ import { useStore } from '../store';
 import { exampleQuery, projectContext } from './AiDialogs';
 import { stepEdits } from './FlowTemplates';
 import { Modal } from './Modal';
+import { getLibState } from '../companyLibStore';
+import { normalizeProject } from '../../shared/model';
+import { withSimilarProject, type SimilarPlan } from '../../shared/similarStart';
 import { PROCESS_GROUPS, wizardStepIds } from './PfmeaWizard';
 
 /** Bir AI DFMEA çağrısındaki fonksiyon sayısı (çıktı sınırı). */
@@ -54,15 +57,21 @@ type Rows = { rows: unknown[]; issues: unknown[]; params: unknown[] };
 
 export function useAiChain() {
   const { project, current, apply, mutate, toast, confirm } = useStore();
-  const [setup, setSetup] = useState(false);
+  const [setup, setSetup] = useState<false | 'ai' | 'lib'>(false);
   const [stages, setStages] = useState<Stage[] | null>(null);
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<{ label: string; n: number; key: string }[]>([]);
   const mode = project.settings.aiMode;
+  const [libMode, setLibMode] = useState(false);
 
   const open = () => {
     if (!approvedReqIds(project).size) return toast('Önce Gereksinimler ekranında gereksinimleri inceleyip onaylayın (Onay = Approved). Zincir yalnız onaylı gereksinimlerden kurulur.', 'warn');
-    setSetup(true);
+    setSetup('ai');
+  };
+  /** 4.13.0: AI'sız, yalnız kütüphane ile kurulum. */
+  const openLib = () => {
+    if (!approvedReqIds(project).size) return toast('Önce Gereksinimler ekranında gereksinimleri inceleyip onaylayın (Onay = Approved). Kurulum yalnız onaylı gereksinimlerden yapılır.', 'warn');
+    setSetup('lib');
   };
 
   const set = (key: string, status: Status, note = '') => setStages((xs) => xs && xs.map((s) => (s.key === key ? { ...s, status, note } : s)));
@@ -161,17 +170,18 @@ export function useAiChain() {
     split: g.length > 1 ? () => { const h = Math.ceil(g.length / 2); return [splittable(`${label}a`, g.slice(0, h), make), splittable(`${label}b`, g.slice(h), make)]; } : undefined,
   });
 
-  const run = async (sel: string[], includeExisting: boolean) => {
+  const run = async (sel: string[], includeExisting: boolean, libMode = false, simLib?: SimilarPlan) => {
     setSetup(false);
-    const useAi = await aiReady();
+    const useAi = libMode ? false : await aiReady();
     if (useAi === null) return;
     const before = current();
     setStages(STAGES.map(([key, label]) => ({ key, label, status: 'wait', note: '' })));
     setSummary([]);
     setRunning(true);
-    const reason = 'AI ile tümünü kur';
+    setLibMode(libMode);
+    const reason = libMode ? 'Kütüphaneden tümünü kur' : 'AI ile tümünü kur';
     const gen = (stages: Parameters<typeof generate>[1], opts: Parameters<typeof generate>[2]) => {
-      const g = generate(current(), stages, opts);
+      const g = generate(current(), stages, { ...opts, ...(simLib ? { lib: simLib.lib } : {}) });
       apply(g.edits as Edit[], reason);
       return g.edits.filter((e) => e.kind === 'add').length;
     };
@@ -313,10 +323,10 @@ export function useAiChain() {
 
   const dialogs = (
     <>
-      {setup && <ChainSetup project={project} onClose={() => setSetup(false)} onRun={run} />}
+      {setup && <ChainSetup project={project} libMode={setup === 'lib'} onClose={() => setSetup(false)} onRun={run} />}
       {stages && (
         <Modal
-          title={running ? 'AI FMEA’yı kuruyor…' : 'AI kurulumu tamamlandı – inceleme sizde'}
+          title={running ? (libMode ? 'FMEA kütüphaneden kuruluyor…' : 'AI FMEA’yı kuruyor…') : libMode ? 'Kütüphane kurulumu tamamlandı – inceleme sizde' : 'AI kurulumu tamamlandı – inceleme sizde'}
           sub="Tüm satırlar “AI Proposed” eklendi; hiçbiri onaylanmadı."
           icon="✦"
           wide
@@ -357,10 +367,24 @@ export function useAiChain() {
     </>
   );
 
-  return { open, dialogs, running };
+  return { open, openLib, dialogs, running };
 }
 
-function ChainSetup({ project: p, onClose, onRun }: { project: Project; onClose: () => void; onRun: (sel: string[], includeExisting: boolean) => void }) {
+function ChainSetup({ project: p, libMode, onClose, onRun }: { project: Project; libMode: boolean; onClose: () => void; onRun: (sel: string[], includeExisting: boolean, libMode?: boolean, sim?: SimilarPlan) => void }) {
+  const { toast } = useStore();
+  const [sim, setSim] = useState<SimilarPlan | null>(null);
+  /** Benzer projenin yalnız onaylı satırları, ayıklanarak geçici kütüphaneye eklenir (dosyaya yazılmaz). */
+  const pickSimilar = async () => {
+    try {
+      const r = await api.openProject();
+      if (!r) return;
+      const plan = withSimilarProject(getLibState().co, normalizeProject(r.data));
+      if (!plan.dfmea && !plan.pfmea) return toast('Seçilen projede kütüphanede olmayan onaylı DFMEA / PFMEA satırı yok.', 'warn');
+      setSim(plan);
+    } catch (e) {
+      toast(`Dosya okunamadı: ${e instanceof Error ? e.message : e}`, 'err');
+    }
+  };
   const saved = (p.meta.flowTemplates ?? '').split(';').map((x) => x.trim()).filter(Boolean);
   const [sel, setSel] = useState<string[]>(saved.length ? saved : suggestFlowTemplates(p.meta.material ?? '', p.settings.productType));
   const [existing, setExisting] = useState(p.processSteps.length > 0);
@@ -369,16 +393,16 @@ function ChainSetup({ project: p, onClose, onRun }: { project: Project; onClose:
   const toggle = (k: string) => setSel((xs) => (xs.includes(k) ? xs.filter((x) => x !== k) : [...xs, k]));
   return (
     <Modal
-      title="AI ile tümünü kur"
+      title={libMode ? 'Kütüphaneden tümünü kur' : 'AI ile tümünü kur'}
       sub={`${approved} onaylı gereksinimden: Yapı & Fonksiyon → DFMEA → Proses akışı → PFMEA → Aksiyonlar → Kontrol planı`}
-      icon="✦"
+      icon={libMode ? '📚' : '✦'}
       wide
       onClose={onClose}
       foot={
         <>
           <span className="grow" />
           <button className="btn" onClick={onClose}>Vazgeç</button>
-          <button className="btn primary" disabled={!sel.length && !(existing && p.processSteps.length)} onClick={() => onRun(sel, existing)}>Başlat</button>
+          <button className="btn primary" disabled={!sel.length && !(existing && p.processSteps.length)} onClick={() => onRun(sel, existing, libMode, sim ?? undefined)}>Başlat</button>
         </>
       }
     >
@@ -404,8 +428,16 @@ function ChainSetup({ project: p, onClose, onRun }: { project: Project; onClose:
           <input type="checkbox" checked={existing} onChange={(e) => setExisting(e.target.checked)} /> Proses Akışı’ndaki mevcut {p.processSteps.length} adımı da dahil et
         </label>
       )}
+      {libMode && (
+        <div className="callout mt">
+          <b>Benzer projeden başla (isteğe bağlı)</b>
+          <p className="small">Daha önce yaptığınız benzer bir projenin <b>.fmea</b> dosyasını seçin. Yalnız onaylı (Approved / Engineer Reviewed) DFMEA ve PFMEA satırları, projeye özel sayı ve kimlikler ayıklanarak bu kurulum için kütüphaneye eklenir; firma kütüphanesi dosyasına yazılmaz. Satırlar yine AI Proposed gelir.</p>
+          <button className="btn small" onClick={pickSimilar}>Benzer proje dosyası seç…</button>
+          {sim && <span className="small"> {sim.project || 'Proje'}: {sim.dfmea} DFMEA + {sim.pfmea} PFMEA onaylı satır eklenecek{sim.skipped ? ` (${sim.skipped} satır atlandı: zaten kütüphanede / onaysız)` : ''}. <button className="link" onClick={() => setSim(null)}>Kaldır</button></span>}
+        </div>
+      )}
       <p className="muted small mt">
-        Başlattıktan sonra size başka soru sorulmaz. AI yapı ve fonksiyonu ile DFMEA’yı onaylı gereksinimlerden önerir; PFMEA proses adımlarına göre program kütüphanesinden kurulur (AI kullanılmaz).
+        {libMode ? 'Kütüphaneden kurulumda AI hiç çağrılmaz: yapı gereksinim tipine göre, DFMEA ve PFMEA yerleşik + firma kütüphanesinden, kontrol planı parametre / ölçüm kütüphanesinden kurulur. İstediğiniz tabloda sonradan “AI ile kontrol et / oluştur” düğmelerini kullanabilirsiniz. ' : ''}Başlattıktan sonra size başka soru sorulmaz. AI yapı ve fonksiyonu ile DFMEA’yı onaylı gereksinimlerden önerir; PFMEA proses adımlarına göre program kütüphanesinden kurulur (AI kullanılmaz).
         Yüksek riskli satırlara aksiyon ve kontrol planı satırı açılır. Var olan satırlara dokunulmaz, yalnız eksikler eklenir. Büyük projelerde birkaç dakika sürebilir.
       </p>
     </Modal>

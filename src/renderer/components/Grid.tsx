@@ -5,6 +5,8 @@ import { riskLevelOf } from '../../shared/risk'; // v4-risk
 import { changesSinceApproval, moveRows, moveRowsTo, TABLE_APPROVE_LABEL } from '../../shared/rowOrder';
 import type { AnyRow, TableKey } from '../../shared/types';
 import { useStore } from '../store';
+import { canSuggest, type SuggestTable } from '../../shared/cellSuggest';
+import { SuggestCell } from './SuggestCell';
 import { badgeClass, MultiCell, RefCell, ScoreCell, SelectCell, TextCell } from './Cells';
 
 const PAGE = 150;
@@ -273,6 +275,14 @@ function Cell({ col, row, table }: { col: Col; row: AnyRow; table: TableKey }) {
   const value = (row as unknown as Record<string, unknown>)[col.key];
   const commit = (v: unknown) => edit({ kind: 'set', table, id: row.id, field: col.key, value: v }, `${row.id} · ${col.label}`);
   const props = { col, value, readonly: col.readonly, onCommit: commit, project, table };
+  const wrap = (el: JSX.Element) =>
+    !col.readonly && (table === 'dfmea' || table === 'pfmea') && canSuggest(table, col.key) ? (
+      <SuggestCell table={table as SuggestTable} row={row} field={col.key} onPick={(t) => void commit(t)}>
+        {el}
+      </SuggestCell>
+    ) : (
+      el
+    );
   switch (col.type) {
     case 'computed': {
       const text = cellText(col, row, project);
@@ -294,12 +304,12 @@ function Cell({ col, row, table }: { col: Col; row: AnyRow; table: TableKey }) {
         </div>
       );
     case 'long':
-      return <TextCell value={value} readonly={col.readonly} onCommit={commit} multiline />;
+      return wrap(<TextCell value={value} readonly={col.readonly} onCommit={commit} multiline />);
     case 'date':
       return <TextCell value={value} readonly={col.readonly} onCommit={commit} type="date" />;
     case 'number':
       return <TextCell value={value} readonly={col.readonly} onCommit={commit} type="number" />;
     default:
-      return <TextCell value={value} readonly={col.readonly} onCommit={commit} />;
+      return wrap(<TextCell value={value} readonly={col.readonly} onCommit={commit} />);
   }
 }
