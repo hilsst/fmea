@@ -248,6 +248,15 @@ describe('dosya: okuma, yazma, rev çakışması', () => {
     expect(files.some((f) => f.startsWith('fmea-kutuphane.bozuk-'))).toBe(true);
     expect((await readLibFile(dir)).status).toBe('ok');
   });
+  it('okunurken atlanan geçersiz kayıt varsa yazmadan önce dosya yedeklenir (veri kaybı yok)', async () => {
+    const raw = { schema: 1, rev: 3, disabled: [], dfmea: [{ id: 'c:elle', scope: 'Functional', failureMode: 'Elle düzenlenmiş', s: 15, o: 2, d: 2 }] };
+    await fs.writeFile(path.join(dir, LIB_FILE), JSON.stringify(raw), 'utf8');
+    const w = await writeLibFile(dir, ops('c:1'), 3, BY);
+    expect(w.ok).toBe(true);
+    const bak = (await fs.readdir(dir)).find((f) => f.startsWith('fmea-kutuphane.bozuk-'));
+    expect(bak).toBeTruthy();
+    expect(JSON.parse(await fs.readFile(path.join(dir, bak!), 'utf8')).dfmea[0].id).toBe('c:elle');
+  });
   it('daha yeni şemalı dosyanın üzerine yazılmaz', async () => {
     await fs.writeFile(path.join(dir, LIB_FILE), JSON.stringify({ schema: 99, rev: 5 }), 'utf8');
     const w = await writeLibFile(dir, ops('c:1'), 5, BY);

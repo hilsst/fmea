@@ -83,8 +83,11 @@ export function LibraryScreen() {
   };
   const migrate = async () => {
     const pool = await api.examplesList();
-    const recs = recordsFromExamples(pool, undefined);
-    if (!recs.length) return toast('Taşınacak geçerli örnek bulunamadı.', 'warn');
+    // Daha önce taşınmış (aynı kapsam + hata modu + neden) kayıtlar tekrar eklenmez.
+    const k = (scope: string, fm: string, cause: string) => [scope, fm, cause].map((v) => (v ?? '').toLocaleLowerCase('tr').replace(/\s+/g, ' ').trim()).join('|');
+    const have = new Set([...lib.co.dfmea.map((c) => k(c.scope, c.failureMode, c.cause)), ...lib.co.pfmea.map((c) => k(c.area, c.failureMode, c.cause))]);
+    const recs = recordsFromExamples(pool, undefined).filter((x) => !have.has(k('scope' in x.rec ? x.rec.scope : x.rec.area, x.rec.failureMode, x.rec.cause)));
+    if (!recs.length) return toast('Taşınacak yeni örnek bulunamadı (geçerli örnek yok veya hepsi zaten firma kütüphanesinde).', 'warn');
     if (await write({ upsert: recs.map((x) => ({ coll: x.coll, rec: x.rec })) }, `${recs.length} örnek firma kütüphanesine taşındı`)) dismiss();
   };
   const dismiss = () => {

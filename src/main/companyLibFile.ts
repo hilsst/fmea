@@ -41,13 +41,20 @@ export async function readLibFile(dir: string): Promise<LibReadResult> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Basit dosya kilidi (aynı anda iki yazıcıyı sıraya sokar). Eski kilit (>15 sn) çöpe sayılır. */
+/** Basit dosya kilidi (aynı anda iki yazıcıyı sıraya sokar). Eski kilit (>15 sn) çöpe sayılır.
+ *  Kilit dosyasına sahiplik belirteci yazılır; çıkışta yalnız kendi kilidimiz silinir (bayat sayılıp başkasına geçmişse dokunulmaz). */
 async function withLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
   const lock = path.join(dir, `${LIB_FILE}.lock`);
+  const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   let held = false;
   for (let i = 0; i < 60 && !held; i++) {
     try {
-      await (await fs.open(lock, 'wx')).close();
+      const h = await fs.open(lock, 'wx');
+      try {
+        await h.writeFile(token, 'utf8');
+      } finally {
+        await h.close();
+      }
       held = true;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
@@ -63,7 +70,21 @@ async function withLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } finally {
-    await fs.rm(lock, { force: true }).catch(() => undefined);
+    const owner = await fs.readFile(lock, 'utf8').catch(() => '');
+    if (owner === token) await fs.rm(lock, { force: true }).catch(() => undefined);
+  }
+}
+
+/** Windows / ağ paylaşımında hedef dosya o an başka biri tarafından okunuyorsa rename geçici olarak EPERM / EBUSY verebilir. */
+async function renameRetry(from: string, to: string): Promise<void> {
+  for (let i = 0; ; i++) {
+    try {
+      return await fs.rename(from, to);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (i >= 9 || !['EPERM', 'EBUSY', 'EACCES'].includes(code ?? '')) throw e;
+      await sleep(100 + i * 100);
+    }
   }
 }
 
@@ -82,11 +103,15 @@ export async function writeLibFile(dir: string, ops: LibOps, baseRev: number, by
       const cur = await readLibFile(dir);
       if (cur.status === 'unreachable') return { ok: false as const, error: cur.error ?? 'Klasöre erişilemiyor.' };
       const warnings = [...cur.warnings];
-      if (cur.status === 'corrupt') {
-        // Bozuk dosyayı silmeden yedekle; boş kütüphaneden devam edilir.
+      if (cur.status === 'corrupt' || (cur.status === 'ok' && cur.warnings.length)) {
+        // Bozuk dosya veya okunurken atlanan kayıt var: üzerine yazmadan önce yedekle. Yedek alınamazsa YAZMA (veri kaybı olmasın).
         const bak = path.join(dir, `fmea-kutuphane.bozuk-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-        await fs.copyFile(file(dir), bak).catch(() => undefined);
-        warnings.push(`Bozuk kütüphane dosyası yedeklendi: ${path.basename(bak)}`);
+        try {
+          await fs.copyFile(file(dir), bak);
+        } catch (e) {
+          return { ok: false as const, error: `Kütüphane dosyası sorunlu ve yedeği alınamadı; veri kaybını önlemek için yazılmadı: ${msg(e)}` };
+        }
+        warnings.push(`${cur.status === 'corrupt' ? 'Bozuk kütüphane dosyası' : 'Geçersiz kayıt içeren kütüphane dosyası'} yedeklendi: ${path.basename(bak)}`);
       }
       if (cur.status === 'ok') {
         const raw = JSON.parse(await fs.readFile(file(dir), 'utf8')) as { schema?: number };
@@ -97,7 +122,7 @@ export async function writeLibFile(dir: string, ops: LibOps, baseRev: number, by
       const tmp = path.join(dir, `${LIB_FILE}.${process.pid}-${Math.random().toString(36).slice(2, 8)}.tmp`);
       try {
         await fs.writeFile(tmp, JSON.stringify(lib, null, 2), 'utf8');
-        await fs.rename(tmp, file(dir));
+        await renameRetry(tmp, file(dir));
       } catch (e) {
         await fs.rm(tmp, { force: true }).catch(() => undefined);
         throw e;
