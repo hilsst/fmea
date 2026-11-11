@@ -1,6 +1,8 @@
 // Kural tabanlı öneri motoru: doküman → gereksinim → yapı/fonksiyon → DFMEA → PFMEA.
 // Üretilen her satır "AI Proposed" eklenir; ekleme öncesi onay penceresi tüm satırları listeler.
 // Kaynakta olmayan değer uydurulmaz (VERİ YOK); kütüphane içeriği ENGINEERING KNOWLEDGE olarak işaretlenir.
+import { getActiveLib } from './activeLib';
+import type { MergedLib } from './companyLib';
 import { findRequirementCandidates, locText } from './docmodel';
 import { DFMEA_FUNCTION_TYPES, DFMEA_LIB, PFMEA_ALT_CAUSES, PFMEA_LIB, PFMEA_STEP_COMMON, paramTemplates, stepArea, type FailureTemplate } from './failureLib';
 import { elementKind, type ElementTemplate } from './elementLib';
@@ -19,7 +21,11 @@ const LIB_REASON = 'Hata kütüphanesi başlangıç değeri – kriter tablosuna
 export class Gen {
   edits: GenEdit[] = [];
   counts: Partial<Record<string, number>> = {};
-  constructor(public p: Project) {}
+  /** 4.12.0: kullanılacak birleşik kütüphane (yerleşik − devre dışı + firma). Verilmezse etkin kütüphane, o da yoksa yerleşik. */
+  lib?: MergedLib;
+  constructor(public p: Project, lib?: MergedLib) {
+    this.lib = lib ?? getActiveLib();
+  }
   add(table: TableKey, data: Partial<AnyRow>): string {
     const id = nextId(this.p, table);
     const row = { ...blankRow(table, id), ...data, id } as AnyRow;
@@ -178,21 +184,22 @@ export function genDfmea(g: Gen, fnIds?: string[]) {
     const have = g.p.dfmea.filter((d) => d.functionId === fn.id).map((d) => d.failureMode);
     const reqs = fn.reqIds.map((id) => g.p.requirements.find((r) => r.id === id)).filter(Boolean) as RequirementRow[];
     // Emniyet / regülasyon önce; sonra bağlı gereksinimlerin tipleri (her tip bir kez).
-    const types = [...new Set([...reqs.filter((r) => r.reqType === 'Safety' || r.reqType === 'Regulatory'), ...reqs].map((r) => r.reqType).filter((t) => DFMEA_LIB[t] && DFMEA_LIB[t] !== DFMEA_LIB.Functional))]; // Functional = fonksiyon hata tipleri
+    const dlib = g.lib?.dfmea ?? DFMEA_LIB;
+    const types = [...new Set([...reqs.filter((r) => r.reqType === 'Safety' || r.reqType === 'Regulatory'), ...reqs].map((r) => r.reqType).filter((t) => dlib[t] && dlib[t] !== dlib.Functional))]; // Functional = fonksiyon hata tipleri
     const verification = reqs.map((r) => r.verification).find((v) => v && !v.includes(NO_DATA));
     const xOf = (type: string) => reqs.find((r) => r.reqType === type)?.characteristic || reqs[0]?.characteristic || fn.element || fn.id;
     // 4.10.0: elemana özel hata modları (eleman türü addan tanınır). Eleman birden çok fonksiyon satırına sahipse
     // her mod, tipine (ft) uyan fonksiyon satırına; yoksa elemanın ilk fonksiyon satırına bir kez eklenir.
-    const kind = elementKind(fn.element);
+    const kind = elementKind(fn.element, g.lib?.elementKinds);
     const siblings = g.p.structure.filter((s) => s.function?.trim() && s.approval !== 'Rejected' && s.parentId === fn.parentId && norm(s.element) === norm(fn.element) && s.level === fn.level);
     const ownerOf = (t: ElementTemplate) => (siblings.find((s) => t.ft && s.functionType === t.ft) ?? siblings[0] ?? fn).id;
     const elementHave = g.p.dfmea.filter((d) => siblings.some((s) => s.id === d.functionId)).map((d) => d.failureMode);
     const elementPlan = (kind?.templates ?? []).filter((t) => ownerOf(t) === fn.id && !covered(elementHave, fill(t.failureMode, fn.element))).map((t) => ({ t: t as FailureTemplate, type: `eleman: ${kind!.label}`, x: fn.element }));
     const plan: { t: FailureTemplate; type: string; x: string }[] = [
       ...elementPlan,
-      ...types.flatMap((type) => DFMEA_LIB[type].map((t) => ({ t, type, x: xOf(type) }))),
+      ...types.flatMap((type) => dlib[type].map((t) => ({ t, type, x: xOf(type) }))),
       // Türü tanınan alt elemanlarda genel fonksiyon hata tipleri eklenmez: elemana özel modlar aynı soruları somut yanıtlar. Ürün seviyesinde kalır.
-      ...(kind && fn.parentId ? [] : DFMEA_FUNCTION_TYPES.map((t) => ({ t, type: 'fonksiyon hata tipleri', x: xOf('') }))),
+      ...(kind && fn.parentId ? [] : (g.lib?.functionTypes ?? DFMEA_FUNCTION_TYPES).map((t) => ({ t, type: 'fonksiyon hata tipleri', x: xOf('') }))),
     ];
     for (const { t, type, x } of plan) {
       const failureMode = fill(t.failureMode, x);
@@ -208,7 +215,7 @@ export function genDfmea(g: Gen, fnIds?: string[]) {
         prevention: t.prevention,
         detection: verification ? `${t.detection}; ${verification}` : t.detection,
         ...scoreFields(t),
-        source: `${fn.id}${fn.reqIds.length ? ', ' + fn.reqIds.join(', ') : ''} · DFMEA hata kütüphanesi (${type})`,
+        source: `${fn.id}${fn.reqIds.length ? ', ' + fn.reqIds.join(', ') : ''} · DFMEA hata kütüphanesi (${type})${t.company ? ' · Firma kütüphanesi' : ''}`,
         confidence: 'Low',
         basis: 'ENGINEERING KNOWLEDGE',
         dataStatus: ASSUMPTION,
@@ -224,6 +231,7 @@ export function genDfmea(g: Gen, fnIds?: string[]) {
 // ───────────────────────── 4) Proses adımından PFMEA ─────────────────────────
 
 function pfRow(step: ProcessStepRow, t: FailureTemplate, source: string, dfIds: string[] = []): Partial<PfmeaRow> {
+  if (t.company && !source.includes('Firma kütüphanesi')) source += ' · Firma kütüphanesi';
   return {
     stepId: step.id,
     dfIds,
@@ -266,9 +274,10 @@ export function genPfmea(g: Gen, stepIds?: string[]) {
       causeInputIds: io.filter((x) => x.kind === 'Input' && x.cat4M && x.cat4M === t.cause4M).map((x) => x.id),
     });
     // 4.8.0: bir hata modunun ana nedenine ek olası nedenleri (4M) ayrı satır olarak eklenir.
+    const alts = g.lib?.altCauses ?? PFMEA_ALT_CAUSES;
     const addWithCauses = (t: FailureTemplate, src: string) => {
       g.add('pfmea', { ...pfRow(step, t, src), ...links(t) } as Partial<AnyRow>);
-      for (const a of PFMEA_ALT_CAUSES[t.failureMode] ?? []) {
+      for (const a of alts[t.failureMode] ?? []) {
         const alt: FailureTemplate = { ...t, cause: a.cause, cause4M: a.cause4M, rootCause: a.rootCause, prevention: a.prevention, errorProofing: a.errorProofing ?? '', o: a.o ?? t.o };
         g.add('pfmea', { ...pfRow(step, alt, `${src} · ek neden`), ...links(alt) } as Partial<AnyRow>);
       }
@@ -277,17 +286,18 @@ export function genPfmea(g: Gen, stepIds?: string[]) {
     const addMissingCauses = (t: FailureTemplate, src: string) => {
       const same = g.p.pfmea.filter((r) => r.stepId === step.id && norm(r.failureMode) === norm(t.failureMode));
       if (!same.length) return;
-      for (const a of PFMEA_ALT_CAUSES[t.failureMode] ?? []) {
+      for (const a of alts[t.failureMode] ?? []) {
         if (same.some((r) => norm(r.cause) === norm(a.cause) || similarity(r.cause, a.cause) >= SAME_MODE)) continue;
         const alt: FailureTemplate = { ...t, cause: a.cause, cause4M: a.cause4M, rootCause: a.rootCause, prevention: a.prevention, errorProofing: a.errorProofing ?? '', o: a.o ?? t.o };
         g.add('pfmea', { ...pfRow(step, alt, `${src} · ek neden`), ...links(alt) } as Partial<AnyRow>);
         same.push(g.p.pfmea[g.p.pfmea.length - 1]);
       }
     };
-    const lib = PFMEA_LIB[area] ?? PFMEA_LIB.Generic;
+    const plib = g.lib?.pfmea ?? PFMEA_LIB;
+    const lib = plib[area] ?? plib.Generic;
     const handled = (t: FailureTemplate, src: string) => (fresh(t) ? addWithCauses(t, src) : addMissingCauses(t, src));
     for (const t of lib) handled(t, `${step.id} · PFMEA hata kütüphanesi (${area})`);
-    for (const t of PFMEA_STEP_COMMON) handled(t, `${step.id} · PFMEA hata kütüphanesi (genel adım hata modları)`);
+    for (const t of g.lib?.pfmeaCommon ?? PFMEA_STEP_COMMON) handled(t, `${step.id} · PFMEA hata kütüphanesi (genel adım hata modları)`);
     // Özel proses parametreleri: her parametre için alt/üst limit dışı hata modları; parametre satırına bağlanır.
     for (const prm of g.p.processParams.filter((x) => x.stepId === step.id) as ProcessParamRow[]) {
       if (prm.pfIds.length) continue; // parametrenin hata modları zaten bağlı
@@ -308,8 +318,8 @@ export function genPfmea(g: Gen, stepIds?: string[]) {
 export type GenStage = 'requirements' | 'structure' | 'dfmea' | 'pfmea' | 'fill';
 
 /** Seçilen aşamaları sırayla çalıştırır; her aşama bir öncekinin ürettiği satırları kullanır. */
-export function generate(p: Project, stages: GenStage[], opts: { docIds?: string[]; reqIds?: string[]; fnIds?: string[]; stepIds?: string[] } = {}): Gen {
-  const g = new Gen(p);
+export function generate(p: Project, stages: GenStage[], opts: { docIds?: string[]; reqIds?: string[]; fnIds?: string[]; stepIds?: string[]; lib?: MergedLib } = {}): Gen {
+  const g = new Gen(p, opts.lib);
   if (stages.includes('requirements')) genRequirements(g, opts.docIds);
   if (stages.includes('structure')) genStructure(g, stages.includes('requirements') ? undefined : opts.reqIds);
   if (stages.includes('dfmea')) genDfmea(g, stages.includes('structure') ? undefined : opts.fnIds);

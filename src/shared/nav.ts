@@ -4,7 +4,7 @@ import type { TableKey } from './types';
 export type ScreenKey =
   | 'dashboard' | 'project' | 'documents' | 'requirements' | 'dfmea' | 'pfmea' | 'risk' | 'kcs' | 'controlPlan' | 'msa'
   | 'capability' | 'actions' | 'lessons' | 'traceability' | 'impact' | 'quality' | 'aiReview' | 'approval' | 'baseline' | 'settings'
-  | 'apqp' | 'ppap'; // v4-apqp
+  | 'library' | 'apqp' | 'ppap'; // v4-apqp
 
 export interface SubTab {
   key: string;
@@ -62,6 +62,7 @@ export const SCREENS: Screen[] = [
     advanced: true, key: 'lessons', label: 'Dersler', group: 'Bilgi', stage: 'Lessons Learned', hint: 'NCR, 8D, CAPA, şikayet, hurda, yeniden işleme, denetim, garanti ve test hataları.',
     subs: [{ key: 'lessons', label: 'Dersler', table: 'lessons' }, { key: 'kb', label: 'Bilgi Tabanı' }],
   },
+  { key: 'library', label: 'Kütüphane', group: 'Bilgi', stage: 'Yerleşik + firma kütüphanesi', hint: 'Yerleşik ve firma kütüphanesi tek yerde: ara, firma kaydı ekle / düzenle, yerleşik kaydı devre dışı bırak, Excel ile içe / dışa aktar. Kütüphane önerileri her zaman AI Proposed gelir; onay mühendistedir.' },
   { key: 'traceability', label: 'İzlenebilirlik', group: 'Doğrulama', stage: 'Traceability', hint: 'Matrisler ve bağlantı grafiği: gereksinimden kontrol planına.' },
   {
     advanced: true, key: 'impact', label: 'Değişiklik Etkisi', group: 'Doğrulama', stage: 'Change Impact', hint: 'Bir kaydın değişmesi hangi mühendislik kayıtlarını etkiler?',

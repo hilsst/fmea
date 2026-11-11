@@ -19,6 +19,8 @@ export interface FailureTemplate {
   errorProofing?: string;
   /** 4.7.0: adımda bu kalıba uyan bir hata modu zaten varsa şablon önerilmez (genel adım modları için). */
   skipIf?: RegExp;
+  /** 4.12.0: firma kütüphanesinden gelen kayıt (satır kaynağına "Firma kütüphanesi" yazılır). */
+  company?: boolean;
 }
 
 const T = (failureMode: string, effect: string, cause: string, prevention: string, detection: string, s: number, o: number, d: number, extra: Partial<FailureTemplate> = {}): FailureTemplate => ({ failureMode, effect, cause, prevention, detection, s, o, d, ...extra });

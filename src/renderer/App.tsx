@@ -12,7 +12,7 @@ import type { DfmeaRow, PfmeaRow, Project } from '../shared/types';
 import { currentStep } from '../shared/workflow';
 import { api, isDesktop } from './api';
 import { AskDialog, ConfirmDialog } from './components/ConfirmDialog';
-import { ImportDialog, SimilarDialog, WhyDrawer } from './components/Dialogs2';
+import { ImportDialog, WhyDrawer } from './components/Dialogs2';
 import { Grid } from './components/Grid';
 import { Modal } from './components/Modal';
 import {
@@ -22,6 +22,8 @@ import { useStore } from './store';
 import { ApqpScreen, PpapScreen, apqpBadge, apqpUnapproved } from './screens/Apqp'; // v4-apqp
 import { TraceabilityTab } from './tabs/AnalysisTabs';
 import { ProjectTab } from './tabs/ProjectTab';
+import { LibraryScreen } from './screens/Library';
+import { reloadLib } from './companyLibStore';
 import { KcFlowScreen, KcTraceScreen } from './screens/Kc'; // v4-kc
 import {
   ActionsTab, CapabilityTab, ControlPlanTab, DfmeaTab, DocumentsTab, HistoryTab, IssuesTab, KcTab, LessonsTab, MsaTab, PfmeaTab, ProcessParamsTab, ProcessTab, RequirementsTab, StructureTab,
@@ -68,7 +70,6 @@ export function App() {
   const [updateReady, setUpdateReady] = useState<string | null>(null);
   const [welcome, setWelcome] = useState(true);
   const [importing, setImporting] = useState(false);
-  const [similar, setSimilar] = useState(false);
   const [tpl, setTpl] = useState<CompanyTemplate | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
   const [recovery, setRecovery] = useState<{ path?: string; data: Project; at: string } | null>(null);
@@ -79,6 +80,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    void reloadLib();
     api.recent().then(setRecent);
     api.recovery().then((r) => r && setRecovery(r));
     const os = () => go('settings');
@@ -301,7 +303,6 @@ export function App() {
               <p>{def.hint}</p>
             </div>
             <div className="stepper">
-              {(screen === 'dfmea' || screen === 'pfmea') && isDesktop && <button className="btn" onClick={() => setSimilar(true)} title="Önceki bir .fmea dosyasında benzer hata modu desenleri arar">≈ Benzer FMEA</button>}
               <button className="btn" disabled={idx <= 0} onClick={() => setScreen(menu[idx - 1].key)}>← {idx > 0 ? menu[idx - 1].label : ''}</button>
               <button className="btn" disabled={idx === menu.length - 1} onClick={() => setScreen(menu[idx + 1].key)}>{idx < menu.length - 1 ? menu[idx + 1].label : ''} →</button>
             </div>
@@ -327,7 +328,6 @@ export function App() {
       <AskDialog />
       <WhyDrawer />
       {importing && <ImportDialog onClose={() => setImporting(false)} />}
-      {similar && <SimilarDialog onClose={() => setSimilar(false)} />}
       {tpl && (
         <Modal title={`Şablon uygula: ${tpl.name}`} sub="Ayarlar, KC kuralları, onay akışı ve puanlama/AP tablosu değişir. Satırlar değişmez; kullanıcı adı ve rolü korunur." onClose={() => setTpl(null)}
           foot={<><button className="btn" onClick={() => setTpl(null)}>Vazgeç</button><button className="btn primary" onClick={() => {
@@ -405,6 +405,7 @@ function ScreenView({ screen, sub, go }: { screen: ScreenKey; sub?: string; go: 
     case 'aiReview': return sub === 'aiRuns' ? <Grid table="aiRuns" emptyHint="Her AI çalıştırması (rol, model, zaman, kabul/ret sayıları, hata) burada kayıtlıdır." /> : <AiReviewScreen />;
     case 'approval': return sub === 'audit' ? <AuditScreen /> : <WorkflowScreen />;
     case 'baseline': return sub === 'baselines' ? <BaselinesScreen /> : <HistoryTab />;
+    case 'library': return <LibraryScreen />;
     case 'settings': return <SettingsScreen />;
     case 'apqp': return <ApqpScreen sub={sub} go={go} />; // v4-apqp
     case 'ppap': return <PpapScreen sub={sub} go={go} />; // v4-apqp

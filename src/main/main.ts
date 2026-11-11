@@ -15,6 +15,9 @@ import type { SheetGrid } from '../shared/importmap';
 import type { Project } from '../shared/types';
 import { approvedExamples, formatExamples, mergeExamples, pickExamples, type ExampleKind, type ExampleRow } from '../shared/expert';
 import type { MaterialFamily } from '../shared/failureLib';
+import type { CompanyLib, LibOps } from '../shared/companyLib';
+import { buildLibWorkbook, parseLibWorkbook } from '../shared/companyLibExcel';
+import { readLibFile, writeLibFile } from './companyLibFile';
 import * as ai from './ai';
 import { ANTHROPIC_MODELS, ENV_KEY, MODEL, OPENAI_MODEL, PROVIDERS } from './ai/provider';
 import { DEFAULT_IFS, ifsConnector, type IfsSettings } from './connectors/ifs';
@@ -69,6 +72,8 @@ interface Config {
   ifs?: IfsSettings;
   /** IAQG SCMH şablon klasörü (şablonlar © IAQG; uygulamayla dağıtılmaz, kullanıcı sağlar). */
   scmhDir?: string;
+  /** 4.12.0: firma kütüphanesi klasörü (ortak klasör; içinde fmea-kutuphane.json). */
+  libDir?: string;
 }
 
 /** safeStorage yoksa anahtar yalnızca bu oturumun belleğinde tutulur (diske yazılmaz). */
@@ -422,6 +427,44 @@ function registerIpc() {
     return { dir: c.scmhDir, missing: missingTemplates(c.scmhDir) };
   };
   ipcMain.handle('scmh:pickDir', pickScmhDir);
+
+  // 4.12.0: firma kütüphanesi (ortak klasördeki fmea-kutuphane.json)
+  ipcMain.handle('lib:dir', () => readConfig().libDir ?? '');
+  ipcMain.handle('lib:pickDir', async () => {
+    const r = await dialog.showOpenDialog(win!, { title: 'Firma kütüphanesi klasörünü seçin (ortak klasör)', properties: ['openDirectory', 'createDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    const c = readConfig();
+    c.libDir = r.filePaths[0];
+    writeConfig(c);
+    return c.libDir;
+  });
+  ipcMain.handle('lib:clearDir', () => {
+    const c = readConfig();
+    delete c.libDir;
+    writeConfig(c);
+  });
+  ipcMain.handle('lib:read', async () => {
+    const dir = readConfig().libDir ?? '';
+    return { dir, ...(await readLibFile(dir)) };
+  });
+  ipcMain.handle('lib:write', async (_e, a: { ops: LibOps; baseRev: number; by: string }) => writeLibFile(readConfig().libDir ?? '', a.ops, a.baseRev, a.by));
+  ipcMain.handle('lib:exportExcel', async (_e, co: CompanyLib) => {
+    const r = await dialog.showSaveDialog(win!, { title: 'Kütüphaneyi Excel olarak kaydet', defaultPath: 'fmea-kutuphane.xlsx', filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
+    if (r.canceled || !r.filePath) return null;
+    await buildLibWorkbook(co).xlsx.writeFile(r.filePath);
+    return r.filePath;
+  });
+  ipcMain.handle('lib:importExcel', async () => {
+    const r = await dialog.showOpenDialog(win!, { title: 'Kütüphane Excel dosyasını seçin', properties: ['openFile'], filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    try {
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.readFile(r.filePaths[0]);
+      return { ok: true as const, name: path.basename(r.filePaths[0]), ...parseLibWorkbook(wb) };
+    } catch (e) {
+      return { ok: false as const, error: `Excel dosyası okunamadı: ${e instanceof Error ? e.message : String(e)}` };
+    }
+  });
   ipcMain.handle('scmh:export', async (_e, data: Project) => {
     let dir = readConfig().scmhDir ?? '';
     if (!dir || missingTemplates(dir).length) {

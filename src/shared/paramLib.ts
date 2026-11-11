@@ -3,6 +3,7 @@
 // validasyon, ölçüm cihazı ve LİMİTİN ALINACAĞI DOKÜMAN TÜRÜ önerilir.
 // Limit değeri (nominal / alt / üst) ASLA önerilmez: kaynak dokümandan girilir, yoksa VERİ YOK kalır.
 // Birim, parametrenin yaygın birimidir (öneri); tesiste farklı birim kullanılıyorsa düzeltilir.
+import { getActiveLib } from './activeLib';
 import type { ProcessParamRow } from './types';
 
 export interface ParamTemplate {
@@ -91,9 +92,9 @@ export const PARAM_LIB: ParamTemplate[] = [
 ];
 
 /** Parametre adından kütüphane kaydı (ilk eşleşen); tanınmazsa undefined. */
-export function paramTemplate(name: string): ParamTemplate | undefined {
+export function paramTemplate(name: string, lib: ParamTemplate[] = getActiveLib()?.params ?? PARAM_LIB): ParamTemplate | undefined {
   const n = (name ?? '').toLocaleLowerCase('tr').trim();
-  return n ? PARAM_LIB.find((t) => t.match.test(n)) : undefined;
+  return n ? lib.find((t) => t.match.test(n)) : undefined;
 }
 
 export const PARAM_FILL_FIELDS = ['category', 'unit', 'productCharacteristic', 'prevention', 'monitoring', 'reaction', 'validation'] as const;
@@ -102,8 +103,8 @@ export const PARAM_FILL_FIELDS = ['category', 'unit', 'productCharacteristic', '
 export const limitNote = (t: ParamTemplate) => `VERİ YOK – doğrulanmalı. Limit kaynağı: ${t.limitSource}`;
 
 /** Parametre satırının BOŞ alanları için kütüphane değerleri (dolu alana dokunulmaz; limit önerilmez). */
-export function paramFillValues(r: Pick<ProcessParamRow, 'parameter' | 'category' | 'unit' | 'productCharacteristic' | 'prevention' | 'monitoring' | 'reaction' | 'validation' | 'notes' | 'nominal' | 'lsl' | 'usl'>): Record<string, string> {
-  const t = paramTemplate(r.parameter);
+export function paramFillValues(r: Pick<ProcessParamRow, 'parameter' | 'category' | 'unit' | 'productCharacteristic' | 'prevention' | 'monitoring' | 'reaction' | 'validation' | 'notes' | 'nominal' | 'lsl' | 'usl'>, lib?: ParamTemplate[]): Record<string, string> {
+  const t = paramTemplate(r.parameter, lib);
   if (!t) return {};
   const out: Record<string, string> = {};
   for (const f of PARAM_FILL_FIELDS) if (!String(r[f] ?? '').trim() && t[f]) out[f] = t[f];

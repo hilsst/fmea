@@ -5,7 +5,6 @@ import { originOf } from '../../shared/impact';
 import { COMPUTED, IGNORE, IMPORT_TABLES, IMPORT_TARGETS, applyImport, cellAddress, detectHeaderRow, suggestMapping, type ImportTable, type SheetGrid } from '../../shared/importmap';
 import { TABLE_LABEL, blankRow, nextId, normalizeProject, tableOfId } from '../../shared/model';
 import { screenOfTable } from '../../shared/nav';
-import { SIMILAR_LABEL, similarPatterns } from '../../shared/similarity';
 import type { AnyRow, DfmeaRow, PfmeaRow, Project } from '../../shared/types';
 import { api } from '../api';
 import { useStore } from '../store';
@@ -195,78 +194,3 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ───────────────────────── Benzer FMEA ─────────────────────────
-
-export function SimilarDialog({ onClose }: { onClose: () => void }) {
-  const { project: p, edit, toast } = useStore();
-  const [ref, setRef] = useState<{ name: string; data: Project } | null>(null);
-  const [picked, setPicked] = useState<Record<string, boolean>>({});
-  useEffect(() => {
-    api.openReference().then((r) => {
-      if (!r) return onClose();
-      setRef({ name: r.name, data: normalizeProject(r.data) });
-    }).catch((e) => {
-      toast(`Referans dosya açılamadı: ${e instanceof Error ? e.message : e}`, 'err');
-      onClose();
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const matches = useMemo(() => {
-    if (!ref) return [];
-    const out: { target: DfmeaRow | PfmeaRow; item: DfmeaRow | PfmeaRow; score: number }[] = [];
-    for (const r of [...p.dfmea, ...p.pfmea].filter((x) => x.failureMode || ('function' in x ? x.function : x.stepName)))
-      for (const m of similarPatterns(ref.data, { failureMode: r.failureMode, function: 'function' in r ? r.function : undefined, stepName: 'stepName' in r ? r.stepName : undefined }).slice(0, 3))
-        out.push({ target: r, item: m.item, score: m.score });
-    return out.sort((a, b) => b.score - a.score).slice(0, 60);
-  }, [p, ref]);
-
-  const apply = async () => {
-    const keys = Object.keys(picked).filter((k) => picked[k]);
-    if (!keys.length) return;
-    let next = p;
-    const edits = [];
-    for (const k of keys) {
-      const m = matches[Number(k)];
-      const isDf = 'functionId' in m.target;
-      const table = isDf ? 'dfmea' : 'pfmea';
-      const id = nextId(next, table);
-      const src = m.item;
-      const row = {
-        ...blankRow(table, id),
-        ...(isDf ? { functionId: (m.target as DfmeaRow).functionId, reqIds: [...(m.target as DfmeaRow).reqIds] } : { stepId: (m.target as PfmeaRow).stepId, dfIds: [...(m.target as PfmeaRow).dfIds] }),
-        failureMode: src.failureMode, effect: src.effect, cause: src.cause, prevention: src.prevention, detection: src.detection,
-        s: null, o: null, d: null,
-        source: `${SIMILAR_LABEL}: ${ref!.name} / ${src.id} (benzerlik %${Math.round(m.score * 100)})`,
-        dataStatus: 'ENGINEERING SUGGESTION – VERIFY', approval: 'AI Proposed', origin: 'similar',
-        notes: 'Referans FMEA’dan kopyalandı; S/O/D bu proje için yeniden puanlanmalı.',
-        id,
-      } as unknown as AnyRow;
-      next = { ...next, [table]: [...(next[table] as AnyRow[]), row] };
-      edits.push({ kind: 'add' as const, table: table as 'dfmea' | 'pfmea', row });
-    }
-    if (await edit(edits, `Benzer FMEA’dan ${edits.length} satır`)) onClose();
-  };
-
-  if (!ref) return null;
-  const n = Object.values(picked).filter(Boolean).length;
-  return (
-    <Modal title="Benzer FMEA ara" sub={`Referans: ${ref.name}. Yalnızca seçtiğiniz satırlar kopyalanır; S/O/D kopyalanmaz.`} icon="≈" wide onClose={onClose}
-      foot={<><button className="btn" onClick={onClose}>Vazgeç</button><button className="btn primary" disabled={!n} onClick={apply}>{n} satırı kopyala</button></>}>
-      {matches.length === 0 && <p className="muted">Benzer desen bulunamadı.</p>}
-      <table className="effects">
-        <tbody>
-          {matches.map((m, i) => (
-            <tr key={i}>
-              <td><input type="checkbox" checked={!!picked[i]} onChange={(e) => setPicked({ ...picked, [i]: e.target.checked })} /></td>
-              <td className="small">
-                <span className="badge b-blue">{SIMILAR_LABEL}</span> %{Math.round(m.score * 100)}
-                <div>Bu proje: <b>{m.target.id}</b> {m.target.failureMode || ('function' in m.target ? m.target.function : m.target.stepName)}</div>
-                <div>Referans: <b>{m.item.id}</b> {m.item.failureMode} · Neden: {m.item.cause || '—'} · Önleme: {m.item.prevention || '—'} · Tespit: {m.item.detection || '—'}</div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Modal>
-  );
-}

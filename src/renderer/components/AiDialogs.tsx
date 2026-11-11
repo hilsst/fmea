@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { approvedReqIds, dfmeaTargets, dfmeaTargetText, structureReqs } from '../../shared/dfmeaInput';
-import { approvedExamples, exampleProposalData, expertBrief, type ExampleKind } from '../../shared/expert';
+import { approvedExamples, expertBrief, type ExampleKind } from '../../shared/expert';
 import { materialFamily } from '../../shared/failureLib';
 import { AI_ERROR_TEXT, LOW_CONF_TEXT, type AiResult, type AiRunMeta } from '../../shared/aischema';
 import { findRequirementCandidates, locText, type ExtractedDoc } from '../../shared/docmodel';
@@ -361,27 +361,6 @@ export function useAi() {
     setProposal(set);
   };
 
-  /** 4.6.0: AI'sız – onaylı örnek kütüphanesinden benzer satırları önerir; internet / API anahtarı gerekmez. */
-  const suggestFromExamples = async (kind: ExampleKind) => {
-    if (kind === 'dfmea' && !project.structure.some((s) => s.function)) return toast('Önce Yapı & Fonksiyon ekranında fonksiyon tanımlayın.', 'warn');
-    if (kind === 'pfmea' && !project.processSteps.length) return toast('Önce Proses Akışı ekranında proses adımlarını girin.', 'warn');
-    const pool = await api.examplesList();
-    if (!pool.length) return toast('Örnek kütüphanesi boş. Onaylı (Approved / Engineer Reviewed) satırları olan projeleri açıp kaydedin.', 'warn');
-    const data = exampleProposalData(project, kind, pool);
-    if (!data.rows.length) return toast(`Kütüphanede (${pool.length} örnek) bu projeye yeterince benzeyen ${kind.toUpperCase()} örneği bulunamadı.`, 'warn');
-    const meta = { role: 'Örnek kütüphanesi', provider: 'local', model: 'onaylı örnekler (AI yok)', at: new Date().toISOString(), mode, tokensIn: 0, tokensOut: 0, cached: false, retries: 0 };
-    const set = buildProposals(project, kind, data, meta, {
-      inputs: `Örnek kütüphanesi (${pool.length} satır)`,
-      note: 'Bu öneriler AI kullanmadan, daha önce onayladığınız benzer satırlardan getirildi. Metin ve S/O/D başka parçadan geldiği için her satırı bu parçaya göre düzeltin.',
-    });
-    set.items.forEach((it, i) => {
-      const src = String(data.rows[i]?.exampleSource ?? '');
-      it.row = { ...it.row, origin: 'similar', source: `Örnek kütüphanesi: ${src}` };
-      it.warnings = [`Kaynak örnek: ${src}`, ...it.warnings];
-    });
-    setProposal(set);
-  };
-
   const dialogs = (
     <>
       {busy && (
@@ -399,7 +378,7 @@ export function useAi() {
     </>
   );
 
-  return { extractRequirements, suggestStructure, suggestDfmea, suggestPfmea, suggestFromExamples, dialogs, busy: !!busy };
+  return { extractRequirements, suggestStructure, suggestDfmea, suggestPfmea, dialogs, busy: !!busy };
 }
 
 export function PasteTextDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (t: string) => void }) {

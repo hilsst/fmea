@@ -1,3 +1,4 @@
+import { AddToLibraryButton } from '../components/LibraryAdd';
 import { useState } from 'react';
 import { UNSUPPORTED_MSG } from '../../shared/docmodel';
 import { summarizeChanges, type Edit } from '../../shared/engine';
@@ -350,9 +351,7 @@ export function DfmeaTab() {
             <button className="btn" onClick={() => fillBlanks(sel)} title="Seçili (seçim yoksa tüm) satırların boş alanlarını yapı ağacı ve gereksinimlerden doldurur: sistem/komponent, lokal/üst etki, doğrulama, risk kategorisi, gürültü faktörü, özel karakteristik, S 9–10 kararı ve aksiyon önerisi. Dolu alanlar değişmez.">
               ⟳ Boşları doldur{sel.length ? ` (${sel.length})` : ''}
             </button>
-            <button className="btn" onClick={() => ai.suggestFromExamples('dfmea')} title="AI kullanmadan, örnek kütüphanesindeki onaylı (Approved / Engineer Reviewed) benzer satırları önerir. İnternet ve API anahtarı gerekmez.">
-              📚 Onaylı örneklerden öner
-            </button>
+            <AddToLibraryButton kind="dfmea" ids={sel} />
             <button className="btn ai" onClick={() => ai.suggestDfmea([])} title="Tüm fonksiyonlar için hata modu, etki, neden ve kontrol önerir">
               ✦ AI: DFMEA öner
             </button>
@@ -439,9 +438,7 @@ export function PfmeaTab() {
             <button className="btn" onClick={() => fillBlanks(sel)} title="Seçili (seçim yoksa tüm) satırların boş alanlarını proses adımı, parametreler, gereksinimler ve DFMEA'dan doldurur: proses fonksiyonu, ürün/proses gereksinimi, bağlı DFMEA, proses elemanı, ölçüm yöntemi, reaksiyon planı, özel karakteristik, S 9–10 kararı ve aksiyon önerisi. Dolu alanlar değişmez.">
               ⟳ Boşları doldur{sel.length ? ` (${sel.length})` : ''}
             </button>
-            <button className="btn" onClick={() => ai.suggestFromExamples('pfmea')} title="AI kullanmadan, örnek kütüphanesindeki onaylı (Approved / Engineer Reviewed) benzer satırları önerir. İnternet ve API anahtarı gerekmez.">
-              📚 Onaylı örneklerden öner
-            </button>
+            <AddToLibraryButton kind="pfmea" ids={sel} />
             <button className="btn ai" onClick={() => ai.suggestPfmea([])} title="Proses Akışı'ndaki tüm adımlar için gereksinimler ve DFMEA'dan PFMEA satırları önerir (adımlar 4'erli gruplar halinde)">
               ✦ AI: PFMEA öner
             </button>

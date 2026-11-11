@@ -28,6 +28,7 @@ import { unaddressed } from '../../shared/risk'; // v4-risk
 import { ScmhPriorityPanel } from './Risk'; // v4-risk
 import type { ScreenKey } from '../../shared/nav';
 import { api, isDesktop } from '../api';
+import { pickLibDir, reloadLib, useCompanyLib } from '../companyLibStore';
 import { projectContext } from '../components/AiDialogs';
 import { Grid } from '../components/Grid';
 import { Modal } from '../components/Modal';
@@ -995,6 +996,7 @@ export function SettingsScreen() {
 
         <section className="card">
           <ScmhDirSetting />
+          <LibDirSetting />
           <h3 className="mt">KC kuralları</h3>
           <div className="form">
             <label>
@@ -1069,6 +1071,29 @@ export function SettingsScreen() {
         </Modal>
       )}
     </div>
+  );
+}
+
+/** 4.12.0: firma kütüphanesi klasörü (ortak klasör; içinde fmea-kutuphane.json). */
+function LibDirSetting() {
+  const lib = useCompanyLib();
+  const { toast } = useStore();
+  if (!isDesktop) return null;
+  return (
+    <>
+      <h3>Firma kütüphanesi (ortak klasör)</h3>
+      <p className="muted small">Firma hata / parametre / ölçüm kayıtları seçeceğiniz ortak klasörde <code>fmea-kutuphane.json</code> dosyasında tutulur ve herkesle paylaşılır. Yerleşik kütüphane salt okunurdur. Dosyaya API anahtarı veya kişisel veri yazılmaz; kayıtlarda yalnız Ayarlar’daki kullanıcı adı ekleyen olarak görünür. Klasör erişilemezse yerleşik kütüphaneyle çalışılır.</p>
+      <p className="small">
+        {lib.dir ? <>Klasör: <b>{lib.dir}</b></> : 'Klasör seçilmedi.'}{' '}
+        {lib.status === 'ok' && <span className="ok-text">✓ {lib.co.dfmea.length + lib.co.pfmea.length + lib.co.params.length + lib.co.gauges.length + lib.co.structures.length} firma kaydı</span>}
+        {lib.status === 'missing' && <span className="muted">dosya henüz yok; ilk kayıtta oluşturulur</span>}
+        {(lib.status === 'unreachable' || lib.status === 'corrupt') && <span className="warn-text">{lib.error}</span>}
+      </p>
+      <div className="row-btns">
+        <button className="btn" onClick={async () => { if (await pickLibDir()) toast('Firma kütüphanesi klasörü seçildi'); }}>Klasör seç…</button>
+        {lib.dir && <button className="btn" onClick={async () => { await api.libClearDir(); await reloadLib(); toast('Klasör bağlantısı kaldırıldı; yerleşik kütüphane kullanılıyor'); }}>Bağlantıyı kaldır</button>}
+      </div>
+    </>
   );
 }
 

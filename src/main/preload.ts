@@ -4,6 +4,9 @@ import type { ExtractedDoc } from '../shared/docmodel';
 import type { SheetGrid } from '../shared/importmap';
 import type { Project } from '../shared/types';
 import type { ExampleRow } from '../shared/expert';
+import type { CompanyLib, LibOps } from '../shared/companyLib';
+import type { LibImport } from '../shared/companyLibExcel';
+import type { LibReadResult, LibWriteResult } from './companyLibFile';
 import type { UpdateStatus } from './updater';
 
 // Arayüzün erişebildiği tek yüzey (beyaz liste). Node API'leri arayüze açılmaz (§62).
@@ -41,6 +44,13 @@ const api = {
   aiSetProvider: (id: string): Promise<string> => ipcRenderer.invoke('ai:setProvider', id),
   aiSetModel: (model: string): Promise<string> => ipcRenderer.invoke('ai:setModel', model),
   aiClearCache: () => ipcRenderer.invoke('ai:clearCache'),
+  libDir: (): Promise<string> => ipcRenderer.invoke('lib:dir'),
+  libPickDir: (): Promise<string | null> => ipcRenderer.invoke('lib:pickDir'),
+  libClearDir: (): Promise<void> => ipcRenderer.invoke('lib:clearDir'),
+  libRead: (): Promise<LibReadResult & { dir: string }> => ipcRenderer.invoke('lib:read'),
+  libWrite: (a: { ops: LibOps; baseRev: number; by: string }): Promise<LibWriteResult> => ipcRenderer.invoke('lib:write', a),
+  libExportExcel: (co: CompanyLib): Promise<string | null> => ipcRenderer.invoke('lib:exportExcel', co),
+  libImportExcel: (): Promise<(LibImport & { ok: true; name: string }) | { ok: false; error: string } | null> => ipcRenderer.invoke('lib:importExcel'),
   examplesList: (): Promise<ExampleRow[]> => ipcRenderer.invoke('examples:list'),
   examplesInfo: (): Promise<{ count: number }> => ipcRenderer.invoke('examples:info'),
   examplesClear: () => ipcRenderer.invoke('examples:clear'),
