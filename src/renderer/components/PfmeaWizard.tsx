@@ -17,7 +17,7 @@ import type { Project } from '../../shared/types';
 export const PROCESS_GROUPS: { label: string; keys: string[] }[] = [
   { label: 'Kompozit imalat', keys: ['composite', 'handLayup', 'infusion', 'rtm', 'winding', 'press'] },
   { label: 'Metal imalat', keys: ['machining', 'sheet', 'welding', 'heat', 'surface'] },
-  { label: 'Montaj', keys: ['assembly'] },
+  { label: 'Montaj', keys: ['assembly', 'riveting'] },
 ];
 
 const key = (s: string) => s.toLocaleLowerCase('tr').trim();

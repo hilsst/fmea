@@ -194,6 +194,18 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
       insp('Montaj kontrolü', 'Montaj, tork işareti ve eksik parça kontrolü'),
     ],
   },
+  {
+    key: 'riveting',
+    label: 'Perçinli montaj akışı',
+    hint: 'Birlikte delme, çapak alma, ara yüzey sealant, perçinleme, perçin kontrolü',
+    steps: [
+      op('Birlikte delme ve havşa açma', 'Sac ve takviyenin geçici bağlanarak şablonla delinmesi'),
+      op('Çapak alma ve temizlik', 'Deliklerin çapaklarının alınması, talaş ve yağ temizliği'),
+      op('Ara yüzey sealant uygulama', 'Bindirme yüzeyine sealant uygulaması (gerekiyorsa)'),
+      op('Perçinleme', 'Perçinlerin tanımlı sırayla çakılması / çekilmesi'),
+      insp('Perçin kontrolü', 'Perçin başı, sayım ve boşluk kontrolü'),
+    ],
+  },
 ];
 
 export const MATERIALS = [
@@ -216,7 +228,8 @@ export function suggestFlowTemplates(material: string, productType: string): str
   else if (/kompozit|composite|sandviç|sandwich|radom|radome|bonded/.test(m)) out.add('composite');
   if (/metal|alüminyum|çelik|titanyum|metallic/.test(m)) out.add('machining');
   if (/karma/.test(m)) out.add('assembly');
-  if (/assembly|montaj/.test(m)) out.add('assembly');
+  if (/perçin|rivet/.test(m)) out.add('riveting');
+  else if (/assembly|montaj/.test(m)) out.add('assembly');
   return FLOW_TEMPLATES.map((t) => t.key).filter((k) => out.has(k));
 }
 
@@ -279,6 +292,9 @@ export const STEP_IO: Record<string, StepIo> = {
   NDT: { outputs: ['Kabul kriterine göre değerlendirilmiş parça (iç hata tespiti)'], inputs: [['NDT ekipmanı ve referans standart', 'Measurement'], ['Seviye 2/3 NDT personeli', 'Man'], ['NDT tekniği / tarama planı', 'Method']], params: [] },
   Inspection: { outputs: ['Doğrulanmış ürün karakteristikleri; uygunsuz ürün ayrılmış'], inputs: [['Ölçüm sistemi (CMM / mastar)', 'Measurement'], ['Muayene planı / çizim', 'Method'], OPR], params: [] },
   Assembly: { outputs: ['Doğru parça ve torkla tamamlanmış montaj'], inputs: [['Montaj parçaları ve bağlantı elemanları', 'Material'], ['Tork aleti / montaj fikstürü', 'Machine'], WI, OPR], params: ['Tork değeri'] },
+  // 4.11.0
+  Riveting: { outputs: ['Doğru tip ve boyda, tam oturmuş ve formu uygun perçin bağlantısı'], inputs: [['Perçinler (tip / grip, lot)', 'Material'], ['Perçin tabancası / tutucu', 'Machine'], ['Delme şablonu / geçici bağlama elemanları', 'Machine'], WI, OPR], params: ['Perçinleme kuvveti'] },
+  Sealing: { outputs: ['Sürekli, kürlenmiş ve yapışmış sızdırmazlık hattı'], inputs: [['Sealant (lot, raf ömrü)', 'Material'], ['Karıştırma / uygulama ekipmanı', 'Machine'], WI, OPR, ENV], params: ['Karışım oranı', 'Sealant uygulama ömrü', 'Kür süresi', 'Ortam sıcaklığı', 'Ortam nemi'] },
   Packaging: { outputs: ['Hasarsız, etiketli ve izlenebilir ambalaj'], inputs: [['Ambalaj malzemesi', 'Material'], WI, OPR], params: [] },
   // 4.5.0
   Deburring: { outputs: ['Çapaksız, kabul kriterine uygun kenar'], inputs: [['Çapak alma aleti / tezgâhı', 'Machine'], ['Kenar kabul kriteri / referans numune', 'Method'], OPR], params: [] },

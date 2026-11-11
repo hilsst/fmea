@@ -25,6 +25,7 @@ import { formHeader } from '../../shared/fmeaForm';
 import { useStore } from '../store';
 import { dfmeaTransferReason, pfmeaFromRequirement, requirementInPfmea, requirementTransferReason } from '../../shared/pfmeaImport';
 import { specOf } from '../../shared/engine';
+import { cpEditsFromParams, cpFillEdits, paramEdits } from '../../shared/cpLib';
 import { missingReqIssueRows } from '../../shared/reqIssues';
 
 type AddEdit = { kind: 'add'; table: TableKey; row: AnyRow };
@@ -681,6 +682,7 @@ export function KcTab() {
 
 export function ControlPlanTab() {
   const { project, edit, toast } = useStore();
+  const [sel, setSel] = useState<string[]>([]);
   const fromPfmea = async () => {
     const b = batch(project);
     for (const p of project.pfmea.filter((p) => p.failureMode && !project.controlPlan.some((c) => c.pfId === p.id))) {
@@ -707,16 +709,61 @@ export function ControlPlanTab() {
     if (!b.edits.length) return toast('Onaylı KC’lerin hepsi kontrol planında.', 'warn');
     await edit(b.edits, 'KC’lerden kontrol planı');
   };
+  // 4.11.0: kütüphaneden (AI'sız) – parametre satırları ve boş alanlar
+  const fromParams = async () => {
+    const edits = cpEditsFromParams(project);
+    if (!edits.length) return toast('Tüm proses parametrelerinin kontrol planı satırı var.', 'warn');
+    if (await edit(edits as Edit[], 'Proses parametrelerinden kontrol planı')) toast(`${edits.length} parametre satırı eklendi – örnek ve sıklık VERİ YOK, limitleri kaynak dokümandan girin`);
+  };
+  const fillLib = async () => {
+    const edits = cpFillEdits(project, sel);
+    if (!edits.length) return toast('Kütüphaneden doldurulacak boş alan yok.', 'warn');
+    const rows = new Set(edits.map((e) => e.id)).size;
+    if (await edit(edits as Edit[], 'Kontrol planı boş alanları (kütüphane)')) toast(`${rows} satırda ${edits.length} alan dolduruldu – öneridir, doğrulayın`);
+  };
   return (
     <Grid
       table="controlPlan"
+      selected={sel}
+      onSelect={setSel}
       toolbar={
         <>
           <button className="btn" onClick={fromPfmea}>PFMEA’dan oluştur</button>
           <button className="btn" onClick={fromKc}>Onaylı KC’lerden oluştur</button>
+          <button className="btn" onClick={fromParams} title="Kontrol planında karşılığı olmayan her proses parametresi için bir satır açar ve parametreye bağlar: izleme yöntemi, ölçüm cihazı, kayıt ve reaksiyon planı kütüphaneden gelir. Limit yoksa spesifikasyon VERİ YOK kalır ve limitin alınacağı doküman türü yazılır.">
+            Parametrelerden oluştur
+          </button>
+          <button className="btn" onClick={fillLib} title="Seçili (seçim yoksa tüm) satırların boş alanlarını kütüphaneden doldurur: ölçüm yönteminden ölçüm cihazı, kayıt ve kontrol tipi; karakteristik tipi; reaksiyon planı; PFMEA üzerinden proses parametresi bağlantısı. Örnek büyüklüğü ve sıklık önerilmez. Dolu alanlara dokunmaz.">
+            ⟳ Kütüphaneden doldur{sel.length ? ` (${sel.length})` : ''}
+          </button>
         </>
       }
       emptyHint="KC onaylandığında satırlar otomatik önerilir. “PFMEA’dan oluştur” ile tüm proses kontrollerini aktarabilirsiniz."
+    />
+  );
+}
+
+/** 4.11.0: Proses Parametreleri – boş alanlar ve eksik parametreler kütüphaneden (limit değeri asla önerilmez). */
+export function ProcessParamsTab() {
+  const { project, edit, toast } = useStore();
+  const [sel, setSel] = useState<string[]>([]);
+  const fill = async () => {
+    const edits = paramEdits(project, sel);
+    if (!edits.length) return toast('Kütüphaneden eklenecek parametre veya doldurulacak boş alan yok.', 'warn');
+    const added = edits.filter((e) => e.kind === 'add').length;
+    if (await edit(edits as Edit[], 'Proses parametreleri (kütüphane)')) toast(`${added} parametre eklendi, ${edits.length - added} alan dolduruldu – limitler VERİ YOK, kaynak dokümandan girin`);
+  };
+  return (
+    <Grid
+      table="processParams"
+      selected={sel}
+      onSelect={setSel}
+      toolbar={
+        <button className="btn" onClick={fill} title="Seçili (seçim yoksa tüm) parametrelerin boş alanlarını kütüphaneden doldurur: kategori, birim, etkilenen ürün karakteristiği, önleme, izleme, reaksiyon, validasyon ve limitin alınacağı doküman türü. Seçim yoksa proses adımlarının kütüphanedeki eksik parametrelerini de ekler. Nominal ve alt / üst limit ASLA önerilmez.">
+          ⟳ Kütüphaneden doldur{sel.length ? ` (${sel.length})` : ''}
+        </button>
+      }
+      emptyHint="Proses Akışı’na adım eklendiğinde parametreler kütüphaneden önerilir. Limitler VERİ YOK gelir; Notlar sütunu limitin hangi dokümandan alınacağını söyler."
     />
   );
 }
