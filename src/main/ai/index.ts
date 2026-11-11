@@ -310,9 +310,9 @@ export function suggestPfmea(env: AiEnv, a: { context: string; target: string; c
 /**
  * 4.9.2: Yapı & Fonksiyon, mühendisin ONAYLADIĞI gereksinim listesinden önerilir; doküman yeniden okunmaz
  * (gereksinim listesi sistemin tek kaynağıdır, her gereksinim kendi kanıt alıntısını ve kaynağını taşır).
- * Büyük listeler 40'ar gereksinimlik gruplara bölünür; önceki gruplarda bulunan elemanlar sonrakine bildirilir.
+ * Büyük listeler 12'şer gereksinimlik gruplara bölünür; önceki gruplarda bulunan elemanlar sonrakine bildirilir.
  */
-export const STRUCTURE_REQS_PER_CALL = 40;
+export const STRUCTURE_REQS_PER_CALL = 12;
 
 const sNorm = (x: unknown) => String(x ?? '').toLocaleLowerCase('tr').replace(/\s+/g, ' ').trim();
 
@@ -344,8 +344,16 @@ export async function suggestStructure(env: AiEnv, a: { context: string; reqs: {
   const notes: string[] = [];
   let meta: AiRunMeta | undefined;
   let part = 0;
-  for (const g of groups) {
+  const queue = [...groups];
+  while (queue.length) {
+    const g = queue.shift()!;
     const r = await run(env, 'Structure Analyst', a.mode, [{ type: 'text', text: a.context }, { type: 'text', text: reqBlock(g) }, { type: 'text', text: task(found) }], STRUCTURE_SCHEMA);
+    if (!r.ok && r.error.kind === 'TRUNCATED' && g.length > 1) {
+      // Yanıt çıktı sınırında kesildi: grubu ikiye böl, önce ilk yarıdan devam et.
+      const h = Math.ceil(g.length / 2);
+      queue.unshift(g.slice(0, h), g.slice(h));
+      continue;
+    }
     if (!r.ok) {
       const why = `${g[0].id}…${g[g.length - 1].id}: ${r.error.kind} – ${r.error.message}`;
       if (!rows.length && part === 0 && groups.length === 1) return { ok: false as const, error: { kind: r.error.kind, message: why }, meta: r.meta };
