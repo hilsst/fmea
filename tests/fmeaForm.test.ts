@@ -42,6 +42,7 @@ describe('F33.03 / F05.04 form düzeni', () => {
     expect(cellText(col('newRpn'), a as AnyRow, p)).toBe('32');
     expect(cellText(col('predRpn'), b as AnyRow, p)).toBe('');
     p.meta.partNumber = 'PO-1193';
+    p.settings.tableFormat = 'SCMH';
     expect(formHeader(p, 'dfmea').docNo).toBe('SCMH 7.2.10');
     expect(formHeader(p, 'dfmea').largestRpn).toBeUndefined();
     p.settings.tableFormat = 'F33';
@@ -81,9 +82,9 @@ describe('PFMEA gereksinimleri otomatik dolar', () => {
   });
 });
 
-describe('SCMH 7.2.10 / 7.2.11 düzeni (varsayılan)', () => {
+describe('SCMH 7.2.10 / 7.2.11 düzeni (seçilirse)', () => {
   it('kolonlar SCMH sırasında; F33 kolonları kaybolmaz', () => {
-    const letters = (t: 'dfmea' | 'pfmea') => tableColumns(t, undefined).filter((c) => c.formCol).map((c) => `${c.formCol}:${c.formLabel}`);
+    const letters = (t: 'dfmea' | 'pfmea') => tableColumns(t, 'SCMH').filter((c) => c.formCol).map((c) => `${c.formCol}:${c.formLabel}`);
     expect(letters('dfmea').slice(0, 5)).toEqual(['B:Doc (Line) #', 'C:Item', 'D:Function', 'E:Requirement', 'F:Potential Failure Mode']);
     expect(letters('dfmea')).toContain('N:SEV * OCC');
     expect(letters('dfmea').at(-1)).toBe('Y:Action Results RPN');
@@ -93,7 +94,12 @@ describe('SCMH 7.2.10 / 7.2.11 düzeni (varsayılan)', () => {
       const keys = tableColumns(t, 'SCMH').map((c) => c.key);
       for (const k of COLUMNS[t].map((c) => c.key)) expect(keys).toContain(k);
       expect(tableColumns(t, 'SCMH').find((c) => c.key === 'predS')!.secondary).toBe(true);
-      expect(tableColumns(t, 'F33')).toBe(COLUMNS[t]);
+      // 4.10.0: varsayılan = şirket formu; yalnız form kolonları (+ onay, adım) görünür, kalanlar "Tüm kolonlar" altında
+      const f33 = tableColumns(t, undefined);
+      expect(f33).toBe(tableColumns(t, 'F33'));
+      expect(f33.map((c) => c.key)).toEqual(COLUMNS[t].map((c) => c.key));
+      expect(f33.filter((c) => !c.secondary).every((c) => c.formCol || ['approval', 'stepId'].includes(c.key))).toBe(true);
+      expect(f33.filter((c) => c.formCol).every((c) => !c.secondary)).toBe(true);
     }
   });
 });

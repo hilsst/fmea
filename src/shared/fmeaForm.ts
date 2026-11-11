@@ -28,7 +28,7 @@ export function largestRpn(p: Project, kind: 'dfmea' | 'pfmea'): number | null {
 export function formHeader(p: Project, kind: 'dfmea' | 'pfmea'): FormHeader {
   const m = p.meta;
   const pre = kind === 'dfmea' ? 'DFMEA' : 'PFMEA';
-  if (p.settings.tableFormat !== 'F33')
+  if (p.settings.tableFormat === 'SCMH')
     return {
       title: kind === 'dfmea' ? 'Design Failure Mode and Effects Analysis' : 'Process Failure Mode and Effects Analysis',
       docNo: kind === 'dfmea' ? 'SCMH 7.2.10' : 'SCMH 7.2.11',

@@ -3,6 +3,7 @@
 // Kaynakta olmayan değer uydurulmaz (VERİ YOK); kütüphane içeriği ENGINEERING KNOWLEDGE olarak işaretlenir.
 import { findRequirementCandidates, locText } from './docmodel';
 import { DFMEA_FUNCTION_TYPES, DFMEA_LIB, PFMEA_ALT_CAUSES, PFMEA_LIB, PFMEA_STEP_COMMON, paramTemplates, stepArea, type FailureTemplate } from './failureLib';
+import { elementKind, type ElementTemplate } from './elementLib';
 import { dfmeaFillValues, fillBlanksEdits, pfmeaFillValues } from './fmeaFill';
 import { blankRow, nextId } from './model';
 import { NO_DATA, characteristicOf, reqAutoValues } from './reqAutofill';
@@ -180,9 +181,18 @@ export function genDfmea(g: Gen, fnIds?: string[]) {
     const types = [...new Set([...reqs.filter((r) => r.reqType === 'Safety' || r.reqType === 'Regulatory'), ...reqs].map((r) => r.reqType).filter((t) => DFMEA_LIB[t] && DFMEA_LIB[t] !== DFMEA_LIB.Functional))]; // Functional = fonksiyon hata tipleri
     const verification = reqs.map((r) => r.verification).find((v) => v && !v.includes(NO_DATA));
     const xOf = (type: string) => reqs.find((r) => r.reqType === type)?.characteristic || reqs[0]?.characteristic || fn.element || fn.id;
+    // 4.10.0: elemana özel hata modları (eleman türü addan tanınır). Eleman birden çok fonksiyon satırına sahipse
+    // her mod, tipine (ft) uyan fonksiyon satırına; yoksa elemanın ilk fonksiyon satırına bir kez eklenir.
+    const kind = elementKind(fn.element);
+    const siblings = g.p.structure.filter((s) => s.function?.trim() && s.approval !== 'Rejected' && s.parentId === fn.parentId && norm(s.element) === norm(fn.element) && s.level === fn.level);
+    const ownerOf = (t: ElementTemplate) => (siblings.find((s) => t.ft && s.functionType === t.ft) ?? siblings[0] ?? fn).id;
+    const elementHave = g.p.dfmea.filter((d) => siblings.some((s) => s.id === d.functionId)).map((d) => d.failureMode);
+    const elementPlan = (kind?.templates ?? []).filter((t) => ownerOf(t) === fn.id && !covered(elementHave, fill(t.failureMode, fn.element))).map((t) => ({ t: t as FailureTemplate, type: `eleman: ${kind!.label}`, x: fn.element }));
     const plan: { t: FailureTemplate; type: string; x: string }[] = [
+      ...elementPlan,
       ...types.flatMap((type) => DFMEA_LIB[type].map((t) => ({ t, type, x: xOf(type) }))),
-      ...DFMEA_FUNCTION_TYPES.map((t) => ({ t, type: 'fonksiyon hata tipleri', x: xOf('') })),
+      // Türü tanınan alt elemanlarda genel fonksiyon hata tipleri eklenmez: elemana özel modlar aynı soruları somut yanıtlar. Ürün seviyesinde kalır.
+      ...(kind && fn.parentId ? [] : DFMEA_FUNCTION_TYPES.map((t) => ({ t, type: 'fonksiyon hata tipleri', x: xOf('') }))),
     ];
     for (const { t, type, x } of plan) {
       const failureMode = fill(t.failureMode, x);
