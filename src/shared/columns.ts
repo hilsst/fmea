@@ -527,9 +527,22 @@ const SCMH_EXTRA: Record<string, Col> = {
 };
 
 const layoutCache = new Map<string, Col[]>();
+/** Şirket formunda form dışı olup yine de varsayılan görünümde kalan kolonlar (onay ve adım bağlantısı). */
+const FORM_KEEP = new Set(['approval', 'stepId']);
+const formCache = new Map<string, Col[]>();
+/** 4.10.0: şirket formu görünümü – yalnız form kolonları (A–Z) görünür; uygulamaya özgü kolonlar "Tüm kolonlar" altında. */
+function companyFormColumns(table: 'dfmea' | 'pfmea'): Col[] {
+  const hit = formCache.get(table);
+  if (hit) return hit;
+  const out = COLUMNS[table].map((c) => (c.formCol || FORM_KEEP.has(c.key) || c.secondary ? c : { ...c, secondary: true }));
+  formCache.set(table, out);
+  return out;
+}
 /** DFMEA / PFMEA kolonları seçili tablo düzenine göre; diğer tablolar değişmez. */
 export function tableColumns(table: TableKey, format: 'SCMH' | 'F33' | undefined): Col[] {
-  if ((table !== 'dfmea' && table !== 'pfmea') || format === 'F33') return COLUMNS[table];
+  if (table !== 'dfmea' && table !== 'pfmea') return COLUMNS[table];
+  // 4.10.0: varsayılan düzen şirket formudur (F33.03 / F05.04); SCMH yalnız açıkça seçilirse.
+  if (format !== 'SCMH') return companyFormColumns(table);
   const hit = layoutCache.get(table);
   if (hit) return hit;
   const base = COLUMNS[table];

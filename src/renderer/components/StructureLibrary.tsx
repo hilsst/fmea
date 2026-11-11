@@ -19,16 +19,20 @@ export function StructureLibrary({ onClose }: { onClose: () => void }) {
   const t = STRUCTURE_TEMPLATE_BY_KEY[key];
   const [sel, setSel] = useState<string[]>(defaultElements(t));
   const [dfmea, setDfmea] = useState(true);
+  // Hiçbir elemana uymayan gereksinimler için kural tabanlı ayrı fonksiyon satırı (eski “Gereksinimlerden öner”).
+  const [rest, setRest] = useState(true);
   const pick = (k: string) => { setKey(k); setSel(defaultElements(STRUCTURE_TEMPLATE_BY_KEY[k])); };
   const toggle = (k: string) => setSel((xs) => (xs.includes(k) ? xs.filter((x) => x !== k) : [...xs, k]));
   const plan = useMemo(() => planStructure(p, key, sel), [p, key, sel]);
 
   const run = async () => {
-    if (!plan.edits.length) return toast('Seçilen elemanların hepsi yapı ağacında zaten var.', 'warn');
     const before = new Set(p.structure.map((s) => s.id));
-    if (!(await edit(plan.edits as Edit[], `Yapı kütüphanesi: ${t.label}`))) return;
+    if (plan.edits.length) {
+      if (!(await edit(plan.edits as Edit[], `Yapı kütüphanesi: ${t.label}`))) return;
+      toast(`${plan.rows} yapı / fonksiyon satırı eklendi, ${plan.linked} gereksinim bağlandı – mühendis onayı bekliyor`);
+    }
     onClose();
-    toast(`${plan.rows} yapı / fonksiyon satırı eklendi, ${plan.linked} gereksinim bağlandı – mühendis onayı bekliyor`);
+    if (rest && plan.unmatched.length) await gen(['structure'], 'Elemana uymayan gereksinimlerden fonksiyon satırı', { reqIds: plan.unmatched }, current());
     if (dfmea) {
       const fnIds = current().structure.filter((s) => !before.has(s.id) && s.function?.trim()).map((s) => s.id);
       if (fnIds.length) await gen(['dfmea'], 'Eklenen fonksiyonlar için DFMEA (hata kütüphanesi)', { fnIds }, current());
@@ -49,7 +53,7 @@ export function StructureLibrary({ onClose }: { onClose: () => void }) {
           </span>
           <span className="grow" />
           <button className="btn" onClick={onClose}>Vazgeç</button>
-          <button className="btn primary" disabled={!plan.edits.length} onClick={run}>Yapıyı ekle</button>
+          <button className="btn primary" disabled={!plan.edits.length && !(rest && plan.unmatched.length)} onClick={run}>Yapıyı ekle</button>
         </>
       }
     >
@@ -93,9 +97,9 @@ export function StructureLibrary({ onClose }: { onClose: () => void }) {
         </tbody>
       </table>
       {plan.unmatched.length > 0 && (
-        <p className="muted small">
-          Hiçbir elemana uymayan gereksinimler: {plan.unmatched.join(', ')}. Bunları “⟳ Gereksinimlerden öner” ile ayrı fonksiyon satırı yapabilir veya elle bağlayabilirsiniz.
-        </p>
+        <label className="check-row mt">
+          <input type="checkbox" checked={rest} onChange={(e) => setRest(e.target.checked)} /> Hiçbir elemana uymayan {plan.unmatched.length} gereksinim ({plan.unmatched.join(', ')}) için ayrı fonksiyon satırı öner
+        </label>
       )}
 
       <h3 className="mt">3. DFMEA</h3>

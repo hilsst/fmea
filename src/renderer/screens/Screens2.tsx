@@ -164,8 +164,8 @@ export function TableFormatSetting({ first = false }: { first?: boolean }) {
           <label key={k} className="check-row" title={hint}>
             <input
               type="radio"
-              checked={(p.settings.tableFormat ?? 'SCMH') === k}
-              onChange={() => mutate((d) => { d.settings.tableFormat = k; }, { kind: 'Modified', table: 'settings', id: 'tableFormat', field: 'tableFormat', from: p.settings.tableFormat ?? 'SCMH', to: k, comment: 'DFMEA/PFMEA tablo düzeni' })}
+              checked={(p.settings.tableFormat ?? 'F33') === k}
+              onChange={() => mutate((d) => { d.settings.tableFormat = k; }, { kind: 'Modified', table: 'settings', id: 'tableFormat', field: 'tableFormat', from: p.settings.tableFormat ?? 'F33', to: k, comment: 'DFMEA/PFMEA tablo düzeni' })}
             />{' '}
             <b>{label}</b>
           </label>

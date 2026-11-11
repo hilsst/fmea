@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { findRequirementCandidates, locText, UNSUPPORTED_MSG } from '../../shared/docmodel';
+import { UNSUPPORTED_MSG } from '../../shared/docmodel';
 import { summarizeChanges, type Edit } from '../../shared/engine';
 import { reqAutoValues } from '../../shared/reqAutofill';
 import type { GenStage } from '../../shared/autogen';
-import { FlowTemplatePicker } from '../components/FlowTemplates';
 import { PfmeaWizard } from '../components/PfmeaWizard';
 import { StructureLibrary } from '../components/StructureLibrary';
 import { useAiChain } from '../components/AiChain';
@@ -11,7 +10,7 @@ import { MANUAL_ONLY_CATEGORIES } from '../../shared/kc';
 import { KC_LOCK_MSG, isCi, kcLocked, scmhKcDecision } from '../../shared/kcScmh'; // v4-kc
 import { isScmh } from '../../shared/scmhScoring'; // v4-kc
 import { KcScmhPanel } from '../screens/Kc'; // v4-kc
-import { COMPOSITE_CHECKLIST, blankRow, nextId } from '../../shared/model';
+import { blankRow, nextId } from '../../shared/model';
 import type { AnyRow, KcRow, Project, TableKey } from '../../shared/types';
 import { api, isDesktop } from '../api';
 import { PasteTextDialog, useAi } from '../components/AiDialogs';
@@ -86,22 +85,6 @@ export function DocumentsTab() {
     if (x.status !== 'unsupported')
       await gen(ALL_STAGES, `${doc.docNumber || doc.name} analizinden öneriler`, { docIds: [doc.id] }, { ...project, docIndex: { ...project.docIndex, [doc.id]: x } });
   };
-  const addLocal = async () => {
-    if (!doc || !index) return;
-    const have = new Set(project.requirements.map((r) => r.text.trim().toLowerCase()));
-    const cands = findRequirementCandidates(index).filter((c) => !have.has(c.text.trim().toLowerCase()));
-    if (!cands.length) return toast('Yeni gereksinim adayı bulunamadı.', 'warn');
-    const b = batch(project);
-    for (const c of cands) {
-      const evId = b.add('evidence', { docId: doc.id, page: c.loc.page ? String(c.loc.page) : '', section: c.loc.section ?? '', sheet: c.loc.sheet ?? '', cell: c.loc.cell ?? '', balloon: c.loc.balloon ?? '', quote: c.evidence, evidenceType: 'Doküman metni', basis: 'SOURCE DATA', confidence: c.confidence, verification: 'VERIFIED', verifiedLocation: locText(c.loc), origin: 'extraction' } as Partial<AnyRow>);
-      b.add('requirements', {
-        text: c.text, reqType: c.reqType, characteristic: c.characteristic, nominal: c.nominal, lsl: c.lsl, usl: c.usl, unit: c.unit, tolerance: c.tolerance,
-        source: `${doc.docNumber || doc.name} ${locText(c.loc)}`.trim(), sourceDocId: doc.id, sourcePage: c.loc.page ? String(c.loc.page) : '', sourceSection: c.loc.section ?? '', sourceCell: c.loc.cell ?? '', balloon: c.loc.balloon ?? '',
-        evidenceText: c.evidence, confidence: c.confidence, dataStatus: 'DOĞRULAMA GEREKLİ', origin: 'extraction', evidenceIds: [evId],
-      } as Partial<AnyRow>);
-    }
-    await edit(b.edits, `${cands.length} yerel gereksinim adayı`);
-  };
   return (
     <>
       <Grid
@@ -118,12 +101,6 @@ export function DocumentsTab() {
             </button>
             <button className="btn" disabled={!doc?.filePath || busy} onClick={analyze} title="Dosyayı bu bilgisayarda ayrıştırır (internet gerekmez)">
               {busy ? 'Analiz ediliyor…' : '⚙ Analiz et'}
-            </button>
-            <button className="btn" disabled={!index} onClick={addLocal} title="Yerel ayrıştırıcının bulduğu gereksinim cümlelerini ekler (AI kullanılmaz)">
-              Yerel adayları ekle
-            </button>
-            <button className="btn" disabled={!Object.keys(project.docIndex).length} onClick={() => gen(ALL_STAGES, 'Dokümanlardan tüm zincir', { docIds: sel.length ? sel : undefined })} title="Analiz edilmiş dokümanlardan (seçim yoksa hepsi) gereksinim → yapı/fonksiyon → DFMEA → PFMEA önerir. Yalnızca eksik satırlar eklenir; hepsi AI Proposed gelir.">
-              ⟳ Tüm zinciri öner
             </button>
             <button className="btn ai" disabled={sel.length !== 1} onClick={() => ai.extractRequirements(doc)} title="Seçili dokümandan Requirements Matrix çıkarır">
               ✦ AI: Gereksinim çıkar
@@ -200,7 +177,6 @@ const NEXT_LEVEL: Record<string, string> = { Product: 'Assembly', Assembly: 'Par
 export function StructureTab() {
   const { project, edit } = useStore();
   const [sel, setSel] = useState<string[]>([]);
-  const gen = useAutogen();
   const ai = useAi();
   const [lib, setLib] = useState(false);
   const addChild = async () => {
@@ -223,15 +199,12 @@ export function StructureTab() {
             <button className="btn" onClick={() => setLib(true)} title="AI kullanmadan: ürün tipini seçin (sandviç panel, radom, talaşlı parça, kaynaklı konstrüksiyon ...); tipik elemanlar ve fonksiyonları kütüphaneden önerilir, gereksinimler ilgili elemana bağlanır, elemana özel DFMEA satırları önerilir. Hepsi AI Proposed gelir.">
               📚 Kütüphaneden yapı ekle
             </button>
-            <button className="btn" onClick={() => gen(['structure'], 'Gereksinimlerden yapı & fonksiyon')} title="AI kullanmadan, kural tabanlı: yapıya bağlı olmayan her gereksinim cümlesinden bir fonksiyon satırı türetir (AI Proposed). Eleman adlarını ve fonksiyonları akıllıca çıkarmak için “✦ AI: Gereksinimlerden oluştur”u kullanın.">
-              ⟳ Gereksinimlerden öner
-            </button>
             <button className="btn ai" onClick={ai.suggestStructure} title="Onayladığınız gereksinim listesinden (dokümanı yeniden okumadan, gereksinimlerin kaynak ve kanıt alıntılarıyla) AI önerir: gereksinimlerdeki ürün → montaj → parça → özellik ağacını ve her elemanın fonksiyonunu kanıt alıntısıyla önerir; fonksiyonları ilgili gereksinimlere bağlar. Her öneriyi kabul / düzenle / reddet ile siz onaylarsınız.">
               ✦ AI: Gereksinimlerden oluştur
             </button>
           </>
         }
-        emptyHint="“📚 Kütüphaneden yapı ekle” ile ürün tipine göre hazır yapı ağacını AI'sız kurun, “✦ AI: Gereksinimlerden oluştur” ile yapı ağacını onaylı gereksinimlerden önerin, “⟳ Gereksinimlerden öner” ile AI'sız taslak alın veya Product → Assembly → Part → Feature hiyerarşisini elle kurun."
+        emptyHint="“📚 Kütüphaneden yapı ekle” ile ürün tipine göre hazır yapı ağacını AI'sız kurun, “✦ AI: Gereksinimlerden oluştur” ile yapı ağacını onaylı gereksinimlerden önerin veya Product → Assembly → Part → Feature hiyerarşisini elle kurun."
       />
       <StructureTree project={project} onSelect={setSel} />
       {ai.dialogs}
@@ -337,7 +310,7 @@ function FmeaFormHeader({ kind }: { kind: 'dfmea' | 'pfmea' }) {
       <div className="fh-title">
         <span>{h.title}</span>
         <span className="muted">Doc. No: {h.docNo}</span>
-        {project.settings.tableFormat === 'F33' && project.meta.fmeaRevision && <span className="muted">Rev: {project.meta.fmeaRevision}</span>}
+        {project.settings.tableFormat !== 'SCMH' && project.meta.fmeaRevision && <span className="muted">Rev: {project.meta.fmeaRevision}</span>}
       </div>
       {h.fields.map((f) => (
         <div className="fh" key={f.label}>
@@ -361,13 +334,6 @@ export function DfmeaTab() {
   const ai = useAi();
   const gen = useAutogen();
   const fillBlanks = useFillBlanks('dfmea');
-  const fromFunctions = async () => {
-    const b = batch(project);
-    for (const s of project.structure.filter((s) => s.function && !project.dfmea.some((d) => d.functionId === s.id)))
-      b.add('dfmea', { functionId: s.id, reqIds: [...s.reqIds], approval: 'AI Proposed' } as Partial<AnyRow>);
-    if (!b.edits.length) return toast('Tüm fonksiyonların DFMEA satırı var.', 'warn');
-    await edit(b.edits, 'Fonksiyonlardan DFMEA satırı');
-  };
   return (
     <>
       <Grid
@@ -377,17 +343,11 @@ export function DfmeaTab() {
         onSelect={setSel}
         toolbar={
           <>
-            <button className="btn" onClick={fromFunctions} title="DFMEA satırı olmayan her fonksiyon için bir satır açar">
-              Fonksiyonlardan oluştur
-            </button>
             <button className="btn" onClick={() => gen(['dfmea'], 'Hata kütüphanesinden DFMEA')} title="Her fonksiyon için olası TÜM hata modlarını önerir (bağlı her gereksinim tipinin kütüphanesi + fonksiyon yok / kısmi / zamanla azalan / aralıklı / istenmeyen); mevcut satırlar korunur, yalnız eksik modlar eklenir. Her satırda hata modu, etki, neden, önleme/tespit kontrolü ve başlangıç S/O/D önerir">
               ⟳ Kütüphaneden öner
             </button>
             <button className="btn" onClick={() => fillBlanks(sel)} title="Seçili (seçim yoksa tüm) satırların boş alanlarını yapı ağacı ve gereksinimlerden doldurur: sistem/komponent, lokal/üst etki, doğrulama, risk kategorisi, gürültü faktörü, özel karakteristik, S 9–10 kararı ve aksiyon önerisi. Dolu alanlar değişmez.">
               ⟳ Boşları doldur{sel.length ? ` (${sel.length})` : ''}
-            </button>
-            <button className="btn" onClick={() => gen(['structure', 'dfmea'], 'Gereksinim → yapı → DFMEA')} title="Önce eksik yapı/fonksiyonları, sonra DFMEA satırlarını önerir">
-              ⟳ Gereksinimlerden tümü
             </button>
             <button className="btn" onClick={() => ai.suggestFromExamples('dfmea')} title="AI kullanmadan, örnek kütüphanesindeki onaylı (Approved / Engineer Reviewed) benzer satırları önerir. İnternet ve API anahtarı gerekmez.">
               📚 Onaylı örneklerden öner
@@ -397,7 +357,7 @@ export function DfmeaTab() {
             </button>
           </>
         }
-        emptyHint="Önce Yapı & Fonksiyon ekranında fonksiyonları tanımlayın, sonra “Fonksiyonlardan oluştur” veya “AI: DFMEA öner”."
+        emptyHint="Önce Yapı & Fonksiyon ekranında fonksiyonları tanımlayın, sonra “⟳ Kütüphaneden öner” veya “✦ AI: DFMEA öner”."
       />
       <DfmeaCoveragePanel />{/* v4-risk */}
       {ai.dialogs}
@@ -407,7 +367,6 @@ export function DfmeaTab() {
 
 export function ProcessTab() {
   const { project } = useStore();
-  const [flow, setFlow] = useState(false);
   const [wizard, setWizard] = useState(false);
   const ai = useAi();
   return (
@@ -418,9 +377,6 @@ export function ProcessTab() {
         table="processSteps"
         toolbar={
           <>
-            <button className="btn" onClick={() => setFlow(true)} title="Talaşlı, kaynaklı, sac metal, ısıl işlem, yüzey işlem, kompozit ve montaj akışlarından seçin (çoklu seçim). Mevcut adımlar silinmez.">
-              Akış şablonu ekle
-            </button>
             <button className="btn ai" onClick={() => setWizard(true)} title="Prosesleri seçin; akış oluşturulur ve PFMEA tablosu kütüphane + AI (gereksinim + DFMEA) ile doldurulur. Sonuç PFMEA sekmesinde görünür.">
               ✦ Proses seç ve PFMEA oluştur
             </button>
@@ -428,11 +384,6 @@ export function ProcessTab() {
         }
         emptyHint="Proje panelinde parça malzemesini ve akış şablonlarını seçin veya gerçek üretim akışını yüklenen dokümanlardan çıkarın. Her yeni adım için PFD girdi/çıktı ve proses parametreleri otomatik önerilir."
       />
-      {flow && (
-        <Modal title="Proses akışı şablonları" sub="Malzeme / imalat türüne göre çoklu seçim" onClose={() => setFlow(false)} wide>
-          <FlowTemplatePicker compact />
-        </Modal>
-      )}
       <aside className="tree card flow">
         <h3>Proses akış şeması</h3>
         {project.processSteps.length === 0 && <p className="muted">Adımlar burada sırayla görünür.</p>}
@@ -457,7 +408,6 @@ export function PfmeaTab() {
   const [notInCp, setNotInCp] = useState(false); // v4-risk: "Kontrol planında yok" filtresi
   const [importDf, setImportDf] = useState(false);
   const [importReq, setImportReq] = useState(false);
-  const [checklist, setChecklist] = useState(false);
   const [wizard, setWizard] = useState(false);
   const ai = useAi();
   const gen = useAutogen();
@@ -482,9 +432,6 @@ export function PfmeaTab() {
             <button className="btn" onClick={() => setImportReq(true)} title="Gereksinimleri (özellikle DFMEA’sı olmayan proses, muayene ve boyutsal gereksinimleri) seçilen proses adımlarına PFMEA taslak satırı olarak aktarır">
               Gereksinimlerden aktar
             </button>
-            <button className="btn" onClick={() => setChecklist(true)} title="Spesifikasyon §9 kompozit hata modu kontrol listesi">
-              Kompozit kontrol listesi
-            </button>
             <button className="btn" onClick={() => gen(['pfmea'], 'Hata kütüphanesinden PFMEA')} title="Her proses adımı için olası TÜM hata modlarını önerir (alan kütüphanesi + adım atlama / yanlış parça / elleçleme hasarı); mevcut satırlar korunur, yalnız eksik modlar eklenir. Her satırda hata modu, etki, neden (4M), kök neden, önleme/tespit, hata önleme ve başlangıç S/O/D önerir; özel proses parametreleri için limit dışı hata modlarını ekler">
               ⟳ Kütüphaneden öner
             </button>
@@ -504,7 +451,6 @@ export function PfmeaTab() {
       {wizard && <PfmeaWizard onClose={() => setWizard(false)} suggestPfmea={ai.suggestPfmea} />}
       {importDf && <ImportFromDfmea onClose={() => setImportDf(false)} />}
       {importReq && <ImportFromRequirements onClose={() => setImportReq(false)} />}
-      {checklist && <CompositeChecklist onClose={() => setChecklist(false)} />}
       {ai.dialogs}
     </>
   );
@@ -695,60 +641,6 @@ function ImportFromRequirements({ onClose }: { onClose: () => void }) {
   );
 }
 
-function CompositeChecklist({ onClose }: { onClose: () => void }) {
-  const { project, edit } = useStore();
-  const [stepId, setStepId] = useState(project.processSteps[0]?.id ?? '');
-  const [cat, setCat] = useState(Object.keys(COMPOSITE_CHECKLIST)[0]);
-  const [picked, setPicked] = useState<string[]>([]);
-  const existing = new Set(project.pfmea.filter((p) => p.stepId === stepId).map((p) => p.failureMode.toLowerCase()));
-  const apply = async () => {
-    const b = batch(project);
-    for (const fm of picked)
-      b.add('pfmea', { stepId, failureMode: fm, source: 'Spesifikasyon §9 kompozit kontrol listesi', dataStatus: 'AI RECOMMENDATION', approval: 'AI Proposed' } as Partial<AnyRow>);
-    if (await edit(b.edits, 'Kompozit kontrol listesi')) onClose();
-  };
-  return (
-    <Modal
-      title="Kompozit PFMEA kontrol listesi"
-      sub="Seçilen hata modları, seçili proses adımına PFMEA satırı olarak eklenir. Etki, neden ve kontrolleri doldurmanız gerekir."
-      onClose={onClose}
-      foot={
-        <>
-          <button className="btn" onClick={onClose}>Vazgeç</button>
-          <button className="btn primary" disabled={!picked.length || !stepId} onClick={apply}>{picked.length} hata modu ekle</button>
-        </>
-      }
-    >
-      <div className="form">
-        <label>
-          <span>Proses adımı</span>
-          <select className="cell-select" value={stepId} onChange={(e) => setStepId(e.target.value)}>
-            <option value="">—</option>
-            {project.processSteps.map((s) => (
-              <option key={s.id} value={s.id}>{s.opNo} {s.name}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Kategori</span>
-          <select className="cell-select" value={cat} onChange={(e) => setCat(e.target.value)}>
-            {Object.keys(COMPOSITE_CHECKLIST).map((k) => (
-              <option key={k}>{k}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="checklist">
-        {COMPOSITE_CHECKLIST[cat].map((fm) => (
-          <label key={fm} className={existing.has(fm) ? 'done' : ''}>
-            <input type="checkbox" checked={picked.includes(fm)} disabled={existing.has(fm)} onChange={(e) => setPicked(e.target.checked ? [...picked, fm] : picked.filter((x) => x !== fm))} />
-            {fm} {existing.has(fm) && <span className="muted">(mevcut)</span>}
-          </label>
-        ))}
-      </div>
-    </Modal>
-  );
-}
 
 export function KcTab() {
   const { project, edit } = useStore();
